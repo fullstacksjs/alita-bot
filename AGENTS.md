@@ -3,8 +3,9 @@
 Alita Robot is a Telegram group-management bot written in **Go 1.26** on top of
 the **gotgbot/v2** library (`v2.0.0-rc.35`). It provides admin tools, filters,
 notes, greetings, anti-flood / anti-raid / anti-spam, captcha verification,
-warns, locks, backups, connections, reactions and multi-language support
-(en, es, fr, hi, ru, pt, id).
+warns, locks, backups, connections and reactions. All bot text is **English
+only** — the multi-language system (`/lang`, per-chat/user locale preferences)
+was removed.
 
 > `CLAUDE.md` and `GEMINI.md` are symlinks to this file — **AGENTS.md is the single
 > source of truth** for agent/contributor guidance. Edit this file only.
@@ -59,7 +60,7 @@ Telegram ──► (polling updater  OR  webhook /webhook POST)
                  • group 4..10        : message watchers (antiflood, locks, blacklists,
                                         filters, reactions, reports) (return ext.ContinueGroups)
           ──► handler reads/writes DB (GORM/Postgres) through per-domain repos,
-              which read-through a Redis cache; replies via i18n + media/formatting
+              which read-through a Redis cache; replies via locale strings + media/formatting
 ```
 
 Big architectural facts an agent must hold in mind:
@@ -104,13 +105,13 @@ Big architectural facts an agent must hold in mind:
     - `models/` — **all GORM structs** (one file per table) + `types.go` (JSONB types).
     - `<domain>/` — per-domain repositories: `admin, antiflood, antiraid, approvals,
       blacklists, captcha, channels, chats, connections, devs, disabling, filters,
-      greetings, lang, locks, notes, pins, reports, rules, user, warns`
+      greetings, locks, notes, pins, reports, rules, user, warns`
       (usually `repository.go` + optional `optimized.go`).
     - `cache/` — `CacheKey`, `GetFromCacheOrLoad` (singleflight read-through), `DeleteCache`, TTL constants.
     - `migrations/` — `runner.go` (custom SQL migration engine).
     - `monitoring/` — `metrics.go` (DB pool metrics for `/db_metrics`).
     - `backup/` — `backup.go` + `types.go` (per-module export/import/clear, **17 modules**).
-  - `i18n/` — singleton `LocaleManager`, per-language `Translator`, `go:embed` locales.
+  - `i18n/` — singleton `LocaleManager`, English `Translator`, `go:embed` locales.
     Locale YAML is parsed into `map[string]any` (yaml.v3); key lookup is a dot-path
     descent with case-insensitive fallback (for `alt_names.<Module>`). **No viper.**
   - `modules/` — bot feature modules + shared plumbing (see §6).
@@ -118,8 +119,8 @@ Big architectural facts an agent must hold in mind:
     `callbackcodec`, `formatting`, `keyboard`, `keyword_matcher`, `media`, `content`,
     `extraction`, `error_handling`, `errors`, `logredact`, `ratelimit`, `constants`,
     `monitoring`, `shutdown`, `tracing`, `httpserver`.
-- **`locales/`** — `en/es/fr/hi/ru/pt/id.yml` translations + **`config.yml`** (loaded
-  as a pseudo-language `"config"`; holds `alt_names.<Module>` and `db_default_*`).
+- **`locales/`** — `en.yml` (the only user-facing locale) + **`config.yml`** (loaded
+  as a pseudo-locale `"config"`; holds `alt_names.<Module>` and `db_default_*`).
 - **`migrations/`** — timestamped `.sql` schema files (source of truth).
 - **`scripts/`** — `check_translations/` (**separate go.mod**),
   `validate_orphaned_data.go`, `migrate_psql.sh`, `backup_database.sh`.
@@ -274,7 +275,7 @@ the `--health` flag.
 3. Main-goroutine panic-recovery `defer` (`os.Exit(1)`).
 4. **`cache.InitCache()` FIRST** — fatal on failure;
    FLUSHDBs Redis when `ClearCacheOnStartup` (default **true**).
-5. `i18n.GetManager().Initialize(&Locales, "locales", …)` (embedded YAML).
+5. `i18n.GetManager().Initialize(&Locales, "locales")` (embedded YAML).
 6. `tracing.InitTracing()` — **non-fatal** (warns and continues).
 7. Tuned HTTP transport + optional `API_SERVER` through gotgbot's
    `RequestOpts.APIURL` → `gotgbot.NewBot` → resolve username.
@@ -314,12 +315,12 @@ tracing, DB monitoring and application monitors, and finally the DB pool.
 |----:|--------|----:|--------|----:|--------|
 | -10 | BotUpdates | 80 | Mutes | 180 | Disabling |
 | 10 | Antispam | 90 | Purges | 190 | Rules |
-| 20 | Languages | 100 | Users | 200 | Warns |
-| 30 | Admin | 110 | Reports | 210 | Greetings |
-| 40 | Approvals | 120 | Dev | 220 | Captcha |
-| 50 | Pins | 130 | Locks | 230 | AntiRaid |
-| 60 | Misc | 140 | Filters | 240 | Blacklists |
-| 70 | Bans | 150 | Antiflood | 250 | Reactions |
+| 30 | Admin | 100 | Users | 200 | Warns |
+| 40 | Approvals | 110 | Reports | 210 | Greetings |
+| 50 | Pins | 120 | Dev | 220 | Captcha |
+| 60 | Misc | 130 | Locks | 230 | AntiRaid |
+| 70 | Bans | 140 | Filters | 240 | Blacklists |
+|     |        | 150 | Antiflood | 250 | Reactions |
 |     |        | 160 | Notes | 260 | Formatting |
 |     |        | 170 | Connections | 270 | Backup |
 
@@ -352,7 +353,7 @@ uses `RegisterLegacyModule`.
 2. Handlers + `LoadYourModule(dispatcher)` in `alita/modules/your_module.go`.
 3. `RegisterLegacyModule("YourModule", <priority>, LoadYourModule)` in `init()`;
    set `DefaultHelpRegistry().AbleMap[name] = true` inside `LoadXxx`.
-4. Add `<yourmodule>_help_msg` (and any keys) to **all** locale files.
+4. Add `<yourmodule>_help_msg` (and any keys) to `locales/en.yml`.
 
 ### Command registration: two patterns coexist
 
@@ -506,8 +507,7 @@ OTel-traced: `GetRecord`/`GetRecords`/`CreateRecord`/`UpdateRecord`/
   `channels→"channel"`, `chats→"chat"`, `captcha→"captcha_settings"`,
   `notes→"notes_settings"`, `disabling→"disabled_cmds"`, `warns→"warns"` (per-user)
   + `"warn_settings"` (per-chat), `filters→"filter_list"` + `"filters_optimized"`,
-  `locks→"lock"` + `"locks_map"`, `lang→"chat_lang"`/`"user_lang"` (also invalidates
-  `"chat_settings"`/`"chat"`/`"user"`). The `admin`, `connections`, `devs`, `pins`,
+  `locks→"lock"` + `"locks_map"`. The `admin`, `connections`, `devs`, `pins`,
   `reports`, `rules` packages have **no cache** at all. Reuse the exact existing
   literal when invalidating.
 - Upserts that must survive concurrent writers use `clause.OnConflict`: locks,
@@ -583,33 +583,35 @@ m != nil`) — every helper bails when it's nil.
 
 ---
 
-## 11. Internationalization (`alita/i18n/`)
+## 11. Locale strings (`alita/i18n/`)
 
-- Singleton `LocaleManager` (`GetManager()` + `sync.Once`); `Initialize()` runs
-  once from `main.go` (after `cache.InitCache`). `go:embed` pulls the **entire**
-  `locales/` dir; each `.yml` becomes a language keyed by filename.
-- ⚠️ **`locales/config.yml` is loaded as a pseudo-language `"config"`** and read via
-  `i18n.MustNewTranslator("config")` for `alt_names.<Module>` (command aliases) and
-  `db_default_*`. Don't rename/move it or change the embed pattern.
-- ⚠️ **`ENABLED_LOCALES` does not control which locales load** — the manager always
-  loads all embedded `.yml`. It only filters the `/lang` picker keyboard.
-- The `/lang` callback validates against the seven user locales in
-  `alita/modules/language.go`; keep that allowlist in sync with embedded user
-  locale files and exclude the `"config"` pseudo-language.
-- `i18n.MustNewTranslator(langCode)` (382 call sites) never panics — falls back to
-  English. Per-context language comes from `alita/db/lang.GetLanguage(ctx)` (user
-  pref in private, group pref in groups, default `"en"`).
-- `GetString(key, params…)` falls back to the default language on missing keys
-  (recursion-guarded). Supports **both** `{named}` and legacy `%s`/`%d` placeholders;
-  named→positional mapping uses a hard-coded `commonKeys` order in
-  `extractOrderedValues` (`first,second,…,question,answer,number,count,value,name,
-  user,username,…`). If you use a `%verb` with a param name not in that list, the
-  mapping is dropped/misordered — extend `commonKeys`.
+The bot is **English-only**. There is no `/lang` command, no per-user/per-chat
+language preference, and no `alita/db/lang` package — `alita/i18n` is now just a
+YAML-backed string table.
+
+- Singleton `LocaleManager` (`GetManager()` + `sync.Once`); `Initialize(fs, path)`
+  runs once from `main.go` (after `cache.InitCache`). `go:embed` pulls the **entire**
+  `locales/` dir; each `.yml` becomes a locale map keyed by filename.
+- `i18n.English()` (the ~370 call sites) returns the `en.yml` translator and
+  **never returns nil** — when the manager is uninitialized (unit tests) it returns
+  a bare translator whose lookups fail cleanly with `ErrManagerNotInit`.
+- ⚠️ **`locales/config.yml` is loaded as a pseudo-locale `"config"`** and read via
+  `i18n.Config()` for `alt_names.<Module>` (command aliases) and `db_default_*`.
+  Don't rename/move it or change the embed pattern.
+- `GetString(key, params…)` returns `ErrKeyNotFound` for a missing key (there is no
+  cross-language fallback any more). Supports **both** `{named}` and legacy
+  `%s`/`%d` placeholders; named→positional mapping uses a hard-coded `commonKeys`
+  order in `extractOrderedValues` (`first,second,…,question,answer,number,count,
+  value,name,user,username,…`). If you use a `%verb` with a param name not in that
+  list, the mapping is dropped/misordered — extend `commonKeys`.
 - **Parse mode**: locale strings are authored in Markdown but the bot sends HTML —
   convert via `tgmd2html.MD2HTMLV2`. Some short status strings are already authored
   in HTML; whether to convert depends on the specific key.
-- Adding a user-facing string: add the key to **all 7** locale files (en-only works
-  via fallback but is silent English leakage). `%d` needs a real int.
+- ⚠️ The SQL columns `users.language` and `chats.language` still exist (they are
+  referenced by covering indexes in
+  `migrations/20250806100000_critical_performance_indexes.sql`) but **no code reads
+  or writes them** — the GORM `Language` fields and the optimized `SELECT` column
+  lists were removed. Drop them only in a migration that also rebuilds those indexes.
 
 ---
 
@@ -821,8 +823,8 @@ m != nil`) — every helper bails when it's nil.
 
 `feat:` `fix:` `refactor:` `perf:` `test:` `docs:` `chore:` `deps:` (scopes like
 `feat(i18n):`). Before committing: `git status`, review `git diff`, stage only
-relevant files, run `make lint` + `make test`. Add translation keys to **all**
-locale files for user-facing changes. Never commit secrets/`.env`.
+relevant files, run `make lint` + `make test`. Add new user-facing strings to
+`locales/en.yml`. Never commit secrets/`.env`.
 
 ---
 
@@ -850,9 +852,9 @@ locale files for user-facing changes. Never commit secrets/`.env`.
 - Invalidate the exact cache key on every write; key **prefixes ≠ package names**.
 - Surrogate keys (`id` PK, external IDs unique). Never edit an applied migration.
 
-**i18n**
-- Double-quote YAML with escapes; `%d` needs a real int; verify keys exist in **all**
-  locale files; convert Markdown→HTML for sends.
+**Locale strings**
+- Double-quote YAML with escapes; `%d` needs a real int; verify keys exist in
+  `locales/en.yml`; convert Markdown→HTML for sends.
 
 **Boolean logic**
 - `IsAnonymousChannel() || IsLinkedChannel()` matches almost everything — test lock/
@@ -879,7 +881,7 @@ and `env:` struct tags are decorative — `ValidateConfig` is hand-written):
   `ENABLE_AUTO_CLEANUP`, and `CLEAR_CACHE_ON_STARTUP` default true in their
   documented modes and honor an explicit `false`.
 - `AUTO_MIGRATE` / `AUTO_MIGRATE_SILENT_FAIL`, `MIGRATIONS_PATH` (default
-  `"migrations"`, relative to cwd), `ENABLED_LOCALES` (picker only), `API_SERVER`,
+  `"migrations"`, relative to cwd), `API_SERVER`,
   `DROP_PENDING_UPDATES`, `ENABLE_PPROF`, `METRICS_AUTH_TOKEN`, `DEBUG`.
 - `OTEL_*` (service name, sample rate, OTLP endpoint, console/insecure) are read via
   raw `os.Getenv`, not config, and are intentionally not in `sample.env`.

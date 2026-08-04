@@ -13,7 +13,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/divkix/Alita_Robot/alita/db/blacklists"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
@@ -49,7 +48,7 @@ func (m moduleStruct) addBlacklist(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 	args := ctx.Args()[1:]
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	var (
 		alreadyBlacklisted, newBlacklist []string
@@ -180,7 +179,7 @@ func (m moduleStruct) removeBlacklist(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 	args := ctx.Args()[1:]
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	var removedBlacklists []string
 
@@ -252,7 +251,7 @@ Anyone can view blacklists in group
 // listBlacklists handles the /blacklists command to display all blacklisted words.
 // Shows a sorted list of all currently blacklisted words in the group.
 func (m moduleStruct) listBlacklists(b *gotgbot.Bot, ctx *ext.Context) error {
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	msg := ctx.EffectiveMessage
 	// if command is disabled, return
 	if chat_status.CheckDisabledCmd(b, msg, "blacklists") {
@@ -332,7 +331,7 @@ func (m moduleStruct) setBlacklistAction(b *gotgbot.Bot, ctx *ext.Context) error
 		return ext.EndGroups
 	}
 	args := ctx.Args()[1:]
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	var rMsg string
 
@@ -392,7 +391,7 @@ func (m moduleStruct) rmAllBlacklists(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 	msg := ctx.EffectiveMessage
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// permission checks
 	if !chat_status.RequireGroup(b, ctx, nil) {
@@ -442,7 +441,7 @@ func (m moduleStruct) buttonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 	user := query.From
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	if query.Message == nil {
 		text, _ := tr.GetString("common_callback_message_unavailable")
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
@@ -461,7 +460,7 @@ func (m moduleStruct) buttonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	if creatorAction == "" {
 		log.Warnf("[Blacklists] Invalid callback data format: %s", query.Data)
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("common_callback_invalid_request")
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
 		return ext.EndGroups
@@ -556,7 +555,7 @@ func (m moduleStruct) blacklistWatcher(b *gotgbot.Bot, ctx *ext.Context) error {
 	if matchText == "" {
 		return ext.ContinueGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Use Aho-Corasick for efficient multi-pattern matching
 	cache := keyword_matcher.GetNamedCache("blacklists")

@@ -10,7 +10,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/db/rules"
 	"github.com/divkix/Alita_Robot/alita/db/warns"
 	"github.com/divkix/Alita_Robot/alita/i18n"
@@ -41,7 +40,7 @@ func (moduleStruct) setWarnMode(b *gotgbot.Bot, ctx *ext.Context) error {
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// permissions check
 	if !chat_status.RequireBotAdmin(b, ctx, nil) {
@@ -107,7 +106,7 @@ func (moduleStruct) warnThisUser(b *gotgbot.Bot, ctx *ext.Context, userId int64,
 
 	chat := ctx.EffectiveChat
 	msg := ctx.EffectiveMessage
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Get translated button texts
 	removeWarnText, _ := tr.GetString("warns_remove_button")
@@ -332,7 +331,7 @@ func (moduleStruct) warnings(b *gotgbot.Bot, ctx *ext.Context) error {
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Check permissions
 	if !chat_status.RequireGroup(b, ctx, nil) {
@@ -364,7 +363,7 @@ func (moduleStruct) warnings(b *gotgbot.Bot, ctx *ext.Context) error {
 func (moduleStruct) warns(b *gotgbot.Bot, ctx *ext.Context) error {
 	chat := ctx.EffectiveChat
 	msg := ctx.EffectiveMessage
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// if command is disabled, return
 	if chat_status.CheckDisabledCmd(b, msg, "warns") {
@@ -453,7 +452,7 @@ func (moduleStruct) rmWarnButton(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 	chat := ctx.EffectiveChat
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Check permissions
 	if !chat_status.RequireUserAdmin(b, ctx, nil, user.Id) {
@@ -536,7 +535,7 @@ func (moduleStruct) setWarnLimit(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 	args := ctx.Args()[1:]
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Check permissions
 	if !chat_status.RequireBotAdmin(b, ctx, nil) {
@@ -591,7 +590,7 @@ func (moduleStruct) resetWarns(b *gotgbot.Bot, ctx *ext.Context) error {
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Check permissions
 	if !chat_status.RequireGroup(b, ctx, nil) {
@@ -655,7 +654,7 @@ func (moduleStruct) resetAllWarns(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	msg := ctx.EffectiveMessage
 	chat := ctx.EffectiveChat
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Get translated button texts
 	yesText, _ := tr.GetString("common_yes")
@@ -715,7 +714,7 @@ func (moduleStruct) warnsButtonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 	user := query.From
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	if !chat_status.RequireUserOwner(b, ctx, nil, user.Id) {
 		chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_owner_cmd_error", "chat_status_owner_button_error", chat_status.WithReply())
@@ -797,7 +796,7 @@ func (moduleStruct) removeWarn(b *gotgbot.Bot, ctx *ext.Context) error {
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Check permissions
 	if !chat_status.RequireGroup(b, ctx, nil) {

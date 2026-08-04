@@ -13,7 +13,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 
 	"github.com/divkix/Alita_Robot/alita/db/connections"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/extraction"
@@ -38,7 +37,7 @@ func (m moduleStruct) connection(b *gotgbot.Bot, ctx *ext.Context) error {
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// permission checks
 	if !chat_status.RequirePrivate(b, ctx, nil) {
@@ -86,7 +85,7 @@ func (m moduleStruct) allowConnect(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 	args := ctx.Args()
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	var text string
 
@@ -147,7 +146,7 @@ func (m moduleStruct) connect(b *gotgbot.Bot, ctx *ext.Context) error {
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	var text string
 	var replyMarkup gotgbot.ReplyMarkup
 
@@ -176,7 +175,7 @@ func (m moduleStruct) connect(b *gotgbot.Bot, ctx *ext.Context) error {
 					{
 						{
 							Text: func() string {
-								tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+								tr := i18n.English()
 								t, _ := tr.GetString("connections_button_connect")
 								return t
 							}(),
@@ -213,7 +212,7 @@ func (m moduleStruct) connectionButtons(b *gotgbot.Bot, ctx *ext.Context) error 
 	}
 	user := query.From
 	msg := query.Message
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	if msg == nil {
 		text, _ := tr.GetString("common_callback_invalid_request")
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
@@ -298,7 +297,7 @@ func (m moduleStruct) disconnect(b *gotgbot.Bot, ctx *ext.Context) error {
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	var text string
 
@@ -334,7 +333,7 @@ Both user and admin can use this command to connect to the previous chat
 // Reconnects users to their last connected chat if they're still a member.
 func (m moduleStruct) reconnect(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	var (
 		connKeyboard gotgbot.InlineKeyboardMarkup
 		text         string
@@ -423,7 +422,7 @@ func connectDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User
 
 	parts := strings.Split(arg, "_")
 	if len(parts) < 2 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("helpers_invalid_deep_link")
 		_, _ = msg.Reply(b, text, formatting.Shtml())
 		return ext.EndGroups
@@ -431,7 +430,7 @@ func connectDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User
 
 	chatID, err := strconv.Atoi(parts[1])
 	if err != nil {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("helpers_invalid_deep_link")
 		_, _ = msg.Reply(b, text, formatting.Shtml())
 		return ext.EndGroups
@@ -439,20 +438,20 @@ func connectDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User
 
 	cochat, err := b.GetChat(int64(chatID), nil)
 	if err != nil || cochat == nil {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("helpers_chat_not_found")
 		_, _ = msg.Reply(b, text, formatting.Shtml())
 		return ext.EndGroups
 	}
 
 	if allowed, denyKey := canUserConnectToChat(b, cochat.Id, user.Id); !allowed {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString(denyKey)
 		_, _ = msg.Reply(b, text, formatting.Shtml())
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	if err := connections.ConnectId(user.Id, cochat.Id); err != nil {
 		text, _ := tr.GetString("common_settings_save_failed")
 		_, _ = msg.Reply(b, text, formatting.Shtml())

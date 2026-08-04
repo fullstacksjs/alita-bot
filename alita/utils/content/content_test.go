@@ -20,7 +20,7 @@ import (
 func TestExtractNoteAndFilterNilMessage(t *testing.T) {
 	t.Parallel()
 
-	result := ExtractNoteAndFilter(nil, false, "en")
+	result := ExtractNoteAndFilter(nil, false)
 	if result.DataType != -1 {
 		t.Fatalf("expected dataType=-1 for nil message, got %d", result.DataType)
 	}
@@ -35,7 +35,7 @@ func TestExtractNoteAndFilterDirectText(t *testing.T) {
 	msg := &gotgbot.Message{
 		Text: "/save keyword hello world",
 	}
-	result := ExtractNoteAndFilter(msg, false, "en")
+	result := ExtractNoteAndFilter(msg, false)
 	if result.DataType != db.TEXT {
 		t.Fatalf("expected dataType=%d for text message, got %d", db.TEXT, result.DataType)
 	}
@@ -56,7 +56,7 @@ func TestExtractNoteAndFilterReplyMedia(t *testing.T) {
 			Video: &gotgbot.Video{FileId: "video_123"},
 		},
 	}
-	result := ExtractNoteAndFilter(msg, false, "en")
+	result := ExtractNoteAndFilter(msg, false)
 	if result.DataType != db.VIDEO {
 		t.Fatalf("expected dataType=%d for video reply, got %d", db.VIDEO, result.DataType)
 	}
@@ -74,7 +74,7 @@ func TestExtractNoteAndFilterOptions(t *testing.T) {
 	msg := &gotgbot.Message{
 		Text: "/save keyword hello {private} {admin} {preview}",
 	}
-	result := ExtractNoteAndFilter(msg, false, "en")
+	result := ExtractNoteAndFilter(msg, false)
 	if result.DataType != db.TEXT {
 		t.Fatalf("expected dataType=%d, got %d", db.TEXT, result.DataType)
 	}
@@ -98,7 +98,7 @@ func TestExtractNoteAndFilterFilterMode(t *testing.T) {
 	msg := &gotgbot.Message{
 		Text: "/filter keyword hello world",
 	}
-	result := ExtractNoteAndFilter(msg, true, "en")
+	result := ExtractNoteAndFilter(msg, true)
 	if result.DataType != db.TEXT {
 		t.Fatalf("expected dataType=%d for filter, got %d", db.TEXT, result.DataType)
 	}
@@ -121,7 +121,7 @@ func TestExtractWelcomeDirectText(t *testing.T) {
 	msg := &gotgbot.Message{
 		Text: "/setwelcome hello {first}",
 	}
-	result := ExtractWelcome(msg, "welcome", "en")
+	result := ExtractWelcome(msg, "welcome")
 	if result.DataType != db.TEXT {
 		t.Fatalf("expected dataType=%d, got %d", db.TEXT, result.DataType)
 	}
@@ -142,7 +142,7 @@ func TestExtractWelcomeReplyMedia(t *testing.T) {
 			},
 		},
 	}
-	result := ExtractWelcome(msg, "welcome", "en")
+	result := ExtractWelcome(msg, "welcome")
 	if result.DataType != db.PHOTO {
 		t.Fatalf("expected dataType=%d for photo reply, got %d", db.PHOTO, result.DataType)
 	}
@@ -157,7 +157,7 @@ func TestExtractWelcomeNoContent(t *testing.T) {
 	msg := &gotgbot.Message{
 		Text: "/setwelcome",
 	}
-	result := ExtractWelcome(msg, "welcome", "en")
+	result := ExtractWelcome(msg, "welcome")
 	if result.DataType != -1 {
 		t.Fatalf("expected dataType=-1 for no content, got %d", result.DataType)
 	}
@@ -338,7 +338,7 @@ func TestPreFixesTextTooLong(t *testing.T) {
 	var dbButtons []db.Button
 	errorMsg := "initial"
 
-	preFixes(buttons, "btn", &text, &dataType, "", &dbButtons, &errorMsg, "en")
+	preFixes(buttons, "btn", &text, &dataType, "", &dbButtons, &errorMsg)
 
 	if dataType != -1 {
 		t.Fatalf("expected dataType=-1 for long text, got %d", dataType)
@@ -357,7 +357,7 @@ func TestPreFixesCaptionTooLong(t *testing.T) {
 	var dbButtons []db.Button
 	errorMsg := "initial"
 
-	preFixes(buttons, "btn", &text, &dataType, "file123", &dbButtons, &errorMsg, "en")
+	preFixes(buttons, "btn", &text, &dataType, "file123", &dbButtons, &errorMsg)
 
 	if dataType != -1 {
 		t.Fatalf("expected dataType=-1 for long caption, got %d", dataType)
@@ -376,7 +376,7 @@ func TestPreFixesValid(t *testing.T) {
 	var dbButtons []db.Button
 	errorMsg := "initial"
 
-	preFixes(buttons, "Default", &text, &dataType, "", &dbButtons, &errorMsg, "en")
+	preFixes(buttons, "Default", &text, &dataType, "", &dbButtons, &errorMsg)
 
 	if dataType != db.TEXT {
 		t.Fatalf("expected dataType=%d, got %d", db.TEXT, dataType)
@@ -404,7 +404,7 @@ func TestPreFixesEmptyTextNoFile(t *testing.T) {
 	var dbButtons []db.Button
 	errorMsg := "initial"
 
-	preFixes(buttons, "btn", &text, &dataType, "", &dbButtons, &errorMsg, "en")
+	preFixes(buttons, "btn", &text, &dataType, "", &dbButtons, &errorMsg)
 
 	if dataType != -1 {
 		t.Fatalf("expected dataType=-1 for empty text and no file, got %d", dataType)
@@ -420,7 +420,7 @@ func TestPreFixesEmptyTextWithFile(t *testing.T) {
 	var dbButtons []db.Button
 	errorMsg := "initial"
 
-	preFixes(buttons, "btn", &text, &dataType, "file123", &dbButtons, &errorMsg, "en")
+	preFixes(buttons, "btn", &text, &dataType, "file123", &dbButtons, &errorMsg)
 
 	if dataType != db.PHOTO {
 		t.Fatalf("expected dataType=%d, got %d", db.PHOTO, dataType)

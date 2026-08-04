@@ -22,7 +22,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/divkix/Alita_Robot/alita/db/backup"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
@@ -220,7 +219,7 @@ func (m moduleStruct) exportHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Parse module arguments
 	var modules []string
@@ -323,7 +322,7 @@ func validateImportRequest(b *gotgbot.Bot, ctx *ext.Context) (*gotgbot.Message, 
 		return nil, nil, nil, nil, false
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Check if user is the group creator
 	if !chat_status.RequireUserOwner(b, ctx, nil, user.Id) {
@@ -579,7 +578,7 @@ func (m moduleStruct) resetHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Check if user is the group creator
 	if !chat_status.RequireUserOwner(b, ctx, nil, user.Id) {
@@ -655,7 +654,7 @@ func (m moduleStruct) backupCallbackHandler(b *gotgbot.Bot, ctx *ext.Context) er
 	}
 	user := query.From
 	chat := ctx.EffectiveChat
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	if chat == nil {
 		text, _ := tr.GetString("common_callback_invalid_request")
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})

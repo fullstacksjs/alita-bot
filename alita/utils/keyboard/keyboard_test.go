@@ -8,7 +8,6 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 
-	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db"
 )
 
@@ -67,17 +66,6 @@ func TestBuildKeyboardGroupsSameLineButtons(t *testing.T) {
 	}
 	if got[1][0].Text != "three" {
 		t.Fatalf("second row first text = %q, want three", got[1][0].Text)
-	}
-}
-
-func TestMakeLanguageKeyboardSkipsUnavailableLanguages(t *testing.T) {
-	originalCodes := config.AppConfig.ValidLangCodes
-	config.AppConfig.ValidLangCodes = []string{"bad-code"}
-	defer func() { config.AppConfig.ValidLangCodes = originalCodes }()
-
-	got := MakeLanguageKeyboard()
-	if got != nil {
-		t.Fatalf("keyboard for unavailable language = %#v, want nil", got)
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 )
 
@@ -279,7 +278,7 @@ func newModerationCtxForTest(bot *gotgbot.Bot, ctx *ext.Context, module *moduleS
 		Msg:    ctx.EffectiveMessage,
 		User:   ctx.EffectiveUser,
 		Ctx:    ctx,
-		Tr:     i18n.MustNewTranslator(lang.GetLanguage(ctx)),
+		Tr:     i18n.English(),
 		Module: module,
 	}
 }

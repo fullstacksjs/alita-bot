@@ -13,7 +13,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/db/rules"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
@@ -39,7 +38,7 @@ func (moduleStruct) clearRules(bot *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	chat := connectedChat
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	var text string
 	if err := rules.SetChatRules(chat.Id, ""); err != nil {
 		log.Errorf("[Rules] Failed to clear rules for chat %d: %v", chat.Id, err)
@@ -67,7 +66,7 @@ func (moduleStruct) privaterules(bot *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	chat := connectedChat
 	args := ctx.Args()
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	var text string
 
 	if len(args) >= 2 {
@@ -143,7 +142,7 @@ func (m moduleStruct) sendRules(bot *gotgbot.Bot, ctx *ext.Context) error {
 		rulesBtn = m.defaultRulesBtn
 	}
 	normalizedRules := normalizeRulesForHTML(rules.Rules)
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	if normalizedRules != "" {
 		temp, _ := tr.GetString("rules_for_chat_header")
 		Text += fmt.Sprintf(temp, html.EscapeString(chat.Title)) + "\n\n"
@@ -195,7 +194,7 @@ func (moduleStruct) setRules(bot *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	chat := connectedChat
 	args := ctx.Args()
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	var text string
 
 	if len(args) == 1 && msg.ReplyToMessage == nil {
@@ -258,7 +257,7 @@ func (m moduleStruct) rulesBtn(bot *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	if len(args) >= 2 {
 		rulesBtnCustomText := strings.Join(args[1:], " ")
 		if len([]rune(rulesBtnCustomText)) > 30 {
@@ -305,7 +304,7 @@ func (moduleStruct) resetRulesBtn(bot *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	chat := connectedChat
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	var text string
 	if err := rules.SetChatRulesButton(chat.Id, ""); err != nil {
 		log.Errorf("[Rules] Failed to clear rules button for chat %d: %v", chat.Id, err)
@@ -350,7 +349,7 @@ func rulesDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, 
 
 	parts := strings.Split(arg, "_")
 	if len(parts) < 2 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("helpers_invalid_deep_link")
 		_, _ = msg.Reply(b, text, formatting.Shtml())
 		return ext.EndGroups
@@ -358,7 +357,7 @@ func rulesDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, 
 
 	chatID, err := strconv.Atoi(parts[1])
 	if err != nil {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("helpers_invalid_deep_link")
 		_, _ = msg.Reply(b, text, formatting.Shtml())
 		return ext.EndGroups
@@ -366,7 +365,7 @@ func rulesDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, 
 
 	chatinfo, err := b.GetChat(int64(chatID), nil)
 	if err != nil || chatinfo == nil {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("helpers_chat_not_found")
 		_, _ = msg.Reply(b, text, formatting.Shtml())
 		return ext.EndGroups
@@ -374,7 +373,7 @@ func rulesDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, 
 
 	_chat := chatinfo.ToChat()
 	if !chat_status.IsUserInChat(b, &_chat, user.Id) {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("helpers_chat_not_found")
 		_, _ = msg.Reply(b, text, formatting.Shtml())
 		return ext.EndGroups
@@ -384,7 +383,7 @@ func rulesDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, 
 	normalizedRules := normalizeRulesForHTML(rulesrc.Rules)
 
 	if normalizedRules == "" {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("rules_not_set")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -394,7 +393,7 @@ func rulesDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, 
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	text, _ := tr.GetString("rules_for_chat", i18n.TranslationParams{
 		"first":  html.EscapeString(chatinfo.Title),
 		"second": normalizedRules,

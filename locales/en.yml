@@ -677,9 +677,6 @@ help_donatetext: "So you want to donate? Amazing!
   All the funds would be put into my services such as database, storage, and hosting!
 
   You can donate by contacting my owner here: @DivideProjectsBot"
-lang_sample: US English
-language_flag: 🇺🇸
-language_name: English
 help_help_msg:
   "The main entry point and navigation system for Alita Robot.
 
@@ -692,16 +689,6 @@ help_help_msg:
   × /about: Show bot information, version, and useful links.
 
   × /donate: Show donation information for supporting the project."
-languages_help_msg: "Not able to change language of the bot?
-
-  Easily change by using this module!
-
-
-  Just type /lang and use inline keyboard to choose a language for yourself or your
-  group.
-
-
-  You can help us bring bot to more languages by helping on [Crowdin](https://crowdin.com/project/alita_robot)"
 locks_help_msg: "*Admin only*:
 
   × /lock `<permission>`: Lock Chat permission..
@@ -1540,7 +1527,6 @@ help_button_about: "About ✨"
 help_button_add_to_chat: "➕ Add me to chat!"
 help_button_add_alita: "➕ Add Alita to chat!"
 help_button_commands_help: "📚 Commands & Help"
-help_button_language: "Language 🌏"
 help_click_button_info: "Click on the button below to get info about me!"
 help_click_here: "Click here for help!"
 help_contact_pm: "Contact me in PM for help!"
@@ -1695,14 +1681,6 @@ reports_user_banned: "User banned!"
 reports_message_deleted: "Message Deleted!"
 
 # Language module additional strings
-language_current_user: "Your Current Language is %s\nChoose a language from keyboard below."
-language_current_group: "This Group's Current Language is %s\nChoose a language from keyboard below."
-language_changed_user: "Your language has been changed to %s"
-language_changed_group: "This group's language has been changed to %s"
-language_admin_required: "You need to be an admin to change the group language."
-language_help_translate: "Help Us Translate 🌎"
-language_invalid_selection: "Invalid language selection."
-
 # Bot updates module additional strings
 bot_updates_need_supergroup: "Sorry, but to use my all my features, you need to convert this group to supergroup."
 bot_updates_thanks_for_adding: "Thanks for adding me in your group!"

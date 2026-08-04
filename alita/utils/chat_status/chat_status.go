@@ -17,7 +17,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/approvals"
 	"github.com/divkix/Alita_Robot/alita/db/connections"
 	"github.com/divkix/Alita_Robot/alita/db/disabling"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
 	"github.com/divkix/Alita_Robot/alita/utils/callbackcodec"
@@ -443,7 +442,7 @@ func IsUserInChat(b *gotgbot.Bot, chat *gotgbot.Chat, userId int64) bool {
 func IsUserConnected(b *gotgbot.Bot, ctx *ext.Context, chatAdmin, botAdmin bool) (chat *gotgbot.Chat) {
 	msg := ctx.EffectiveMessage
 	user := ctx.EffectiveUser
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	if msg == nil || user == nil {
 		return nil
@@ -702,12 +701,7 @@ func ExtractAdminUpdateStatusChange(u *gotgbot.ChatMemberUpdated) bool {
 // sendAnonAdminKeyboard sends an inline keyboard to verify anonymous admin identity.
 // Creates a callback button that anonymous admins can click to prove their admin status.
 func sendAnonAdminKeyboard(b *gotgbot.Bot, msg *gotgbot.Message, chat *gotgbot.Chat) (*gotgbot.Message, error) {
-	// Create a minimal context to get the language
-	ctx := &ext.Context{
-		EffectiveMessage: msg,
-	}
-
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	mainText, _ := tr.GetString("chat_status_anon_confirm")
 	buttonText, _ := tr.GetString("chat_status_anon_prove_admin")
 	callbackData, err := callbackcodec.Encode("anon_admin", map[string]string{

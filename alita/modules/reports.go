@@ -13,7 +13,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/db/reports"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
@@ -48,7 +47,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	if msg.ReplyToMessage == nil {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("reports_reply_to_report")
 		_, _ = msg.Reply(b, text, nil)
 		return ext.EndGroups
@@ -56,7 +55,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	// Check if From is nil (channel posts, deleted users)
 	if msg.ReplyToMessage.From == nil {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("reports_cannot_report_channel")
 		_, _ = msg.Reply(b, text, nil)
 		return ext.EndGroups
@@ -69,7 +68,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 	)
 
 	if msg.ReplyToMessage.From.Id == user.Id {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("reports_cannot_report_self")
 		_, _ = msg.Reply(b, text, nil)
 		return ext.EndGroups
@@ -95,20 +94,20 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	if user.Id == 1087968824 || user.Id == 777000 || user.Id == 136817688 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("reports_expose_yourself")
 		_, _ = msg.Reply(b, text, nil)
 		return ext.EndGroups
 	}
 	if msg.ReplyToMessage.From.Id == 1087968824 || msg.ReplyToMessage.From.Id == 777000 || msg.ReplyToMessage.From.Id == 136817688 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("reports_special_account")
 		_, _ = msg.Reply(b, text, nil)
 		return ext.EndGroups
 	}
 
 	if chat_status.IsUserAdmin(b, chat.Id, user.Id) {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("reports_admin_report")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -136,7 +135,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 	reportedMsgId := msg.ReplyToMessage.MessageId
 
 	if reportedUser.Id == b.Id {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("reports_why_report_myself")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -146,7 +145,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 	if slices.Contains(adminArray, reportedUser.Id) {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("reports_why_report_admin")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -156,7 +155,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	reportTemplate, _ := tr.GetString("reports_message_template")
 	reported := fmt.Sprintf(
 		reportTemplate,
@@ -185,7 +184,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 					{
 						{
 							Text: func() string {
-								tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+								tr := i18n.English()
 								t, _ := tr.GetString("reports_button_message")
 								return t
 							}(),
@@ -195,7 +194,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 					{
 						{
 							Text: func() string {
-								tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+								tr := i18n.English()
 								t, _ := tr.GetString("reports_button_kick")
 								return t
 							}(),
@@ -207,7 +206,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 						},
 						{
 							Text: func() string {
-								tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+								tr := i18n.English()
 								t, _ := tr.GetString("reports_button_ban")
 								return t
 							}(),
@@ -221,7 +220,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 					{
 						{
 							Text: func() string {
-								tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+								tr := i18n.English()
 								t, _ := tr.GetString("reports_button_delete")
 								return t
 							}(),
@@ -235,7 +234,7 @@ func (moduleStruct) report(b *gotgbot.Bot, ctx *ext.Context) error {
 					{
 						{
 							Text: func() string {
-								tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+								tr := i18n.English()
 								t, _ := tr.GetString("reports_button_resolved")
 								return t
 							}(),
@@ -296,7 +295,7 @@ func (moduleStruct) reports(b *gotgbot.Bot, ctx *ext.Context) error {
 		action := strings.ToLower(args[0])
 		switch action {
 		case "on", "yes", "true":
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			if msg.Chat.Type == "private" {
 				err := reports.SetUserReportSettings(user.Id, true)
 				if err != nil {
@@ -313,7 +312,7 @@ func (moduleStruct) reports(b *gotgbot.Bot, ctx *ext.Context) error {
 				}
 			}
 		case "off", "no", "false":
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			if msg.Chat.Type == "private" {
 				err := reports.SetUserReportSettings(user.Id, false)
 				if err != nil {
@@ -330,7 +329,7 @@ func (moduleStruct) reports(b *gotgbot.Bot, ctx *ext.Context) error {
 				}
 			}
 		case "block":
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			if msg.Chat.Type == "private" {
 				replyText, _ = tr.GetString("reports_group_only")
 			} else {
@@ -354,7 +353,7 @@ func (moduleStruct) reports(b *gotgbot.Bot, ctx *ext.Context) error {
 				}
 			}
 		case "unblock":
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			if msg.Chat.Type == "private" {
 				replyText, _ = tr.GetString("reports_group_only")
 			} else {
@@ -378,7 +377,7 @@ func (moduleStruct) reports(b *gotgbot.Bot, ctx *ext.Context) error {
 				}
 			}
 		case "showblocklist":
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			if msg.Chat.Type == "private" {
 				replyText, _ = tr.GetString("reports_group_only")
 			} else {
@@ -403,11 +402,11 @@ func (moduleStruct) reports(b *gotgbot.Bot, ctx *ext.Context) error {
 				}
 			}
 		default:
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			replyText, _ = tr.GetString("reports_invalid_input")
 		}
 	} else {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		if msg.Chat.Type == "private" {
 			rStatus := reports.GetUserReportSettings(user.Id).Status
 			if rStatus {
@@ -448,7 +447,7 @@ func (moduleStruct) markResolvedButtonHandler(b *gotgbot.Bot, ctx *ext.Context) 
 		return ext.EndGroups
 	}
 	msg := query.Message
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	if msg == nil {
 		text, _ := tr.GetString("common_callback_invalid_request")
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})

@@ -135,7 +135,7 @@ func WarnUser(userId, chatId int64, reason string) (int, []string, error) {
 			}
 			warnrc.Reasons = append(warnrc.Reasons, reason)
 		} else {
-			tr := i18n.MustNewTranslator("en")
+			tr := i18n.English()
 			noReason, _ := tr.GetString("db_warn_no_reason")
 			if noReason == "" {
 				noReason = "No Reason"
@@ -241,7 +241,7 @@ func GetWarns(userId, chatId int64) (int, []string) {
 	}
 	cached, err := cache.GetFromCacheOrLoad(
 		cache.CacheKey("warns", userId, chatId),
-		cache.CacheTTLLanguage,
+		cache.CacheTTLWarns,
 		func() (warnCache, error) {
 			w := checkWarns(userId, chatId)
 			return warnCache{NumWarns: w.NumWarns, Reasons: []string(w.Reasons)}, nil
@@ -289,7 +289,7 @@ func SetWarnMode(chatId int64, warnMode string) error {
 func GetWarnSetting(chatId int64) *models.WarnSettings {
 	cached, err := cache.GetFromCacheOrLoad(
 		cache.CacheKey("warn_settings", chatId),
-		cache.CacheTTLLanguage,
+		cache.CacheTTLWarns,
 		func() (*models.WarnSettings, error) {
 			return checkWarnSettings(chatId), nil
 		},

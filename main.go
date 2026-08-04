@@ -94,12 +94,11 @@ func main() {
 	}
 	log.Info("Cache system initialized successfully")
 
-	// Initialize the process-local locale maps.
-	localeManager := i18n.GetManager()
-	if err := localeManager.Initialize(&Locales, "locales", i18n.DefaultManagerConfig()); err != nil {
+	// Initialize the process-local locale maps (English only).
+	if err := i18n.GetManager().Initialize(&Locales, "locales"); err != nil {
 		log.Fatalf("Failed to initialize locale manager: %v", err)
 	}
-	log.Infof("Locale manager initialized with %d languages: %v", len(localeManager.GetAvailableLanguages()), localeManager.GetAvailableLanguages())
+	log.Info("Locale manager initialized")
 
 	// Initialize OpenTelemetry tracing
 	if err := tracing.InitTracing(); err != nil {
@@ -451,8 +450,8 @@ func postInit(b *gotgbot.Bot, d *ext.Dispatcher, username string, mode string) {
 
 	config.AppConfig.WorkingMode = mode
 
-	// Set Commands of Bot (use English for bot commands)
-	tr := i18n.MustNewTranslator("en")
+	// Set Commands of Bot
+	tr := i18n.English()
 	startDesc, _ := tr.GetString("main_bot_command_start")
 	helpDesc, _ := tr.GetString("main_bot_command_help")
 	_, err := b.SetMyCommands(

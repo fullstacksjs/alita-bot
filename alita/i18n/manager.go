@@ -6,23 +6,31 @@ import (
 	"sync"
 )
 
+const (
+	// DefaultLanguage is the only user-facing locale the bot ships.
+	DefaultLanguage = "en"
+	// ConfigLanguage is the pseudo-locale backed by locales/config.yml. It holds
+	// command alt_names and db_default_* strings rather than user-facing text.
+	ConfigLanguage = "config"
+)
+
 var (
 	managerInstance *LocaleManager
 	managerOnce     sync.Once
 )
 
+// GetManager returns the process-wide LocaleManager singleton.
 func GetManager() *LocaleManager {
 	managerOnce.Do(func() {
 		managerInstance = &LocaleManager{
-			localeMaps:  make(map[string]map[string]any),
-			defaultLang: "en",
+			localeMaps: make(map[string]map[string]any),
 		}
 	})
 	return managerInstance
 }
 
-// Initialize initializes the LocaleManager with the provided configuration.
-func (lm *LocaleManager) Initialize(fs *embed.FS, localePath string, config ManagerConfig) error {
+// Initialize loads the embedded locale files. It is called once from main().
+func (lm *LocaleManager) Initialize(fs *embed.FS, localePath string) error {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
 
@@ -33,27 +41,20 @@ func (lm *LocaleManager) Initialize(fs *embed.FS, localePath string, config Mana
 
 	lm.localeFS = fs
 	lm.localePath = localePath
-	lm.defaultLang = config.Loader.DefaultLanguage
 
-	// Load all locale files
 	if err := lm.loadLocaleFiles(); err != nil {
-		if config.Loader.StrictMode {
-			return NewI18nError("initialize", "", "", "failed to load locale files", err)
-		}
-		// In non-strict mode, log error but continue
-		fmt.Printf("Warning: failed to load some locale files: %v\n", err)
+		return NewI18nError("initialize", "", "", "failed to load locale files", err)
 	}
 
-	// Validate default language exists
-	if _, exists := lm.localeMaps[lm.defaultLang]; !exists {
-		return NewI18nError("initialize", lm.defaultLang, "", "default language not found", ErrLocaleNotFound)
+	if _, exists := lm.localeMaps[DefaultLanguage]; !exists {
+		return NewI18nError("initialize", DefaultLanguage, "", "default language not found", ErrLocaleNotFound)
 	}
 
 	return nil
 }
 
-// GetTranslator returns a translator for the specified language.
-func (lm *LocaleManager) GetTranslator(langCode string) (*Translator, error) {
+// getTranslator returns a translator for an already-loaded locale map.
+func (lm *LocaleManager) getTranslator(langCode string) (*Translator, error) {
 	lm.mu.RLock()
 	defer lm.mu.RUnlock()
 
@@ -61,33 +62,14 @@ func (lm *LocaleManager) GetTranslator(langCode string) (*Translator, error) {
 		return nil, NewI18nError("get_translator", langCode, "", "manager not initialized", ErrManagerNotInit)
 	}
 
-	// Check if language exists, fallback to default if not
-	targetLang := langCode
 	data, exists := lm.localeMaps[langCode]
 	if !exists {
-		// Fallback to default language
-		targetLang = lm.defaultLang
-		data = lm.localeMaps[lm.defaultLang]
-		if data == nil {
-			return nil, NewI18nError("get_translator", langCode, "", "default language data not found", ErrLocaleNotFound)
-		}
+		return nil, NewI18nError("get_translator", langCode, "", "locale not loaded", ErrLocaleNotFound)
 	}
 
 	return &Translator{
-		langCode: targetLang,
+		langCode: langCode,
 		manager:  lm,
 		data:     data,
 	}, nil
-}
-
-// GetAvailableLanguages returns a slice of all available language codes.
-func (lm *LocaleManager) GetAvailableLanguages() []string {
-	lm.mu.RLock()
-	defer lm.mu.RUnlock()
-
-	languages := make([]string, 0, len(lm.localeMaps))
-	for langCode := range lm.localeMaps {
-		languages = append(languages, langCode)
-	}
-	return languages
 }

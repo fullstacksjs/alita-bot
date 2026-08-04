@@ -21,7 +21,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/divkix/Alita_Robot/alita/db/antiraid"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
@@ -502,7 +501,7 @@ func (a *antiRaidStruct) onJoin(bot *gotgbot.Bot, ctx *ext.Context) error {
 			}
 			log.Infof("[AntiRaid] Auto-triggered raid in chat %d (joins=%d >= threshold=%d)", chat.Id, count, settings.AutoAntiRaidThreshold)
 
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			text, _ := tr.GetString("antiraid_auto_triggered", i18n.TranslationParams{"count": strconv.Itoa(count)})
 			_, _ = chat.SendMessage(bot, text, formatting.Shtml())
 
@@ -534,7 +533,7 @@ func (a *antiRaidStruct) antiraid(bot *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	args := ctx.Args()[1:]
 
 	if len(args) == 0 {
@@ -665,7 +664,7 @@ func (a *antiRaidStruct) raidTimeSetter(bot *gotgbot.Bot, ctx *ext.Context, isRa
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	args := ctx.Args()[1:]
 	if len(args) == 0 {
 		text := ""
@@ -744,7 +743,7 @@ func (a *antiRaidStruct) autoAntiRaid(bot *gotgbot.Bot, ctx *ext.Context) error 
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	args := ctx.Args()[1:]
 	if len(args) == 0 {
 		settings := antiraid.GetAntiRaidSettings(chat.Id)
@@ -821,7 +820,7 @@ func (a *antiRaidStruct) callbackHandler(bot *gotgbot.Bot, ctx *ext.Context) err
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	switch action {
 	case "on":
 		settings := antiraid.GetAntiRaidSettings(chatID)

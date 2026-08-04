@@ -170,7 +170,6 @@ func ReverseHTML2MD(text string) string {
 // Handles variables like {first}, {last}, {username}, {mention}, {count}, {chatname}, {id}.
 // Also processes rules button insertion with various positioning options.
 func FormattingReplacer(b *gotgbot.Bot, chat *gotgbot.Chat, user *gotgbot.User, oldMsg string, buttons []db.Button) (res string, btns []db.Button) {
-	const language = "en"
 	var (
 		firstName     string
 		lastName      string
@@ -181,7 +180,7 @@ func FormattingReplacer(b *gotgbot.Bot, chat *gotgbot.Chat, user *gotgbot.User, 
 	)
 
 	if user == nil {
-		tr := i18n.MustNewTranslator(language)
+		tr := i18n.English()
 		personNoName, _ := tr.GetString("helpers_person_no_name")
 		if personNoName == "" {
 			personNoName = "PersonWithNoName"
@@ -193,7 +192,7 @@ func FormattingReplacer(b *gotgbot.Bot, chat *gotgbot.Chat, user *gotgbot.User, 
 	} else {
 		firstName = user.FirstName
 		if len(user.FirstName) <= 0 {
-			tr := i18n.MustNewTranslator(language)
+			tr := i18n.English()
 			personNoName, _ := tr.GetString("helpers_person_no_name")
 			if personNoName == "" {
 				personNoName = "PersonWithNoName"
@@ -251,7 +250,7 @@ func FormattingReplacer(b *gotgbot.Bot, chat *gotgbot.Chat, user *gotgbot.User, 
 
 	rulesBtnText := rulesDb.RulesBtn
 	if rulesBtnText == "" {
-		tr := i18n.MustNewTranslator(language)
+		tr := i18n.English()
 		defaultRulesText, _ := tr.GetString("button_rules_default")
 		if defaultRulesText == "" {
 			defaultRulesText = "Rules"

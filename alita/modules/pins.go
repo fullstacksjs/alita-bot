@@ -14,7 +14,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/db/pins"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
@@ -125,7 +124,7 @@ func (moduleStruct) unpinallCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	chat := ctx.EffectiveChat
 	user := query.From
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	if user.Id == 0 {
 		text, _ := tr.GetString("common_callback_invalid_request")
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
@@ -171,7 +170,7 @@ func (moduleStruct) unpinallCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 			log.Errorf("[Pin] UnpinAllChatMessages returned false for chat %d", chat.Id)
 			return fmt.Errorf("UnpinAllChatMessages failed for chat %d", chat.Id)
 		}
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("pins_unpin_all_success")
 		if query.Message == nil {
 			_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
@@ -184,7 +183,7 @@ func (moduleStruct) unpinallCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 		}
 		_, _ = query.Answer(b, nil)
 	case "no":
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("pins_unpin_all_cancelled")
 		if query.Message == nil {
 			_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
@@ -383,7 +382,7 @@ func (moduleStruct) antichannelpin(b *gotgbot.Bot, ctx *ext.Context) error {
 	if len(args) >= 2 {
 		switch strings.ToLower(args[1]) {
 		case "on", "yes", "true":
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			if err := pins.SetAntiChannelPin(chat.Id, true); err != nil {
 				log.Errorf("[Pins] SetAntiChannelPin failed for chat %d: %v", chat.Id, err)
 				errText, _ := tr.GetString("common_settings_save_failed")
@@ -397,7 +396,7 @@ func (moduleStruct) antichannelpin(b *gotgbot.Bot, ctx *ext.Context) error {
 				return err
 			}
 		case "off", "no", "false":
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			if err := pins.SetAntiChannelPin(chat.Id, false); err != nil {
 				log.Errorf("[Pins] SetAntiChannelPin failed for chat %d: %v", chat.Id, err)
 				errText, _ := tr.GetString("common_settings_save_failed")
@@ -411,7 +410,7 @@ func (moduleStruct) antichannelpin(b *gotgbot.Bot, ctx *ext.Context) error {
 				return err
 			}
 		default:
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			text, _ := tr.GetString("pins_input_not_recognized")
 			_, err := msg.Reply(b, text, formatting.Shtml())
 			if err != nil {
@@ -422,7 +421,7 @@ func (moduleStruct) antichannelpin(b *gotgbot.Bot, ctx *ext.Context) error {
 	} else {
 		pinprefs := pins.GetPinData(chat.Id)
 		if pinprefs.AntiChannelPin {
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			temp, _ := tr.GetString("pins_antichannelpin_current_enabled")
 			text := fmt.Sprintf(temp, chat.Title)
 			_, err := msg.Reply(b, text, formatting.Shtml())
@@ -431,7 +430,7 @@ func (moduleStruct) antichannelpin(b *gotgbot.Bot, ctx *ext.Context) error {
 				return err
 			}
 		} else {
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			temp, _ := tr.GetString("pins_antichannelpin_current_disabled")
 			text := fmt.Sprintf(temp, chat.Title)
 			_, err := msg.Reply(b, text, formatting.Shtml())
@@ -463,7 +462,7 @@ func (moduleStruct) cleanlinked(b *gotgbot.Bot, ctx *ext.Context) error {
 	if len(args) >= 2 {
 		switch strings.ToLower(args[1]) {
 		case "on", "yes", "true":
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			if err := pins.SetCleanLinked(chat.Id, true); err != nil {
 				log.Errorf("[Pins] SetCleanLinked failed for chat %d: %v", chat.Id, err)
 				errText, _ := tr.GetString("common_settings_save_failed")
@@ -477,7 +476,7 @@ func (moduleStruct) cleanlinked(b *gotgbot.Bot, ctx *ext.Context) error {
 				return err
 			}
 		case "off", "no", "false":
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			if err := pins.SetCleanLinked(chat.Id, false); err != nil {
 				log.Errorf("[Pins] SetCleanLinked failed for chat %d: %v", chat.Id, err)
 				errText, _ := tr.GetString("common_settings_save_failed")
@@ -491,7 +490,7 @@ func (moduleStruct) cleanlinked(b *gotgbot.Bot, ctx *ext.Context) error {
 				return err
 			}
 		default:
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			text, _ := tr.GetString("pins_input_not_recognized")
 			_, err := msg.Reply(b, text, formatting.Shtml())
 			if err != nil {
@@ -502,7 +501,7 @@ func (moduleStruct) cleanlinked(b *gotgbot.Bot, ctx *ext.Context) error {
 	} else {
 		pinprefs := pins.GetPinData(chat.Id)
 		if pinprefs.CleanLinked {
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			temp, _ := tr.GetString("pins_cleanlinked_current_enabled")
 			text := fmt.Sprintf(temp, chat.Title)
 			_, err := msg.Reply(b, text, formatting.Shtml())
@@ -511,7 +510,7 @@ func (moduleStruct) cleanlinked(b *gotgbot.Bot, ctx *ext.Context) error {
 				return err
 			}
 		} else {
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			temp, _ := tr.GetString("pins_cleanlinked_current_disabled")
 			text := fmt.Sprintf(temp, chat.Title)
 			_, err := msg.Reply(b, text, formatting.Shtml())

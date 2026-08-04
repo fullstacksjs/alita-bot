@@ -131,10 +131,6 @@ func TestLoadConfig(t *testing.T) {
 		if len(cfg.AllowedUpdates) == 0 {
 			t.Errorf("AllowedUpdates: expected non-empty slice")
 		}
-		// ValidLangCodes should default to ["en"]
-		if len(cfg.ValidLangCodes) != 1 || cfg.ValidLangCodes[0] != "en" {
-			t.Errorf("ValidLangCodes: got %v, want [en]", cfg.ValidLangCodes)
-		}
 	})
 
 	t.Run("webhook config loaded correctly", func(t *testing.T) {

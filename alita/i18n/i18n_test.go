@@ -211,7 +211,6 @@ func TestPredefinedErrorsDistinct(t *testing.T) {
 		{"ErrKeyNotFound", ErrKeyNotFound},
 		{"ErrInvalidYAML", ErrInvalidYAML},
 		{"ErrManagerNotInit", ErrManagerNotInit},
-		{"ErrRecursiveFallback", ErrRecursiveFallback},
 	}
 
 	for i, a := range predefined {
@@ -304,11 +303,10 @@ func newTestTranslator(t *testing.T, yamlContent string) *Translator {
 		t.Fatalf("parseYAML() error = %v", err)
 	}
 	lm := &LocaleManager{
-		defaultLang: "en",
-		localeMaps:  map[string]map[string]any{"en": data},
+		localeMaps: map[string]map[string]any{DefaultLanguage: data},
 	}
 	return &Translator{
-		langCode: "en",
+		langCode: DefaultLanguage,
 		manager:  lm,
 		data:     data,
 	}
@@ -376,154 +374,66 @@ templ: "Hello, %s!"
 	})
 }
 
-// ---- LocaleManager.GetTranslator ----
+// ---- Locale resolution ----
 
-func TestLocaleManagerGetTranslator(t *testing.T) {
+func TestEnglishAndConfigNeverReturnNil(t *testing.T) {
 	t.Parallel()
 
-	const enYAML = "language_name: English\n"
+	// The package singleton is not initialized in unit tests, so both helpers
+	// degrade to a bare translator rather than returning nil.
+	if English() == nil {
+		t.Fatal("English() returned nil")
+	}
+	if Config() == nil {
+		t.Fatal("Config() returned nil")
+	}
+}
 
-	data, err := parseYAML([]byte(enYAML))
+func TestGetTranslatorRequiresInitializedManager(t *testing.T) {
+	t.Parallel()
+
+	data, err := parseYAML([]byte("language_name: English\n"))
 	if err != nil {
 		t.Fatalf("parseYAML() error = %v", err)
 	}
 
-	// Use a local (non-singleton) LocaleManager to avoid contaminating global state.
-	// We embed a minimal FS pointer placeholder — use the trick of setting localeFS
-	// to a non-nil value via the embed pointer is not straightforward without go:embed.
-	// Instead, we bypass the localeFS nil check by setting localeMaps so GetTranslator
-	// can succeed when localeFS check is bypassed. Since GetTranslator checks localeFS,
-	// we test via the singleton initialized from main, or use MustNewTranslator.
-
-	// Verify MustNewTranslator returns a non-nil translator for known language.
-	// The singleton may or may not be initialized (no embed FS in unit tests),
-	// so MustNewTranslator returns a bare translator — that is still non-nil.
-	t.Run("MustNewTranslator returns non-nil translator", func(t *testing.T) {
-		t.Parallel()
-
-		tr := MustNewTranslator("en")
-		if tr == nil {
-			t.Fatal("MustNewTranslator('en') returned nil")
-		}
-	})
-
-	t.Run("MustNewTranslator unknown locale falls back to non-nil translator", func(t *testing.T) {
-		t.Parallel()
-
-		tr := MustNewTranslator("xx_unknown_locale")
-		if tr == nil {
-			t.Fatal("MustNewTranslator(unknown) returned nil")
-		}
-	})
-
-	t.Run("direct GetTranslator on local manager with data returns translator", func(t *testing.T) {
-		t.Parallel()
-
-		lm := &LocaleManager{
-			defaultLang: "en",
-			localeMaps:  map[string]map[string]any{"en": data},
-		}
-
-		// localeFS is nil so GetTranslator returns ErrManagerNotInit.
-		// Verify the error is correct.
-		_, getErr := lm.GetTranslator("en")
-		if getErr == nil {
-			t.Fatal("expected error when localeFS is nil, got nil")
-		}
-		if !errors.Is(getErr, ErrManagerNotInit) {
-			t.Fatalf("expected ErrManagerNotInit, got: %v", getErr)
-		}
-	})
-}
-
-// ---- LocaleManager.GetAvailableLocales ----
-
-func TestLocaleManagerGetAvailableLocales(t *testing.T) {
-	t.Parallel()
-
-	// Build a local LocaleManager with known locales.
 	lm := &LocaleManager{
-		defaultLang: "en",
-		localeMaps: map[string]map[string]any{
-			"en": {"language_name": "English"},
-			"es": {"language_name": "Spanish"},
-			"fr": {"language_name": "French"},
-			"hi": {"language_name": "Hindi"},
-		},
+		localeMaps: map[string]map[string]any{DefaultLanguage: data},
 	}
 
-	langs := lm.GetAvailableLanguages()
-	if len(langs) < 4 {
-		t.Fatalf("GetAvailableLanguages() returned %d languages, want at least 4: %v", len(langs), langs)
-	}
-
-	// Verify all 4 known locales are present.
-	langSet := make(map[string]bool, len(langs))
-	for _, l := range langs {
-		langSet[l] = true
-	}
-
-	for _, required := range []string{"en", "es", "fr", "hi"} {
-		if !langSet[required] {
-			t.Fatalf("GetAvailableLanguages() missing %q; got: %v", required, langs)
-		}
+	// localeFS is nil so getTranslator returns ErrManagerNotInit.
+	if _, getErr := lm.getTranslator(DefaultLanguage); !errors.Is(getErr, ErrManagerNotInit) {
+		t.Fatalf("getTranslator() error = %v, want ErrManagerNotInit", getErr)
 	}
 }
 
 func newTestLocaleManager() *LocaleManager {
 	return &LocaleManager{
-		defaultLang: "en",
-		localeMaps:  make(map[string]map[string]any),
+		localeMaps: make(map[string]map[string]any),
 	}
 }
 
 func TestLocaleManagerInitializeLoadsEmbeddedLocales(t *testing.T) {
 	t.Parallel()
 
-	cfg := DefaultManagerConfig()
-	cfg.Loader.DefaultLanguage = "en"
-	cfg.Loader.StrictMode = true
-
 	lm := newTestLocaleManager()
-	if err := lm.Initialize(&testLocaleFS, "testdata/locales", cfg); err != nil {
+	if err := lm.Initialize(&testLocaleFS, "testdata/locales"); err != nil {
 		t.Fatalf("Initialize() error = %v", err)
 	}
 
-	langs := lm.GetAvailableLanguages()
-	langSet := make(map[string]bool, len(langs))
-	for _, lang := range langs {
-		langSet[lang] = true
+	if _, ok := lm.localeMaps["ignored"]; ok {
+		t.Fatal("Initialize() loaded a non-YAML entry")
 	}
-	for _, want := range []string{"en", "es"} {
-		if !langSet[want] {
-			t.Fatalf("Initialize() languages = %v, want %q", langs, want)
-		}
-	}
-	if langSet["ignored"] || langSet["skipped"] {
-		t.Fatalf("Initialize() loaded non-locale entries: %v", langs)
+	if _, ok := lm.localeMaps["skipped"]; ok {
+		t.Fatal("Initialize() descended into a nested directory")
 	}
 
-	es, err := lm.GetTranslator("es")
+	en, err := lm.getTranslator(DefaultLanguage)
 	if err != nil {
-		t.Fatalf("GetTranslator(es) error = %v", err)
-	}
-	got, err := es.GetString("hello", TranslationParams{"user": "Ada"})
-	if err != nil {
-		t.Fatalf("GetString(hello) error = %v", err)
-	}
-	if got != "Hola, Ada!" {
-		t.Fatalf("GetString(hello) = %q, want %q", got, "Hola, Ada!")
+		t.Fatalf("getTranslator(en) error = %v", err)
 	}
 
-	fallback, err := lm.GetTranslator("missing")
-	if err != nil {
-		t.Fatalf("GetTranslator(missing) error = %v", err)
-	}
-	if fallback.langCode != "en" {
-		t.Fatalf("fallback translator langCode = %q, want %q", fallback.langCode, "en")
-	}
-
-	items, err := fallback.GetStringSlice("items")
+	items, err := en.GetStringSlice("items")
 	if err != nil {
 		t.Fatalf("GetStringSlice(items) error = %v", err)
 	}
@@ -531,20 +441,21 @@ func TestLocaleManagerInitializeLoadsEmbeddedLocales(t *testing.T) {
 		t.Fatalf("GetStringSlice(items) = %v, want [one two]", items)
 	}
 
-	if err := lm.Initialize(&testLocaleFS, "testdata/locales", cfg); err == nil {
+	// Unknown locales are no longer silently mapped onto English.
+	if _, err := lm.getTranslator("missing"); !errors.Is(err, ErrLocaleNotFound) {
+		t.Fatalf("getTranslator(missing) error = %v, want ErrLocaleNotFound", err)
+	}
+
+	if err := lm.Initialize(&testLocaleFS, "testdata/locales"); err == nil {
 		t.Fatal("second Initialize() call returned nil, want already initialized error")
 	}
 }
 
-func TestLocaleManagerInitializeStrictModeReturnsLoadError(t *testing.T) {
+func TestLocaleManagerInitializeReturnsLoadError(t *testing.T) {
 	t.Parallel()
 
-	cfg := DefaultManagerConfig()
-	cfg.Loader.DefaultLanguage = "en"
-	cfg.Loader.StrictMode = true
-
 	lm := newTestLocaleManager()
-	err := lm.Initialize(&testLocaleFS, "testdata/badlocales", cfg)
+	err := lm.Initialize(&testLocaleFS, "testdata/badlocales")
 	if err == nil {
 		t.Fatal("Initialize() with invalid locale returned nil error")
 	}
@@ -553,15 +464,11 @@ func TestLocaleManagerInitializeStrictModeReturnsLoadError(t *testing.T) {
 	}
 }
 
-func TestLocaleManagerInitializeNonStrictStillRequiresDefault(t *testing.T) {
+func TestLocaleManagerInitializeRequiresDefaultLanguage(t *testing.T) {
 	t.Parallel()
 
-	cfg := DefaultManagerConfig()
-	cfg.Loader.DefaultLanguage = "en"
-	cfg.Loader.StrictMode = false
-
 	lm := newTestLocaleManager()
-	err := lm.Initialize(&testLocaleFS, "testdata/nodefault", cfg)
+	err := lm.Initialize(&testLocaleFS, "testdata/nodefault")
 	if err == nil {
 		t.Fatal("Initialize() without default language returned nil error")
 	}
@@ -595,13 +502,9 @@ func TestTranslator_GetString_NilManager(t *testing.T) {
 	}
 }
 
-func TestTranslator_GetString_FallbackToDefault(t *testing.T) {
+func TestTranslator_GetString_ReturnsEnglishValue(t *testing.T) {
 	t.Parallel()
 
-	// "en" has the key, "es" does not — "es" translator should fall back to "en" value.
-	// Note: localeFS is nil so GetTranslator returns ErrManagerNotInit, which means
-	// we can't truly test multi-lang fallback without an embedded FS.
-	// Instead we verify that a translator with the default lang returns the correct value.
 	const enYAML = "fallback_key: \"en value\"\n"
 	tr := newTestTranslator(t, enYAML)
 
@@ -696,30 +599,5 @@ items:
 	}
 	if !errors.Is(err, ErrKeyNotFound) {
 		t.Fatalf("GetStringSlice(missing) error = %v, want ErrKeyNotFound", err)
-	}
-}
-
-func TestTranslator_GetStringSlice_FallsBackToDefaultLanguage(t *testing.T) {
-	t.Parallel()
-
-	cfg := DefaultManagerConfig()
-	cfg.Loader.DefaultLanguage = "en"
-	cfg.Loader.StrictMode = true
-
-	lm := newTestLocaleManager()
-	if err := lm.Initialize(&testLocaleFS, "testdata/locales", cfg); err != nil {
-		t.Fatalf("Initialize() error = %v", err)
-	}
-	tr, err := lm.GetTranslator("es")
-	if err != nil {
-		t.Fatalf("GetTranslator(es) error = %v", err)
-	}
-
-	items, err := tr.GetStringSlice("items")
-	if err != nil {
-		t.Fatalf("GetStringSlice(items fallback) error = %v", err)
-	}
-	if len(items) != 2 || items[0] != "one" || items[1] != "two" {
-		t.Fatalf("GetStringSlice(items fallback) = %v, want [one two]", items)
 	}
 }

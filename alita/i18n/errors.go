@@ -39,9 +39,8 @@ func NewI18nError(op, lang, key, message string, err error) *I18nError {
 
 // Predefined error types
 var (
-	ErrLocaleNotFound    = fmt.Errorf("locale not found")
-	ErrKeyNotFound       = fmt.Errorf("translation key not found")
-	ErrInvalidYAML       = fmt.Errorf("invalid YAML format")
-	ErrManagerNotInit    = fmt.Errorf("locale manager not initialized")
-	ErrRecursiveFallback = fmt.Errorf("recursive fallback detected")
+	ErrLocaleNotFound = fmt.Errorf("locale not found")
+	ErrKeyNotFound    = fmt.Errorf("translation key not found")
+	ErrInvalidYAML    = fmt.Errorf("invalid YAML format")
+	ErrManagerNotInit = fmt.Errorf("locale manager not initialized")
 )
