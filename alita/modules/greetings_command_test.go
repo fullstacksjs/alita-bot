@@ -778,8 +778,8 @@ func TestPendingJoinRequestAndCallbacks(t *testing.T) {
 	if err := greetingsModule.pendingJoins(bot, ctx); err != ext.ContinueGroups {
 		t.Fatalf("pendingJoins error = %v, want ContinueGroups", err)
 	}
-	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
-		t.Fatalf("sendMessage calls = %d, want join request notice", len(calls))
+	if calls := client.callsFor("sendMessage"); len(calls) != 0 {
+		t.Fatalf("sendMessage calls = %d, want no join request notice", len(calls))
 	}
 
 	data := encodeCallbackData(
@@ -1062,14 +1062,6 @@ func TestJoinRequestFlowPropagatesGotgbotRequestErrors(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:   "pending join notice",
-			method: "sendMessage",
-			build: func(bot *gotgbot.Bot, chat gotgbot.Chat) *ext.Context {
-				return newJoinRequestContext(bot, chat, applicant)
-			},
-			run: greetingsModule.pendingJoins,
-		},
-		{
 			name:   "auto approve join request",
 			method: "approveChatJoinRequest",
 			build: func(bot *gotgbot.Bot, chat gotgbot.Chat) *ext.Context {
@@ -1145,9 +1137,6 @@ func TestJoinRequestFlowPropagatesGotgbotRequestErrors(t *testing.T) {
 			err := tt.run(bot, tt.build(bot, chat))
 			if !errors.Is(err, requestErr) {
 				t.Fatalf("%s returned error %v, want request error", tt.name, err)
-			}
-			if tt.name == "pending join notice" && greetingsModule.loadPendingJoins(chat.Id, applicant.Id) {
-				t.Fatal("failed join notice suppressed a future retry")
 			}
 		})
 	}

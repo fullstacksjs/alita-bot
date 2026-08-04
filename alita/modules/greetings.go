@@ -882,75 +882,24 @@ func (moduleStruct) cleanService(bot *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.EndGroups
 }
 
-// pendingJoins handles chat join requests and creates approval buttons for admins.
-// Auto-approves if enabled, otherwise presents approve/decline/ban options to admins.
+// pendingJoins handles chat join requests.
+// Auto-approves join requests if auto-approve is enabled for the chat.
 func (m moduleStruct) pendingJoins(bot *gotgbot.Bot, ctx *ext.Context) error {
 	defer error_handling.RecoverFromPanic("Greetings", "pendingJoins")
 
 	chat := ctx.ChatJoinRequest.Chat
 	user := ctx.ChatJoinRequest.From
-	joinReqStr := "join_request"
 
-	if !m.loadPendingJoins(chat.Id, user.Id) {
-
-		// auto approve join requests
-		if greetings.GetGreetingSettings(chat.Id).ShouldAutoApprove {
-			if _, err := bot.ApproveChatJoinRequest(chat.Id, user.Id, nil); err != nil {
-				if helpers.IsExpectedTelegramError(err) {
-					log.Debugf("[Greetings] Expected error auto-approving join for user %d in chat %d: %v", user.Id, chat.Id, err)
-				} else {
-					log.Error(err)
-					return err
-				}
+	// auto approve join requests if enabled
+	if greetings.GetGreetingSettings(chat.Id).ShouldAutoApprove {
+		if _, err := bot.ApproveChatJoinRequest(chat.Id, user.Id, nil); err != nil {
+			if helpers.IsExpectedTelegramError(err) {
+				log.Debugf("[Greetings] Expected error auto-approving join for user %d in chat %d: %v", user.Id, chat.Id, err)
+			} else {
+				log.Error(err)
+				return err
 			}
-			return ext.ContinueGroups
 		}
-
-		tr := i18n.English()
-		newUserText, _ := tr.GetString("greetings_join_request_new")
-		approveText, _ := tr.GetString("greetings_join_request_approve_btn")
-		declineText, _ := tr.GetString("greetings_join_request_decline_btn")
-		banText, _ := tr.GetString("greetings_join_request_ban_btn")
-		userInfoTemplate, _ := tr.GetString("format_user_info")
-		userIdTemplate, _ := tr.GetString("format_user_id")
-
-		_, err := helpers.SendMessageWithErrorHandling(
-			bot,
-			chat.Id,
-			fmt.Sprint(
-				newUserText,
-				"\n"+fmt.Sprintf(userInfoTemplate, formatting.MentionHtml(user.Id, user.FirstName)),
-				"\n"+fmt.Sprintf(userIdTemplate, user.Id),
-			),
-			&gotgbot.SendMessageOpts{
-				ParseMode: formatting.HTML,
-				ReplyMarkup: gotgbot.InlineKeyboardMarkup{
-					InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
-						{
-							{
-								Text:         approveText,
-								CallbackData: encodeCallbackData(joinReqStr, map[string]string{"a": "accept", "u": fmt.Sprint(user.Id)}),
-							},
-							{
-								Text:         declineText,
-								CallbackData: encodeCallbackData(joinReqStr, map[string]string{"a": "decline", "u": fmt.Sprint(user.Id)}),
-							},
-						},
-						{
-							{
-								Text:         banText,
-								CallbackData: encodeCallbackData(joinReqStr, map[string]string{"a": "ban", "u": fmt.Sprint(user.Id)}),
-							},
-						},
-					},
-				},
-			},
-		)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		m.setPendingJoins(chat.Id, user.Id)
 	}
 
 	return ext.ContinueGroups
