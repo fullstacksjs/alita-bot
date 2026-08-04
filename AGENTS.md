@@ -204,8 +204,15 @@ translation checks, and docs drift checks. `goreleaser` (**v2.13.0**, deletes an
 pre-existing release for the tag to handle tag moves) then runs, followed by
 `attest-artifacts` (SLSA `attest-build-provenance` over `dist/*`) and
 `post-release-scan` (Trivy `CRITICAL,HIGH`, `exit-code:0`, informational).
-GoReleaser's `dockers_v2` publishes GHCR `{{.Tag}}`, `{{.Version}}`, **`latest`**
-(only the release path publishes `latest`).
+GoReleaser's `dockers_v2` publishes `ghcr.io/fullstacksjs/alita-bot` with tags
+`{{.Tag}}`, `{{.Version}}`, **`latest`** (only the release path publishes
+`latest`). ⚠️ The image name is **hardcoded** in `.goreleaser.yaml` — it is
+deliberately the repo name (`alita-bot`), not `{{ .ProjectName }}`
+(`alita_robot`), so release images land in the same GHCR package `ci.yml`
+pushes `dev`/`<sha7>` to via `ghcr.io/${{ github.repository }}`. Keep
+`org.opencontainers.image.source` pointing at `fullstacksjs/alita-bot` too —
+GHCR uses that label to attach the package to the repo (and thus to inherit its
+`packages: write` permissions).
 
 ⚠️ **Tags must be `v`-prefixed** (`on: push: tags: ["v*"]`). The `goreleaser` job's
 **Resolve release tag** step normalizes the `workflow_dispatch` input to one `v`

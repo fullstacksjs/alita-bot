@@ -322,7 +322,7 @@ jobs:
       - name: Scan Docker image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ghcr.io/divkix/alita_robot:latest
+          image-ref: ghcr.io/fullstacksjs/alita-bot:latest
           format: table
           exit-code: 0
           severity: CRITICAL,HIGH
@@ -331,4 +331,4 @@ jobs:
         run: |
           echo "Release completed successfully!"
           echo "Artifacts published to GitHub Releases"
-          echo "Docker images available at ghcr.io/divkix/alita_robot"
+          echo "Docker images available at ghcr.io/fullstacksjs/alita-bot"
