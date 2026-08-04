@@ -1,4 +1,4 @@
-.PHONY: run tidy vendor build bump-version lint test test-postgres-integrity check-translations check-duplicates psql-migrate psql-status psql-reset generate-docs check-docs inventory docs-dev validate-db backup-db
+.PHONY: run tidy vendor build bump-version lint test test-postgres-integrity check-translations check-duplicates psql-migrate psql-status psql-reset validate-db backup-db
 
 GO_CMD = go
 GORELEASER_CMD = goreleaser
@@ -77,42 +77,6 @@ psql-reset:
 	@PGPASSWORD="$${PSQL_DB_PASSWORD:-}" PGSSLMODE="$${PSQL_DB_SSLMODE:-prefer}" psql -h "$$PSQL_DB_HOST" -p "$${PSQL_DB_PORT:-5432}" -U "$$PSQL_DB_USER" -d "$$PSQL_DB_NAME" -c \
 		"DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 	@echo "✅ Database reset complete"
-
-# Documentation Targets
-generate-docs:
-	@echo "📚 Generating documentation..."
-	@cd scripts/generate_docs && $(GO_CMD) run .
-	@echo "✅ Documentation generated in docs/src/content/docs/"
-
-check-docs:
-	@echo "🔍 Checking docs generation for drift..."
-	@set -e; \
-	TMP=$$(mktemp -d /tmp/alita-docs-check.XXXXXX); \
-	trap 'rm -rf "$$TMP"' EXIT; \
-	ROOT=$$(pwd); \
-	cp -R docs/src/content/docs/. "$$TMP"/; \
-	echo "  Generating docs to temp directory..."; \
-	cd scripts/generate_docs && $(GO_CMD) run . -output "$$TMP"; \
-	cd "$$ROOT"; \
-	echo "  Comparing generated docs against current docs..."; \
-	if diff -rq "$$TMP" docs/src/content/docs/ > /dev/null 2>&1; then \
-		echo "✅ No drift detected — generated docs match current docs."; \
-	else \
-		echo "❌ Drift detected! Generated docs differ from current docs:"; \
-		diff -r "$$TMP" docs/src/content/docs/ || true; \
-		echo ""; \
-		echo "Run 'make generate-docs' to sync."; \
-		exit 1; \
-	fi
-
-inventory:
-	@echo "Generating canonical command inventory..."
-	@cd scripts/generate_docs && $(GO_CMD) run . -inventory
-	@echo "Inventory written to .planning/INVENTORY.json and .planning/INVENTORY.md"
-
-docs-dev:
-	@echo "🚀 Starting Blume dev server..."
-	@cd docs && bun run dev
 
 # Database validation and backup
 validate-db:

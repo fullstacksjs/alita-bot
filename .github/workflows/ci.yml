@@ -347,9 +347,9 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-  # Docs & Translations drift gate
-  docs-check:
-    name: Docs & Translations
+  # Translation completeness gate
+  translations-check:
+    name: Translations
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -364,8 +364,6 @@ jobs:
           cache: true
       - name: Check translations
         run: make check-translations
-      - name: Check generated docs drift
-        run: make check-docs
 
   # Docker build verification (single arch, fast)
   docker-verify:
@@ -388,7 +386,7 @@ jobs:
     name: Publish Docker Images
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [security, lint, build, test, docs-check, docker-verify]
+    needs: [security, lint, build, test, translations-check, docker-verify]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: read
@@ -467,7 +465,7 @@ jobs:
     name: CI Success
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [security, lint, build, test, docs-check, docker-verify, docker-publish]
+    needs: [security, lint, build, test, translations-check, docker-verify, docker-publish]
     if: always()
     steps:
       - name: Check all jobs status
@@ -477,7 +475,7 @@ jobs:
              [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
-             [ "${{ needs.docs-check.result }}" != "success" ] || \
+             [ "${{ needs.translations-check.result }}" != "success" ] || \
              [ "${{ needs.docker-verify.result }}" != "success" ]; then
             echo "One or more CI jobs failed!"
             exit 1
