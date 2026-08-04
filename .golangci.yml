@@ -27,10 +27,6 @@ linters:
         linters:
           - gocyclo
           - dupl
-      # Exclude generated files
-      - path: scripts/generate_docs/
-        linters:
-          - gocyclo
       # Exclude pre-existing complex migration logic (moved from alita/db/migrations.go)
       - path: alita/db/migrations/
         linters:

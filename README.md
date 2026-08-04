@@ -27,12 +27,6 @@ docker compose logs -f alita
 
 PostgreSQL and Redis are included in the Compose stack.
 
-## Documentation
-
-For setup, configuration, deployment, and command references, see
-[alita-docs.divkix.me](https://alita-docs.divkix.me). For contributor and
-architecture guidance, see [AGENTS.md](AGENTS.md).
-
 ## Development
 
 ```bash
@@ -40,6 +34,8 @@ make run
 make lint
 make test
 ```
+
+Contributor and architecture guidance lives in [AGENTS.md](AGENTS.md).
 
 ## Contributing
 

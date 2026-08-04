@@ -8,7 +8,6 @@
 # Documentation
 *.md
 !README.md
-docs/
 
 # Development
 .devcontainer/

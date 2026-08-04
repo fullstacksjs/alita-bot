@@ -121,15 +121,11 @@ Big architectural facts an agent must hold in mind:
 - **`locales/`** — `en/es/fr/hi/ru/pt/id.yml` translations + **`config.yml`** (loaded
   as a pseudo-language `"config"`; holds `alt_names.<Module>` and `db_default_*`).
 - **`migrations/`** — timestamped `.sql` schema files (source of truth).
-- **`scripts/`** — `generate_docs/` (root module), `check_translations/` (**separate
-  go.mod**), `validate_orphaned_data.go`, `migrate_psql.sh`, `backup_database.sh`.
+- **`scripts/`** — `check_translations/` (**separate go.mod**),
+  `validate_orphaned_data.go`, `migrate_psql.sh`, `backup_database.sh`.
 - **`internal/repo_checks/`** — test-only structural-invariant assertions.
-- **`docs/`** — Blume (useblume.dev) markdown-first docs site (bun, static
-  build to Cloudflare Workers). Content in `docs/src/content/docs/`, config in
-  `docs/blume.config.ts`; sidebar groups inferred from the folder tree with
-  per-folder `meta.ts`. Built-in AI artifacts (llms.txt, llms-full.txt, .md
-  mirrors) on by default.
-- **`.github/workflows/`** — `ci.yml`, `release.yml`, `docs.yml`, `dependabot-native-merge.yml`, `pullfrog.yml`.
+- **`.github/workflows/`** — `ci.yml`, `release.yml`,
+  `dependabot-native-merge.yml`, `pullfrog.yml`.
 - **`docker/`** — `alpine` (prod), `alpine.debug`, `goreleaser`, `pr-build`.
 
 ---
@@ -149,13 +145,9 @@ make tidy / make vendor
 go test -v -run TestXxx ./alita/db
 go test -v -count=1 -timeout 10m ./alita/db
 
-# Translations & docs
+# Translations
 make check-translations # runs scripts/check_translations (separate module) — missing-key gate
 make check-duplicates   # golangci-lint --enable dupl (duplicate Go CODE, NOT translation keys) ⚠️
-make generate-docs      # regenerate docs from source (no-op for sentinel-frozen files)
-make check-docs         # docs drift gate (diff regenerated vs committed)
-make inventory          # .planning/INVENTORY.{json,md} (authoritative command list)
-make docs-dev           # blume dev (hot-reload dev server)
 
 # Postgres migrations (require PSQL_DB_* env)
 make psql-migrate / psql-status / psql-reset
@@ -191,16 +183,16 @@ Parallel jobs (no `needs`), then aggregation:
 | `lint` | golangci-lint **binary v2.11.4**, `--timeout 10m`, `only-new-issues:true`; second run with `--enable dupl`; informational TODO/FIXME + gocyclo>15 step summaries | New issues block; pre-existing tolerated. |
 | `build` | `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"`, then `./alita_robot --version` from `/tmp` | Yes |
 | `test` | Service containers **postgres:16** + **redis:7**; verifies the raw migration chain, runs focused DB-native integrity tests serially under `-race`, then `make test` and coverage **≥78%** | Yes |
-| `docs-check` | `make check-translations` + `make check-docs` (translation + docs drift gate) | Yes |
+| `translations-check` | `make check-translations` (translation completeness gate) | Yes |
 | `docker-verify` | single-arch `docker build -f docker/alpine` (no push) | Yes |
-| `docker-publish` | main-push only; multi-arch `linux/amd64,linux/arm64` → GHCR tags `dev`, `dev-<sha7>`, `<sha7>` (NOT `latest`), with `provenance:true` + `sbom:true`; GHA cache export is best-effort (`ignore-error=true`) while image build/push remains gating; waits for security, lint, build, test, docs-check, and docker-verify | Yes (on main push) |
+| `docker-publish` | main-push only; multi-arch `linux/amd64,linux/arm64` → GHCR tags `dev`, `dev-<sha7>`, `<sha7>` (NOT `latest`), with `provenance:true` + `sbom:true`; GHA cache export is best-effort (`ignore-error=true`) while image build/push remains gating; waits for security, lint, build, test, translations-check, and docker-verify | Yes (on main push) |
 | `ci-success` | `if: always()`; re-checks each result; enforces `docker-publish` only on main-push | Final gate |
 
 ### `release.yml` (`v*` tag push or manual dispatch with `tag` input)
 
 `release-ci-checks` runs gosec, informational govulncheck, the release build,
 the PostgreSQL migration/integrity pass, the full race/coverage suite,
-translation checks, and docs drift checks. `goreleaser` (**v2.13.0**, deletes any
+and translation checks. `goreleaser` (**v2.13.0**, deletes any
 pre-existing release for the tag to handle tag moves) then runs, followed by
 `attest-artifacts` (SLSA `attest-build-provenance` over `dist/*`) and
 `post-release-scan` (Trivy `CRITICAL,HIGH`, `exit-code:0`, informational).
@@ -235,12 +227,8 @@ config didn't load). There are **no** `-X main.version/commit/date` ldflags anym
 (`version = "v<tag>"`) and fails the release on mismatch — this is the enforcement
 behind "don't hand-edit BotVersion."
 
-### `docs.yml` (path-filtered to docs/alita/scripts/locales)
-
-`make generate-docs` → Node 22 + Bun → `bun run build` → deploy to **Cloudflare
-Workers** via `wrangler@4` (only on push to `main`). Tag pushes do not run
-`ci.yml`, but `release.yml` independently repeats the migration, race/coverage,
-translation, and docs gates before publishing.
+Tag pushes do not run `ci.yml`, but `release.yml` independently repeats the
+migration, race/coverage, and translation gates before publishing.
 
 ### `dependabot-native-merge.yml`
 
@@ -263,7 +251,7 @@ push/PR CI pipeline.
   `gofmt -l -w`, `go mod tidy`. Install: `pip install pre-commit && pre-commit install`.
 - **`.golangci.yml`** (v2 format): linters `godox`, `dupl` (threshold 100),
   `gocyclo` (min-complexity **20**); `new:true` (only-new-issues); build-tag
-  `testtools`; excludes tests/generated-docs/db-migrations.
+  `testtools`; excludes tests/db-migrations.
 
 ### Deploy targets (they disagree — check the specific one)
 
@@ -797,12 +785,6 @@ m != nil`) — every helper bails when it's nil.
 
 ## 17. Scripts & tooling
 
-- **`scripts/generate_docs/`** — `package main` in the **root module** (`go run .`),
-  regex/text parsers (not AST) of locales/modules/locks → Blume Markdown. Normal
-  generation updates only `commands/users/index.md` and `api-reference/lock-types.md`;
-  frozen files are hand-maintained. Lock descriptions are hardcoded in
-  `getLockDescription()`. `-inventory` separately parses commands, callbacks, and
-  message watchers, then writes `.planning/INVENTORY.{json,md}`.
 - **`scripts/check_translations/`** — a **separate Go module** (own `go.mod`); cannot
   import `alita`; uses hardcoded `../../alita` and `../../locales`. Only validates
   **string-literal** keys passed to `tr.GetString`/`GetStringSlice`.
@@ -948,16 +930,17 @@ patch/minor auto-merge and requires manual review.
 
 ### Issue tracker
 
-Issues live as GitHub issues in `Divkix/Alita_Robot` (use the `gh` CLI); external PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub issues in `Divkix/Alita_Robot` (use the `gh` CLI);
+external PRs are not a triage surface.
 
 ### Triage labels
 
-Five canonical triage roles mapped to GitHub labels with their default names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+Five canonical triage roles map to GitHub labels with their default names:
+`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`.
 
-### Domain docs
+### Domain modeling
 
 This repo does **not** use the single-context layout yet — there is no
-`CONTEXT.md` and no `docs/adr/` at the repo root. The convention is documented
-in `docs/agents/domain.md`, which instructs agents to proceed silently while
-those files are absent; `/domain-modeling` creates them lazily when terms or
-decisions actually get resolved. See `docs/agents/domain.md`.
+`CONTEXT.md` and no ADR directory at the repo root. Proceed silently while those
+files are absent; `/domain-modeling` creates them lazily when terms or decisions
+actually get resolved.
