@@ -762,17 +762,11 @@ func TestLeftMemberDeletesPendingCaptchaAttemptAndCleanGoodbye(t *testing.T) {
 	}
 }
 
-func TestPendingJoinRequestAndCallbacks(t *testing.T) {
+func TestPendingJoinRequestSendsNoAdminNotice(t *testing.T) {
 	client := newModuleBotClient()
-	client.responses["getChat"] = []byte(`{"id":5151,"type":"private","first_name":"Applicant"}`)
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-	admin := gotgbot.User{Id: 42, FirstName: "Invite Admin"}
 	applicant := gotgbot.User{Id: 5151, FirstName: "Applicant"}
-	seedCallbackAdmins(t, chat.Id,
-		gotgbot.MergedChatMember{Status: "administrator", User: gotgbot.User{Id: 999, IsBot: true}, CanInviteUsers: true},
-		gotgbot.MergedChatMember{Status: "administrator", User: admin, CanInviteUsers: true},
-	)
 
 	ctx := newJoinRequestContext(bot, chat, applicant)
 	if err := greetingsModule.pendingJoins(bot, ctx); err != ext.ContinueGroups {
@@ -781,217 +775,12 @@ func TestPendingJoinRequestAndCallbacks(t *testing.T) {
 	if calls := client.callsFor("sendMessage"); len(calls) != 0 {
 		t.Fatalf("sendMessage calls = %d, want no join request notice", len(calls))
 	}
-
-	data := encodeCallbackData(
-		"join_request",
-		map[string]string{"a": "accept", "u": "5151"},
-	)
-	callbackCtx := newModuleCallbackContext(bot, chat, admin, data)
-	if err := greetingsModule.joinRequestHandler(bot, callbackCtx); err != ext.EndGroups {
-		t.Fatalf("joinRequestHandler accept error = %v, want EndGroups", err)
-	}
-	if calls := client.callsFor("approveChatJoinRequest"); len(calls) != 1 {
-		t.Fatalf("approveChatJoinRequest calls = %d, want 1", len(calls))
-	}
-	if calls := client.callsFor("answerCallbackQuery"); len(calls) != 1 {
-		t.Fatalf("answerCallbackQuery calls = %d, want 1", len(calls))
+	if calls := client.callsFor("approveChatJoinRequest"); len(calls) != 0 {
+		t.Fatalf("approveChatJoinRequest calls = %d, want none without auto approve", len(calls))
 	}
 }
 
-func TestJoinRequestDeclineClearsPendingSuppression(t *testing.T) {
-	client := newModuleBotClient()
-	client.responses["getChat"] = []byte(`{"id":5151,"type":"private","first_name":"Applicant"}`)
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-
-	greetingsModule.setPendingJoins(chat.Id, 5151)
-	data := encodeCallbackData("join_request", map[string]string{"a": "decline", "u": "5151"})
-	ctx := newModuleCallbackContext(bot, chat, admin, data)
-	if err := greetingsModule.joinRequestHandler(bot, ctx); err != ext.EndGroups {
-		t.Fatalf("joinRequestHandler decline error = %v, want EndGroups", err)
-	}
-	if greetingsModule.loadPendingJoins(chat.Id, 5151) {
-		t.Fatal("declined request remained suppressed")
-	}
-}
-
-func TestJoinRequestCallbacksRequireGranularPermissions(t *testing.T) {
-	for _, tt := range []struct {
-		name         string
-		action       string
-		userRestrict bool
-		userInvite   bool
-		botRestrict  bool
-		botInvite    bool
-	}{
-		{name: "accept requires user invite", action: "accept", botInvite: true},
-		{name: "decline requires bot invite", action: "decline", userInvite: true},
-		{name: "ban requires user restrict", action: "ban", userInvite: true, botRestrict: true, botInvite: true},
-		{name: "ban requires bot restrict", action: "ban", userRestrict: true, userInvite: true, botInvite: true},
-		{name: "ban requires user invite", action: "ban", userRestrict: true, botRestrict: true, botInvite: true},
-		{name: "ban requires bot invite", action: "ban", userRestrict: true, userInvite: true, botRestrict: true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			client := newModuleBotClient()
-			client.responses["getChat"] = []byte(`{"id":5151,"type":"private","first_name":"Applicant"}`)
-			bot := newModuleTestBot(client)
-			chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-			admin := gotgbot.User{Id: 42, FirstName: "Limited Admin"}
-			seedCallbackAdmins(t, chat.Id,
-				gotgbot.MergedChatMember{
-					Status:             "administrator",
-					User:               gotgbot.User{Id: 999, IsBot: true},
-					CanRestrictMembers: tt.botRestrict,
-					CanInviteUsers:     tt.botInvite,
-				},
-				gotgbot.MergedChatMember{
-					Status:             "administrator",
-					User:               admin,
-					CanRestrictMembers: tt.userRestrict,
-					CanInviteUsers:     tt.userInvite,
-				},
-			)
-
-			data := encodeCallbackData("join_request", map[string]string{"a": tt.action, "u": "5151"})
-			ctx := newModuleCallbackContext(bot, chat, admin, data)
-			if err := greetingsModule.joinRequestHandler(bot, ctx); err != ext.EndGroups {
-				t.Fatalf("joinRequestHandler() error = %v, want EndGroups", err)
-			}
-			if calls := client.callsFor("getChat"); len(calls) != 0 {
-				t.Fatalf("getChat calls = %d, want permission denial before applicant lookup", len(calls))
-			}
-			if calls := client.callsFor("approveChatJoinRequest"); len(calls) != 0 {
-				t.Fatalf("approveChatJoinRequest calls = %d, want none", len(calls))
-			}
-			if calls := client.callsFor("declineChatJoinRequest"); len(calls) != 0 {
-				t.Fatalf("declineChatJoinRequest calls = %d, want none", len(calls))
-			}
-			if calls := client.callsFor("banChatMember"); len(calls) != 0 {
-				t.Fatalf("banChatMember calls = %d, want none", len(calls))
-			}
-			if calls := client.callsFor("editMessageText"); len(calls) != 0 {
-				t.Fatalf("editMessageText calls = %d, want pending request unchanged", len(calls))
-			}
-			if calls := client.callsFor("answerCallbackQuery"); len(calls) != 1 {
-				t.Fatalf("answerCallbackQuery calls = %d, want one permission denial", len(calls))
-			}
-		})
-	}
-}
-
-func TestJoinRequestCallbacksHandleDeclineBanAndInvalidData(t *testing.T) {
-	tests := []struct {
-		name        string
-		data        string
-		wantApprove int
-		wantDecline int
-		wantBan     int
-	}{
-		{
-			name:        "encoded decline",
-			data:        encodeCallbackData("join_request", map[string]string{"a": "decline", "u": "7171"}),
-			wantDecline: 1,
-		},
-		{
-			name:        "encoded ban",
-			data:        encodeCallbackData("join_request", map[string]string{"a": "ban", "u": "7171"}),
-			wantDecline: 1,
-			wantBan:     1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client := newModuleBotClient()
-			client.responses["getChat"] = []byte(`{"id":7171,"type":"private","first_name":"Applicant"}`)
-			bot := newModuleTestBot(client)
-			chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-			admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-
-			ctx := newModuleCallbackContext(bot, chat, admin, tt.data)
-			if err := greetingsModule.joinRequestHandler(bot, ctx); err != ext.EndGroups {
-				t.Fatalf("joinRequestHandler error = %v, want EndGroups", err)
-			}
-			if calls := client.callsFor("approveChatJoinRequest"); len(calls) != tt.wantApprove {
-				t.Fatalf("approveChatJoinRequest calls = %d, want %d", len(calls), tt.wantApprove)
-			}
-			if calls := client.callsFor("declineChatJoinRequest"); len(calls) != tt.wantDecline {
-				t.Fatalf("declineChatJoinRequest calls = %d, want %d", len(calls), tt.wantDecline)
-			}
-			if calls := client.callsFor("banChatMember"); len(calls) != tt.wantBan {
-				t.Fatalf("banChatMember calls = %d, want %d", len(calls), tt.wantBan)
-			}
-			if calls := client.callsFor("editMessageText"); len(calls) != 1 {
-				t.Fatalf("editMessageText calls = %d, want callback message update", len(calls))
-			}
-			if calls := client.callsFor("answerCallbackQuery"); len(calls) != 1 {
-				t.Fatalf("answerCallbackQuery calls = %d, want callback acknowledgement", len(calls))
-			}
-		})
-	}
-
-	t.Run("invalid callback data is answered without lookup", func(t *testing.T) {
-		client := newModuleBotClient()
-		bot := newModuleTestBot(client)
-		chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-		admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-
-		ctx := newModuleCallbackContext(bot, chat, admin, "join_request.invalid")
-		if err := greetingsModule.joinRequestHandler(bot, ctx); err != ext.EndGroups {
-			t.Fatalf("joinRequestHandler invalid data error = %v, want EndGroups", err)
-		}
-		if calls := client.callsFor("getChat"); len(calls) != 0 {
-			t.Fatalf("getChat calls = %d, want no user lookup for invalid data", len(calls))
-		}
-		if calls := client.callsFor("answerCallbackQuery"); len(calls) != 1 {
-			t.Fatalf("answerCallbackQuery calls = %d, want invalid request acknowledgement", len(calls))
-		}
-	})
-
-	t.Run("invalid join user id is answered without lookup", func(t *testing.T) {
-		client := newModuleBotClient()
-		bot := newModuleTestBot(client)
-		chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-		admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-
-		data := encodeCallbackData("join_request", map[string]string{"a": "accept", "u": "nan"})
-		ctx := newModuleCallbackContext(bot, chat, admin, data)
-		if err := greetingsModule.joinRequestHandler(bot, ctx); err != ext.EndGroups {
-			t.Fatalf("joinRequestHandler invalid user error = %v, want EndGroups", err)
-		}
-		if calls := client.callsFor("getChat"); len(calls) != 0 {
-			t.Fatalf("getChat calls = %d, want no user lookup for invalid user id", len(calls))
-		}
-		if calls := client.callsFor("answerCallbackQuery"); len(calls) != 1 {
-			t.Fatalf("answerCallbackQuery calls = %d, want invalid request acknowledgement", len(calls))
-		}
-	})
-
-	t.Run("unknown action is answered without lookup", func(t *testing.T) {
-		client := newModuleBotClient()
-		bot := newModuleTestBot(client)
-		chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-		admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-
-		data := encodeCallbackData("join_request", map[string]string{"a": "crafted", "u": "5151"})
-		ctx := newModuleCallbackContext(bot, chat, admin, data)
-		if err := greetingsModule.joinRequestHandler(bot, ctx); err != ext.EndGroups {
-			t.Fatalf("joinRequestHandler unknown action error = %v, want EndGroups", err)
-		}
-		if calls := client.callsFor("getChat"); len(calls) != 0 {
-			t.Fatalf("getChat calls = %d, want no user lookup for unknown action", len(calls))
-		}
-		if calls := client.callsFor("editMessageText"); len(calls) != 0 {
-			t.Fatalf("editMessageText calls = %d, want callback message unchanged", len(calls))
-		}
-		if calls := client.callsFor("answerCallbackQuery"); len(calls) != 1 {
-			t.Fatalf("answerCallbackQuery calls = %d, want invalid request acknowledgement", len(calls))
-		}
-	})
-}
-
-func TestAutoApproveJoinRequestSkipsAdminNotice(t *testing.T) {
+func TestAutoApproveJoinRequestApprovesWithoutNotice(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
@@ -1051,7 +840,6 @@ func TestGreetingCommandsPropagateGotgbotRequestErrors(t *testing.T) {
 
 func TestJoinRequestFlowPropagatesGotgbotRequestErrors(t *testing.T) {
 	requestErr := errors.New("telegram request failed")
-	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 	applicant := gotgbot.User{Id: 5151, FirstName: "Applicant"}
 
 	for _, tt := range []struct {
@@ -1072,60 +860,6 @@ func TestJoinRequestFlowPropagatesGotgbotRequestErrors(t *testing.T) {
 			},
 			run: greetingsModule.pendingJoins,
 		},
-		{
-			name:   "join callback lookup",
-			method: "getChat",
-			build: func(bot *gotgbot.Bot, chat gotgbot.Chat) *ext.Context {
-				data := encodeCallbackData("join_request", map[string]string{"a": "accept", "u": "5151"})
-				return newModuleCallbackContext(bot, chat, admin, data)
-			},
-			run: greetingsModule.joinRequestHandler,
-		},
-		{
-			name:   "join callback approve",
-			method: "approveChatJoinRequest",
-			build: func(bot *gotgbot.Bot, chat gotgbot.Chat) *ext.Context {
-				data := encodeCallbackData("join_request", map[string]string{"a": "accept", "u": "5151"})
-				return newModuleCallbackContext(bot, chat, admin, data)
-			},
-			run: greetingsModule.joinRequestHandler,
-		},
-		{
-			name:   "join callback decline",
-			method: "declineChatJoinRequest",
-			build: func(bot *gotgbot.Bot, chat gotgbot.Chat) *ext.Context {
-				data := encodeCallbackData("join_request", map[string]string{"a": "decline", "u": "5151"})
-				return newModuleCallbackContext(bot, chat, admin, data)
-			},
-			run: greetingsModule.joinRequestHandler,
-		},
-		{
-			name:   "join callback ban",
-			method: "banChatMember",
-			build: func(bot *gotgbot.Bot, chat gotgbot.Chat) *ext.Context {
-				data := encodeCallbackData("join_request", map[string]string{"a": "ban", "u": "5151"})
-				return newModuleCallbackContext(bot, chat, admin, data)
-			},
-			run: greetingsModule.joinRequestHandler,
-		},
-		{
-			name:   "join callback edit",
-			method: "editMessageText",
-			build: func(bot *gotgbot.Bot, chat gotgbot.Chat) *ext.Context {
-				data := encodeCallbackData("join_request", map[string]string{"a": "accept", "u": "5151"})
-				return newModuleCallbackContext(bot, chat, admin, data)
-			},
-			run: greetingsModule.joinRequestHandler,
-		},
-		{
-			name:   "join callback answer",
-			method: "answerCallbackQuery",
-			build: func(bot *gotgbot.Bot, chat gotgbot.Chat) *ext.Context {
-				data := encodeCallbackData("join_request", map[string]string{"a": "accept", "u": "5151"})
-				return newModuleCallbackContext(bot, chat, admin, data)
-			},
-			run: greetingsModule.joinRequestHandler,
-		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			client := newModuleBotClient()
@@ -1142,68 +876,20 @@ func TestJoinRequestFlowPropagatesGotgbotRequestErrors(t *testing.T) {
 	}
 }
 
-func TestJoinRequestHandlerAcceptsExpectedTelegramErrors(t *testing.T) {
+func TestPendingJoinsAcceptsExpectedTelegramErrors(t *testing.T) {
 	expectedErr := fmt.Errorf("Forbidden: bot is not a member of the supergroup chat")
-	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 	applicant := gotgbot.User{Id: 5151, FirstName: "Applicant"}
 
-	for _, tt := range []struct {
-		name        string
-		method      string
-		data        string
-		autoApprove bool
-		want        error
-	}{
-		{
-			name:   "join callback approve",
-			method: "approveChatJoinRequest",
-			data: encodeCallbackData(
-				"join_request",
-				map[string]string{"a": "accept", "u": "5151"},
-			),
-			want: ext.EndGroups,
-		},
-		{
-			name:   "join callback decline",
-			method: "declineChatJoinRequest",
-			data: encodeCallbackData(
-				"join_request",
-				map[string]string{"a": "decline", "u": "5151"},
-			),
-			want: ext.EndGroups,
-		},
-		{
-			name:        "auto approve join request",
-			method:      "approveChatJoinRequest",
-			autoApprove: true,
-			want:        ext.ContinueGroups,
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			client := newModuleBotClient()
-			client.responses["getChat"] = []byte(`{"id":5151,"type":"private","first_name":"Applicant"}`)
-			bot := newModuleTestBot(client)
-			client.errors[tt.method] = expectedErr
-			chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
+	client := newModuleBotClient()
+	bot := newModuleTestBot(client)
+	client.errors["approveChatJoinRequest"] = expectedErr
+	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
+	if err := greetings.SetShouldAutoApprove(chat.Id, true); err != nil {
+		t.Fatalf("SetShouldAutoApprove() error = %v", err)
+	}
 
-			var (
-				ctx *ext.Context
-				err error
-			)
-			if tt.autoApprove {
-				if err := greetings.SetShouldAutoApprove(chat.Id, true); err != nil {
-					t.Fatalf("SetShouldAutoApprove() error = %v", err)
-				}
-				ctx = newJoinRequestContext(bot, chat, applicant)
-				err = greetingsModule.pendingJoins(bot, ctx)
-			} else {
-				ctx = newModuleCallbackContext(bot, chat, admin, tt.data)
-				err = greetingsModule.joinRequestHandler(bot, ctx)
-			}
-
-			if err != tt.want {
-				t.Fatalf("%s error = %v, want %v", tt.name, err, tt.want)
-			}
-		})
+	ctx := newJoinRequestContext(bot, chat, applicant)
+	if err := greetingsModule.pendingJoins(bot, ctx); err != ext.ContinueGroups {
+		t.Fatalf("pendingJoins error = %v, want ContinueGroups", err)
 	}
 }
