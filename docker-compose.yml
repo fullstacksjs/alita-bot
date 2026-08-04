@@ -6,7 +6,7 @@
 
 services:
   alita:
-    image: ghcr.io/divkix/alita_robot:latest
+    image: ghcr.io/fullstacksjs/alita-bot:latest
     container_name: alita-robot
     restart: always
     environment:

@@ -11,7 +11,7 @@ release:
 
   footer: |
     Docker 🐳 images are available at:
-    `docker pull ghcr.io/divkix/{{ .ProjectName }}:{{ .Tag }}`
+    `docker pull ghcr.io/fullstacksjs/alita-bot:{{ .Tag }}`
 
 gomod:
   env:
@@ -97,7 +97,7 @@ snapshot:
 dockers_v2:
   - dockerfile: docker/goreleaser
     images:
-      - "ghcr.io/divkix/{{ .ProjectName }}"
+      - "ghcr.io/fullstacksjs/alita-bot"
     tags:
       - "{{ .Tag }}"
       - "{{ .Version }}"
@@ -110,9 +110,9 @@ dockers_v2:
       "org.opencontainers.image.title": "{{ .ProjectName }}"
       "org.opencontainers.image.revision": "{{.FullCommit}}"
       "org.opencontainers.image.version": "{{.Version}}"
-      "org.opencontainers.image.source": "https://github.com/divkix/Alita_Robot"
+      "org.opencontainers.image.source": "https://github.com/fullstacksjs/alita-bot"
       "org.opencontainers.image.description": "Official Alita Go Robot Docker Image"
-      "org.opencontainers.image.vendor": "Divkix"
+      "org.opencontainers.image.vendor": "FullstacksJS"
       "org.opencontainers.image.authors": "Divanshu Chauhan <divkix@divkix.me>"
     extra_files:
       - migrations
