@@ -5,7 +5,6 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 	log "github.com/sirupsen/logrus"
@@ -51,7 +50,7 @@ func HandleDeepLink(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, arg st
 
 // sendDefaultHelp sends the default start/help message.
 func sendDefaultHelp(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User) error {
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	startHelpText := getStartHelp(tr)
 	startMarkupKb := getStartMarkup(tr, b.Username)
 	_, err := b.SendMessage(ctx.EffectiveChat.Id,

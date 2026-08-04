@@ -12,7 +12,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 
 	"github.com/divkix/Alita_Robot/alita/db/disabling"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
@@ -52,7 +51,7 @@ func (moduleStruct) toggleCommands(enable bool) func(*gotgbot.Bot, *ext.Context)
 		ctx.EffectiveChat = connectedChat
 		chat := ctx.EffectiveChat
 		args := ctx.Args()[1:]
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 
 		var cfg toggleCmdConfig
 		if enable {
@@ -163,7 +162,7 @@ Anyone can use this command to check the disableable commands
 func (moduleStruct) disableable(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	text, _ := tr.GetString("disabling_disableable_commands")
 	var sb strings.Builder
 	for _, cmds := range helpers.DisableCmds {
@@ -214,7 +213,7 @@ func (moduleStruct) disabled(b *gotgbot.Bot, ctx *ext.Context) error {
 	disabled := disabling.GetChatDisabledCMDs(chat.Id)
 
 	if len(disabled) == 0 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("disabling_no_disabled_commands")
 		_, err := msg.Reply(b, text,
 			&gotgbot.SendMessageOpts{
@@ -229,7 +228,7 @@ func (moduleStruct) disabled(b *gotgbot.Bot, ctx *ext.Context) error {
 			return err
 		}
 	} else {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("disabling_disabled_commands")
 		slices.Sort(disabled)
 		var sb strings.Builder
@@ -267,7 +266,7 @@ func (moduleStruct) disabledel(b *gotgbot.Bot, ctx *ext.Context) error {
 	ctx.EffectiveChat = connectedChat
 	chat := ctx.EffectiveChat
 	args := ctx.Args()[1:]
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	var text string
 

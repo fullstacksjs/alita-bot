@@ -25,7 +25,7 @@ func GetChatBasicInfo(chatID int64) (*models.Chat, error) {
 
 	var chat models.Chat
 	err := db.DB.Model(&models.Chat{}).
-		Select("id, chat_id, chat_name, language, users, is_inactive, last_activity").
+		Select("id, chat_id, chat_name, users, is_inactive, last_activity").
 		Where("chat_id = ?", chatID).
 		First(&chat).Error
 

@@ -14,11 +14,10 @@ func NewTestTranslator(yamlContent string) (*Translator, error) {
 		return nil, err
 	}
 	lm := &LocaleManager{
-		defaultLang: "en",
-		localeMaps:  map[string]map[string]any{"en": data},
+		localeMaps: map[string]map[string]any{DefaultLanguage: data},
 	}
 	return &Translator{
-		langCode: "en",
+		langCode: DefaultLanguage,
 		manager:  lm,
 		data:     data,
 	}, nil
@@ -40,9 +39,8 @@ func OverrideManagerForTest(yamlContent string) (restore func(), err error) {
 	// The value is never used for file I/O because localeMaps is already populated.
 	var dummyFS embed.FS
 	lm := &LocaleManager{
-		defaultLang: "en",
-		localeMaps:  map[string]map[string]any{"en": data},
-		localeFS:    &dummyFS,
+		localeMaps: map[string]map[string]any{DefaultLanguage: data, ConfigLanguage: data},
+		localeFS:   &dummyFS,
 	}
 	// Ensure managerOnce.Do has already fired before we overwrite managerInstance.
 	// If we set managerInstance first and Then GetManager() is called, Once.Do would

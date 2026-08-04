@@ -20,7 +20,7 @@ func GetUserBasicInfo(userID int64) (*models.User, error) {
 
 	var user models.User
 	err := db.DB.Model(&models.User{}).
-		Select("id, user_id, username, name, language, last_activity").
+		Select("id, user_id, username, name, last_activity").
 		Where("user_id = ?", userID).
 		First(&user).Error
 

@@ -111,7 +111,6 @@ type Config struct {
 	MessageDump        int64 `validate:"required,min=1"`
 	DropPendingUpdates bool
 	AllowedUpdates     []string
-	ValidLangCodes     []string
 
 	// Database configuration
 	DatabaseURL string `validate:"required"`
@@ -320,7 +319,7 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
-	// Set allowed updates and valid language codes
+	// Set allowed updates
 	cfg.AllowedUpdates = []string{
 		"message",
 		"edited_message",
@@ -336,11 +335,6 @@ func LoadConfig() (*Config, error) {
 		"my_chat_member",
 		"chat_member",
 		"chat_join_request",
-	}
-
-	cfg.ValidLangCodes = typeConvertor{str: os.Getenv("ENABLED_LOCALES")}.StringArray()
-	if (len(cfg.ValidLangCodes) == 1 && cfg.ValidLangCodes[0] == "") || (len(cfg.ValidLangCodes) == 0) {
-		cfg.ValidLangCodes = []string{"en"}
 	}
 
 	return cfg, nil

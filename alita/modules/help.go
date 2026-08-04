@@ -11,7 +11,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 	log "github.com/sirupsen/logrus"
@@ -119,7 +118,6 @@ func getStartMarkup(tr *i18n.Translator, botUsername string) gotgbot.InlineKeybo
 	addToChatText, _ := tr.GetString("help_button_add_to_chat")
 	supportGroupText, _ := tr.GetString("help_button_support_group")
 	commandsHelpText, _ := tr.GetString("help_button_commands_help")
-	languageText, _ := tr.GetString("help_button_language")
 
 	// Build the add to chat URL dynamically using the bot's username
 	addToChatUrl := fmt.Sprintf("https://t.me/%s?startgroup=botstart", botUsername)
@@ -148,12 +146,6 @@ func getStartMarkup(tr *i18n.Translator, botUsername string) gotgbot.InlineKeybo
 					CallbackData: encodeCallbackData("helpq", map[string]string{"m": "Help"}),
 				},
 			},
-			{
-				{
-					Text:         languageText,
-					CallbackData: encodeCallbackData("helpq", map[string]string{"m": "Languages"}),
-				},
-			},
 		},
 	}
 }
@@ -163,7 +155,7 @@ func getStartMarkup(tr *i18n.Translator, botUsername string) gotgbot.InlineKeybo
 func (moduleStruct) about(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	var (
 		currText string
@@ -293,7 +285,7 @@ func (moduleStruct) helpButtonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 	if query.Message == nil {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("common_callback_invalid_request")
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
 		return ext.EndGroups
@@ -316,7 +308,7 @@ func (moduleStruct) helpButtonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 	// Sort the module names
 	if slices.Contains([]string{"BackStart", "Help"}, module) {
 		parsemode = formatting.HTML
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		switch module {
 		case "Help":
 			// This shows the main start menu
@@ -371,7 +363,7 @@ func (moduleStruct) start(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	if ctx.Message.Chat.Type == "private" {
 		if len(args) == 1 {
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			startHelpText := getStartHelp(tr)
 			startMarkupKb := getStartMarkup(tr, getBotUsername(b))
 			_, err := msg.Reply(b,
@@ -398,7 +390,7 @@ func (moduleStruct) start(b *gotgbot.Bot, ctx *ext.Context) error {
 			log.WithField("args", args).Debug("Unexpected number of args in /start deep link")
 		}
 	} else {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("help_pm_questions")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -417,7 +409,7 @@ func (moduleStruct) donate(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	_, err := b.SendMessage(chat.Id,
 		func() string {
-			tr := i18n.MustNewTranslator("en")
+			tr := i18n.English()
 			text, _ := tr.GetString("help_donatetext")
 			return text
 		}(),
@@ -451,7 +443,7 @@ func (moduleStruct) botConfig(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	msg := query.Message
 	if msg == nil {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("common_callback_invalid_request")
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
 		return ext.EndGroups
@@ -459,7 +451,7 @@ func (moduleStruct) botConfig(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	// just in case
 	if msg.GetChat().Type != "private" {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("help_config_private_only")
 		_, _, err := msg.EditText(b, text, nil)
 		if err != nil {
@@ -485,7 +477,7 @@ func (moduleStruct) botConfig(b *gotgbot.Bot, ctx *ext.Context) error {
 		text      string
 	)
 
-	tr := i18n.MustNewTranslator("en")
+	tr := i18n.English()
 
 	switch response {
 	case "step1":
@@ -570,7 +562,7 @@ func (moduleStruct) help(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	if ctx.Message.Chat.Type == "private" {
 		if len(args) == 1 {
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			name := "User"
 			if msg.From != nil {
 				name = html.EscapeString(msg.From.FirstName)
@@ -604,7 +596,7 @@ func (moduleStruct) help(b *gotgbot.Bot, ctx *ext.Context) error {
 			}
 		}
 	} else {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		pmMeKbText, _ := tr.GetString("help_click_here")
 		pmMeKbUri := fmt.Sprintf("https://t.me/%s?start=help_help", b.Username)
 		moduleHelpString, _ := tr.GetString("help_contact_pm")
@@ -672,7 +664,7 @@ func init() {
 func helpDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, arg string) error {
 	parts := strings.Split(arg, "_")
 	if len(parts) < 2 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("helpers_invalid_deep_link")
 		_, _ = ctx.EffectiveMessage.Reply(b, text, formatting.Shtml())
 		return ext.EndGroups
@@ -687,7 +679,7 @@ func helpDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, a
 }
 
 func aboutDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, arg string) error {
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	aboutText := getAboutText(tr)
 	aboutKb := getAboutKb(tr)
 	_, err := b.SendMessage(ctx.EffectiveChat.Id,

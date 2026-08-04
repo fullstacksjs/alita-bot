@@ -9,7 +9,6 @@ import (
 	tgmd2html "github.com/PaulSonOfLars/gotg_md2html"
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 
@@ -52,7 +51,7 @@ func initHelpButtonsFrom(registry *moduleStruct) gotgbot.InlineKeyboardMarkup {
 		})
 	}
 	zb := slices.Collect(slices.Chunk(kb, 3))
-	tr := i18n.MustNewTranslator("en")
+	tr := i18n.English()
 	backText, _ := tr.GetString("helpers_back_button")
 	zb = append(zb, []gotgbot.InlineKeyboardButton{{
 		Text:         backText,
@@ -62,9 +61,9 @@ func initHelpButtonsFrom(registry *moduleStruct) gotgbot.InlineKeyboardMarkup {
 }
 
 // getModuleHelpAndKb retrieves help text and keyboard for a specific module.
-func getModuleHelpAndKb(module, lang string, registry *moduleStruct) (helpText string, replyMarkup gotgbot.InlineKeyboardMarkup) {
+func getModuleHelpAndKb(module string, registry *moduleStruct) (helpText string, replyMarkup gotgbot.InlineKeyboardMarkup) {
 	ModName := cases.Title(language.English).String(module)
-	tr := i18n.MustNewTranslator(lang)
+	tr := i18n.English()
 	helpMsg, _ := tr.GetString(fmt.Sprintf("%s_help_msg", strings.ToLower(ModName)))
 	headerTemplate, _ := tr.GetString("helpers_module_help_header")
 	helpText = tgmd2html.MD2HTMLV2(fmt.Sprintf(headerTemplate, ModName) + helpMsg)
@@ -93,7 +92,7 @@ func getModuleHelpAndKb(module, lang string, registry *moduleStruct) (helpText s
 func sendHelpkb(b *gotgbot.Bot, ctx *ext.Context, module string, registry *moduleStruct) (msg *gotgbot.Message, err error) {
 	module = strings.ToLower(module)
 	if module == "help" {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		helpText := getMainHelp(tr, html.EscapeString(ctx.EffectiveMessage.From.FirstName))
 		_, err = b.SendMessage(
 			ctx.EffectiveMessage.Chat.Id,
@@ -133,7 +132,7 @@ func getModuleNameFromAltName(altName string, registry *moduleStruct) string {
 
 // getAltNamesOfModule returns all alternative names for a given module.
 func getAltNamesOfModule(moduleName string) []string {
-	tr := i18n.MustNewTranslator("config")
+	tr := i18n.Config()
 	altNamesFromConfig, _ := tr.GetStringSlice(fmt.Sprintf("alt_names.%s", moduleName))
 	return append(altNamesFromConfig, strings.ToLower(moduleName))
 }
@@ -141,7 +140,6 @@ func getAltNamesOfModule(moduleName string) []string {
 // getHelpTextAndMarkup generates help content and keyboard for a module or main help.
 func getHelpTextAndMarkup(ctx *ext.Context, module string, registry *moduleStruct) (helpText string, kbmarkup gotgbot.InlineKeyboardMarkup, _parsemode string) {
 	var moduleName string
-	userOrGroupLanguage := lang.GetLanguage(ctx)
 
 	for _, ModName := range listModulesFrom(registry) {
 		altnames := getAltNamesOfModule(ModName)
@@ -153,10 +151,10 @@ func getHelpTextAndMarkup(ctx *ext.Context, module string, registry *moduleStruc
 
 	if moduleName != "" {
 		_parsemode = formatting.HTML
-		helpText, kbmarkup = getModuleHelpAndKb(moduleName, userOrGroupLanguage, registry)
+		helpText, kbmarkup = getModuleHelpAndKb(moduleName, registry)
 	} else {
 		_parsemode = formatting.HTML
-		tr := i18n.MustNewTranslator(userOrGroupLanguage)
+		tr := i18n.English()
 		helpText = getMainHelp(tr, html.EscapeString(ctx.EffectiveUser.FirstName))
 		kbmarkup = initHelpButtonsFrom(registry)
 	}

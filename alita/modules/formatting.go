@@ -7,7 +7,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 	log "github.com/sirupsen/logrus"
@@ -22,7 +21,7 @@ var formattingModule = moduleStruct{moduleName: "Formatting"}
 // Shows formatting options in private messages or sends a button to open help in PM.
 func (m moduleStruct) markdownHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Check of group or pm
 	if !chat_status.RequirePrivate(b, ctx, nil) {
@@ -58,7 +57,7 @@ func (m moduleStruct) markdownHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 		backText, _ := tr.GetString("common_back")
 
 		// Keyboard for markdown help menu
-		Mkdkb := append(m.genFormattingKb(lang.GetLanguage(ctx)),
+		Mkdkb := append(m.genFormattingKb(),
 			[]gotgbot.InlineKeyboardButton{
 				{
 					Text:         backText,
@@ -89,13 +88,8 @@ func (m moduleStruct) markdownHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 
 // genFormattingKb generates the inline keyboard layout for formatting help options.
 // Creates buttons for different formatting categories like markdown, fillings, and random content.
-// If lang is empty, defaults to "en".
-func (moduleStruct) genFormattingKb(lang string) [][]gotgbot.InlineKeyboardButton {
-	if lang == "" {
-		lang = "en"
-	}
-
-	tr := i18n.MustNewTranslator(lang)
+func (moduleStruct) genFormattingKb() [][]gotgbot.InlineKeyboardButton {
+	tr := i18n.English()
 
 	keyboard := [][]gotgbot.InlineKeyboardButton{
 		make([]gotgbot.InlineKeyboardButton, 2),
@@ -149,12 +143,12 @@ func (m moduleStruct) formattingHandler(b *gotgbot.Bot, ctx *ext.Context) error 
 	}
 	msg := query.Message
 	if msg == nil {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("common_callback_invalid_request")
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	module := ""
 	if decoded, ok := decodeCallbackData(query.Data, "formatting"); ok {
@@ -209,7 +203,7 @@ func (m moduleStruct) formattingHandler(b *gotgbot.Bot, ctx *ext.Context) error 
 // Sets up help commands and callback handlers for formatting assistance.
 func LoadMkdCmd(dispatcher *ext.Dispatcher) {
 	DefaultHelpRegistry().AbleMap[formattingModule.moduleName] = true
-	DefaultHelpRegistry().helpableKb[formattingModule.moduleName] = formattingModule.genFormattingKb("en")
+	DefaultHelpRegistry().helpableKb[formattingModule.moduleName] = formattingModule.genFormattingKb()
 	helpers.MultiCommand(dispatcher, []string{"markdownhelp", "formatting"}, formattingModule.markdownHelp)
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("formatting"), formattingModule.formattingHandler))
 }

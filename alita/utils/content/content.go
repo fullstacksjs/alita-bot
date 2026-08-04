@@ -43,10 +43,10 @@ type WelcomeResult struct {
 // Returns parsed content with metadata like data type, buttons, and special options.
 //
 //nolint:dupl // ExtractNoteAndFilter shares media detection logic with ExtractWelcome
-func ExtractNoteAndFilter(msg *gotgbot.Message, isFilter bool, language string) ExtractResult {
+func ExtractNoteAndFilter(msg *gotgbot.Message, isFilter bool) ExtractResult {
 	var result ExtractResult
 	result.DataType = -1 // not defined datatype; invalid note
-	tr := i18n.MustNewTranslator(language)
+	tr := i18n.English()
 
 	// Check for nil message to prevent panic
 	if msg == nil {
@@ -109,7 +109,7 @@ func ExtractNoteAndFilter(msg *gotgbot.Message, isFilter bool, language string) 
 	}
 
 	// pre-fix the data before sending it back
-	preFixes(_buttons, result.KeyWord, &result.Text, &result.DataType, result.FileID, &result.Buttons, &result.ErrorMsg, language)
+	preFixes(_buttons, result.KeyWord, &result.Text, &result.DataType, result.FileID, &result.Buttons, &result.ErrorMsg)
 
 	// return if datatype is invalid
 	if result.DataType != -1 && !isFilter {
@@ -150,10 +150,10 @@ func extractMediaFromReply(replyMsg *gotgbot.Message) (fileid string, dataType i
 // ExtractWelcome extracts and processes welcome/greeting content from a Telegram message.
 // Similar to ExtractNoteAndFilter but specifically for greeting messages.
 // Returns processed content with data type, file ID, and buttons for the greeting.
-func ExtractWelcome(msg *gotgbot.Message, greetingType string, language string) WelcomeResult {
+func ExtractWelcome(msg *gotgbot.Message, greetingType string) WelcomeResult {
 	var result WelcomeResult
 	result.DataType = -1
-	tr := i18n.MustNewTranslator(language)
+	tr := i18n.English()
 	template, _ := tr.GetString("content_need_content")
 	if template == "" {
 		template = "You need to give me some content to %s users!" // fallback
@@ -188,7 +188,7 @@ func ExtractWelcome(msg *gotgbot.Message, greetingType string, language string) 
 	}
 
 	// pre-fix the data before sending it back
-	preFixes(_buttons, "Greeting", &result.Text, &result.DataType, result.FileID, &result.Buttons, &result.ErrorMsg, language)
+	preFixes(_buttons, "Greeting", &result.Text, &result.DataType, result.FileID, &result.Buttons, &result.ErrorMsg)
 
 	return result
 }
@@ -219,8 +219,8 @@ func NotesParser(sent string) (pvtOnly, grpOnly, adminOnly, webPrev, protectedCo
 // preFixes validates and preprocesses message content before database storage.
 // Checks message length limits using UTF-8 character count (not bytes), validates button URLs,
 // sets default button names, and filters invalid content. Modifies parameters by reference.
-func preFixes(buttons []tgmd2html.ButtonV2, defaultNameButton string, text *string, dataType *int, fileid string, dbButtons *[]db.Button, errorMsg *string, language string) {
-	tr := i18n.MustNewTranslator(language)
+func preFixes(buttons []tgmd2html.ButtonV2, defaultNameButton string, text *string, dataType *int, fileid string, dbButtons *[]db.Button, errorMsg *string) {
+	tr := i18n.English()
 
 	// Use utf8.RuneCountInString to count UTF-8 characters instead of len() for bytes
 	textRuneCount := utf8.RuneCountInString(*text)

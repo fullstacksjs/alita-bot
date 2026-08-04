@@ -17,7 +17,7 @@ import (
 func TestGenFormattingKbCallbackData(t *testing.T) {
 	t.Parallel()
 
-	keyboard := formattingModule.genFormattingKb("")
+	keyboard := formattingModule.genFormattingKb()
 
 	require.Len(t, keyboard, 2)
 	require.Len(t, keyboard[0], 2)

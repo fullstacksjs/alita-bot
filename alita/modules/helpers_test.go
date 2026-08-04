@@ -379,7 +379,7 @@ func TestGetModuleHelpAndKb_UsesPassedRegistry(t *testing.T) {
 	}
 
 	// HelpModule has no "Admin" buttons, or different ones.
-	_, kb := getModuleHelpAndKb("admin", "en", localRegistry)
+	_, kb := getModuleHelpAndKb("admin", localRegistry)
 	if len(kb.InlineKeyboard) < 2 {
 		t.Fatalf("inline keyboard rows = %d, want at least module row + navigation", len(kb.InlineKeyboard))
 	}

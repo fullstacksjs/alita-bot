@@ -89,8 +89,8 @@ func TestHelpKeyboardsUseCallbackCodecAndBotUsername(t *testing.T) {
 	}
 
 	startKb := getStartMarkup(tr, "AlitaRobot")
-	if len(startKb.InlineKeyboard) != 4 {
-		t.Fatalf("getStartMarkup() rows = %d, want 4", len(startKb.InlineKeyboard))
+	if len(startKb.InlineKeyboard) != 3 {
+		t.Fatalf("getStartMarkup() rows = %d, want 3", len(startKb.InlineKeyboard))
 	}
 	if got := startKb.InlineKeyboard[1][0].Url; got != "https://t.me/AlitaRobot?startgroup=botstart" {
 		t.Fatalf("add-to-chat URL = %q", got)

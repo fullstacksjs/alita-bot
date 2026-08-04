@@ -26,18 +26,6 @@ func (t *Translator) GetString(key string, params ...TranslationParams) (string,
 
 	// Check if key exists
 	if result == "" || result == "<nil>" {
-		// Try fallback to default language if not already using it
-		if t.langCode != t.manager.defaultLang {
-			defaultTranslator, err := t.manager.GetTranslator(t.manager.defaultLang)
-			if err != nil {
-				return "", NewI18nError("get_string", t.langCode, key, "fallback failed", err)
-			}
-			// Prevent infinite recursion
-			if defaultTranslator.langCode == t.langCode {
-				return "", NewI18nError("get_string", t.langCode, key, "recursive fallback detected", ErrRecursiveFallback)
-			}
-			return defaultTranslator.GetString(key, params...)
-		}
 		return "", NewI18nError("get_string", t.langCode, key, "translation not found", ErrKeyNotFound)
 	}
 
@@ -63,17 +51,6 @@ func (t *Translator) GetStringSlice(key string) ([]string, error) {
 
 	// Check if key exists
 	if len(result) == 0 {
-		// Try fallback to default language
-		if t.langCode != t.manager.defaultLang {
-			defaultTranslator, err := t.manager.GetTranslator(t.manager.defaultLang)
-			if err != nil {
-				return nil, NewI18nError("get_string_slice", t.langCode, key, "fallback failed", err)
-			}
-			if defaultTranslator.langCode == t.langCode {
-				return nil, NewI18nError("get_string_slice", t.langCode, key, "recursive fallback detected", ErrRecursiveFallback)
-			}
-			return defaultTranslator.GetStringSlice(key)
-		}
 		return nil, NewI18nError("get_string_slice", t.langCode, key, "translation not found", ErrKeyNotFound)
 	}
 

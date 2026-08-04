@@ -11,7 +11,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	db_filters "github.com/divkix/Alita_Robot/alita/db/filters"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 
@@ -96,7 +95,7 @@ func (m moduleStruct) addFilter(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	filtersNum := db_filters.CountFilters(chat.Id)
 	if filtersNum >= 150 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("filters_limit_exceeded")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -108,7 +107,7 @@ func (m moduleStruct) addFilter(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	if msg.ReplyToMessage != nil && len(args) <= 1 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("filters_keyword_required")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -117,7 +116,7 @@ func (m moduleStruct) addFilter(b *gotgbot.Bot, ctx *ext.Context) error {
 		}
 		return ext.EndGroups
 	} else if len(args) <= 2 && msg.ReplyToMessage == nil {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("filters_invalid")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -127,7 +126,7 @@ func (m moduleStruct) addFilter(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
-	result := content.ExtractNoteAndFilter(msg, true, lang.GetLanguage(ctx))
+	result := content.ExtractNoteAndFilter(msg, true)
 	filterWord, fileid, text, dataType, buttons, errorMsg := result.KeyWord, result.FileID, result.Text, result.DataType, result.Buttons, result.ErrorMsg
 	if dataType == -1 {
 		_, err := msg.Reply(b, errorMsg, formatting.Shtml())
@@ -142,7 +141,7 @@ func (m moduleStruct) addFilter(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	// Validate keyword length - max 100 characters
 	if len([]rune(filterWord)) > 100 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("filters_keyword_too_long")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -156,7 +155,7 @@ func (m moduleStruct) addFilter(b *gotgbot.Bot, ctx *ext.Context) error {
 		token, tokenErr := newOverwriteToken()
 		if tokenErr != nil {
 			log.Errorf("[Filters] Failed to generate overwrite token: %v", tokenErr)
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			errorText, _ := tr.GetString("filters_overwrite_token_failed")
 			_, _ = msg.Reply(b, errorText, formatting.Shtml())
 			return ext.EndGroups
@@ -176,13 +175,13 @@ func (m moduleStruct) addFilter(b *gotgbot.Bot, ctx *ext.Context) error {
 		})
 		if err != nil {
 			log.Errorf("[Filters] Failed to cache overwrite data: %v", err)
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			errorText, _ := tr.GetString("filters_overwrite_token_failed")
 			_, _ = msg.Reply(b, errorText, formatting.Shtml())
 			return ext.EndGroups
 		}
 
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		confirmText, _ := tr.GetString("filters_overwrite_confirm")
 		yesText, _ := tr.GetString("common_yes")
 		noText, _ := tr.GetString("common_no")
@@ -223,13 +222,13 @@ func (m moduleStruct) addFilter(b *gotgbot.Bot, ctx *ext.Context) error {
 	// Perform DB operation synchronously to ensure completion before confirmation
 	if err := db_filters.AddFilter(chat.Id, filterWord, text, fileid, buttons, dataType); err != nil {
 		log.Errorf("[Filters] AddFilter failed for chat %d: %v", chat.Id, err)
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		errText, _ := tr.GetString("common_settings_save_failed")
 		_, _ = msg.Reply(b, errText, formatting.Shtml())
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	successText, _ := tr.GetString("filters_added_success")
 	_, err := msg.Reply(b, fmt.Sprintf(successText, filterWord), formatting.Shtml())
 	if err != nil {
@@ -271,7 +270,7 @@ func (moduleStruct) rmFilter(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	if len(args) == 0 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("filters_remove_keyword_required")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -282,7 +281,7 @@ func (moduleStruct) rmFilter(b *gotgbot.Bot, ctx *ext.Context) error {
 
 		filterWord, _ := extraction.ExtractQuotes(strings.Join(args, " "), true, true)
 
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		if !slices.Contains(db_filters.GetFiltersList(chat.Id), strings.ToLower(filterWord)) {
 			text, _ := tr.GetString("filters_not_exists")
 			_, err := msg.Reply(b, text, formatting.Shtml())
@@ -340,7 +339,7 @@ func (moduleStruct) filtersList(b *gotgbot.Bot, ctx *ext.Context) error {
 		replyMsgId = msg.MessageId
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	filterKeys := db_filters.GetFiltersList(chat.Id)
 	info, _ := tr.GetString("filters_none_in_chat")
 	newFilterKeys := make([]string, 0, len(filterKeys))
@@ -390,7 +389,7 @@ func (moduleStruct) rmAllFilters(b *gotgbot.Bot, ctx *ext.Context) error {
 	filterKeys := db_filters.GetFiltersList(chat.Id)
 
 	if len(filterKeys) == 0 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("filters_none_in_chat")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -402,7 +401,7 @@ func (moduleStruct) rmAllFilters(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	if chat_status.RequireUserOwner(b, ctx, chat, user.Id) {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		confirmText, _ := tr.GetString("filters_clear_all_confirm")
 		yesText, _ := tr.GetString("common_yes")
 		noText, _ := tr.GetString("common_no")
@@ -453,14 +452,14 @@ func (moduleStruct) filtersButtonHandler(b *gotgbot.Bot, ctx *ext.Context) error
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	response := ""
 	if decoded, ok := decodeCallbackData(query.Data, "rmAllFilters"); ok {
 		response, _ = decoded.Field("a")
 	}
 	if response == "" {
 		log.Warnf("[Filters] Invalid callback data format: %s", query.Data)
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("common_callback_invalid_request")
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
 		return ext.EndGroups
@@ -532,7 +531,7 @@ func (m moduleStruct) filterOverWriteHandler(b *gotgbot.Bot, ctx *ext.Context) e
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	action, token, ok := parseOverwriteCallbackData(query.Data, "filters_overwrite")
 	if !ok {
 		log.Error("[Filters] Invalid callback data format")
@@ -767,7 +766,7 @@ func LoadFilters(dispatcher *ext.Dispatcher) {
 		{
 			{
 				Text: func() string {
-					tr := i18n.MustNewTranslator("en")
+					tr := i18n.English()
 					t, _ := tr.GetString("common_formatting_button")
 					return t
 				}(),

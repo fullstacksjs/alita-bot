@@ -4,7 +4,7 @@ import "time"
 
 const (
 	CacheTTLChatSettings    = 30 * time.Minute
-	CacheTTLLanguage        = 1 * time.Hour
+	CacheTTLWarns           = 1 * time.Hour
 	CacheTTLFilterList      = 30 * time.Minute
 	CacheTTLBlacklist       = 30 * time.Minute
 	CacheTTLGreetings       = 30 * time.Minute

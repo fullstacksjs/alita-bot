@@ -17,7 +17,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/approvals"
 	dbcaptcha "github.com/divkix/Alita_Robot/alita/db/captcha"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
@@ -52,7 +51,7 @@ func (m moduleStruct) approveUser(b *gotgbot.Bot, ctx *ext.Context) error {
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Permission checks
 	if !chat_status.RequireUserAdmin(b, ctx, chat, user.Id) {
@@ -146,7 +145,7 @@ func (m moduleStruct) unapproveUser(b *gotgbot.Bot, ctx *ext.Context) error {
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Permission checks
 	if !chat_status.RequireUserAdmin(b, ctx, chat, user.Id) {
@@ -216,7 +215,7 @@ func (m moduleStruct) checkApprovalStatus(b *gotgbot.Bot, ctx *ext.Context) erro
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Permission checks
 	if !chat_status.RequireUserAdmin(b, ctx, chat, user.Id) {
@@ -309,7 +308,7 @@ func (m moduleStruct) listApprovedUsers(b *gotgbot.Bot, ctx *ext.Context) error 
 	if user == nil {
 		return ext.EndGroups
 	}
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Permission checks
 	if !chat_status.RequireUserAdmin(b, ctx, chat, user.Id) {
@@ -431,7 +430,7 @@ func (m moduleStruct) unapproveAllHandler(b *gotgbot.Bot, ctx *ext.Context) erro
 		return ext.EndGroups
 	}
 	msg := ctx.EffectiveMessage
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Permission checks
 	if !chat_status.RequireGroup(b, ctx, nil) {
@@ -479,7 +478,7 @@ func (m moduleStruct) unapproveAllCallback(b *gotgbot.Bot, ctx *ext.Context) err
 		return ext.EndGroups
 	}
 	user := query.From
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 
 	// Permission checks
 	if !chat_status.RequireUserOwner(b, ctx, nil, user.Id) {

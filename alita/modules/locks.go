@@ -15,7 +15,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters"
 
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/db/locks"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
@@ -127,7 +126,7 @@ func (moduleStruct) buildLockTypesMessage(chatID int64) (res string) {
 	chatLocks := locks.GetChatLocks(chatID)
 
 	newMapLocks := chatLocks
-	tr := i18n.MustNewTranslator(lang.GetLanguage(&ext.Context{EffectiveChat: &gotgbot.Chat{Id: chatID}}))
+	tr := i18n.English()
 	res, _ = tr.GetString("locks_current_locks_header")
 
 	keys := make([]string, 0, len(newMapLocks))
@@ -160,7 +159,7 @@ func (m moduleStruct) locktypes(b *gotgbot.Bot, ctx *ext.Context) error {
 	ctx.EffectiveChat = connectedChat
 	_locktypes := m.getLockMapAsArray()
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	header, _ := tr.GetString("locks_locktypes_header")
 	_, err := msg.Reply(b, header+strings.Join(_locktypes, "\n - "), formatting.Shtml())
 	if err != nil {
@@ -226,7 +225,7 @@ func (m moduleStruct) lockPerm(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	if len(args) == 0 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("locks_what_to_lock")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -240,7 +239,7 @@ func (m moduleStruct) lockPerm(b *gotgbot.Bot, ctx *ext.Context) error {
 	toLock := make([]string, 0, len(args))
 	for _, perm := range args {
 		if !slices.Contains(m.getLockMapAsArray(), perm) {
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			temp, _ := tr.GetString("locks_invalid_lock_type")
 			text := fmt.Sprintf(temp, perm)
 			_, err := msg.Reply(b, text, formatting.Shtml())
@@ -263,7 +262,7 @@ func (m moduleStruct) lockPerm(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	// Send appropriate response based on success/failure
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	if len(failedLocks) > 0 {
 		// Some locks failed
 		text, _ := tr.GetString("locks_lock_failed")
@@ -317,7 +316,7 @@ func (m moduleStruct) unlockPerm(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	if len(args) == 0 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		text, _ := tr.GetString("locks_what_to_unlock")
 		_, err := msg.Reply(b, text, formatting.Shtml())
 		if err != nil {
@@ -331,7 +330,7 @@ func (m moduleStruct) unlockPerm(b *gotgbot.Bot, ctx *ext.Context) error {
 	toUnlock := make([]string, 0, len(args))
 	for _, perm := range args {
 		if !slices.Contains(m.getLockMapAsArray(), perm) {
-			tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+			tr := i18n.English()
 			temp, _ := tr.GetString("locks_invalid_lock_type")
 			text := fmt.Sprintf(temp, perm)
 			_, err := msg.Reply(b, text, formatting.Shtml())
@@ -354,7 +353,7 @@ func (m moduleStruct) unlockPerm(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	// Send appropriate response based on success/failure
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	if len(failedLocks) > 0 {
 		// Some unlocks failed
 		text, _ := tr.GetString("locks_unlock_failed")
@@ -532,7 +531,7 @@ func (moduleStruct) botLockHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	// Check if bot has necessary permissions
 	if !chat_status.IsBotAdmin(b, ctx, nil) {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(&ext.Context{EffectiveChat: chat}))
+		tr := i18n.English()
 		text, _ := tr.GetString("locks_bot_lock_no_permission")
 		_, err := b.SendMessage(chat.Id, text, formatting.Shtml())
 		if err != nil {
@@ -553,7 +552,7 @@ func (moduleStruct) botLockHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		return err
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(&ext.Context{EffectiveChat: chat}))
+	tr := i18n.English()
 	text, _ := tr.GetString("locks_bot_only_admins")
 	_, err = b.SendMessage(chat.Id, text, formatting.Shtml())
 	if err != nil {

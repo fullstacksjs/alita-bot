@@ -15,7 +15,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/devs"
-	"github.com/divkix/Alita_Robot/alita/db/lang"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/extraction"
@@ -44,7 +43,7 @@ func (moduleStruct) chatInfo(b *gotgbot.Bot, ctx *ext.Context) error {
 	args := ctx.Args()
 
 	if len(args) < 2 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		replyText, _ = tr.GetString("devs_specify_user")
 	} else {
 		_chatId := args[1]
@@ -58,7 +57,7 @@ func (moduleStruct) chatInfo(b *gotgbot.Bot, ctx *ext.Context) error {
 		_chat := chat.ToChat()
 		gChat := &_chat
 		con, _ := gChat.GetMemberCount(b, nil)
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		textTemplate, _ := tr.GetString("devs_chat_info")
 		replyText = fmt.Sprintf(textTemplate, chat.Title, chat.Id, con, chat.InviteLink)
 	}
@@ -89,7 +88,7 @@ func (moduleStruct) chatList(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	chat := ctx.EffectiveChat
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	text, _ := tr.GetString("devs_getting_chat_list")
 	rMsg, err := msg.Reply(
 		b,
@@ -153,7 +152,7 @@ func (moduleStruct) leaveChat(b *gotgbot.Bot, ctx *ext.Context) error {
 	args := ctx.Args()
 
 	if len(args) < 2 {
-		tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+		tr := i18n.English()
 		replyText, _ := tr.GetString("devs_specify_user")
 		_, err := msg.Reply(b, replyText, formatting.Shtml())
 		if err != nil {
@@ -171,7 +170,7 @@ func (moduleStruct) leaveChat(b *gotgbot.Bot, ctx *ext.Context) error {
 		return err
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	text, _ := tr.GetString("devs_left_chat")
 	_, err = msg.Reply(b, text, formatting.Shtml())
 	if err != nil {
@@ -226,7 +225,7 @@ func (m moduleStruct) manageTeamRole(b *gotgbot.Bot, ctx *ext.Context, cfg teamR
 	}
 	memStatus := devs.GetTeamMemInfo(userId)
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	var txt string
 
 	// Check if operation is valid based on current role status
@@ -334,7 +333,7 @@ func (moduleStruct) listTeam(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	devHeader, _ := tr.GetString("devs_dev_users_header")
 	sudoHeader, _ := tr.GetString("devs_sudo_users_header")
 	var (
@@ -414,7 +413,7 @@ func (moduleStruct) getStats(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	msg := ctx.EffectiveMessage
-	tr := i18n.MustNewTranslator(lang.GetLanguage(ctx))
+	tr := i18n.English()
 	text, _ := tr.GetString("devs_fetching_stats")
 	edits, err := msg.Reply(
 		b,
