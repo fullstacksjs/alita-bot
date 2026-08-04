@@ -679,9 +679,12 @@ YAML-backed string table.
 - **Greetings**: a join fires **both** a `ChatMemberUpdated` and a service message —
   `claimRecentJoinProcessing` (Redis SETNX, 5s) dedupes to avoid double welcome/
   captcha. `SendCaptcha` owns the durable mute → Telegram restrict → challenge
-  sequence and its rollback; approved users bypass captcha. Join-request duplicate
-  suppression is set only after the admin notice sends and is cleared after any
-  completed accept/decline/ban action.
+  sequence and its rollback; approved users bypass captcha. ⚠️ `pendingJoins`
+  (`chatjoinrequest.All`) only auto-approves when `ShouldAutoApprove` is set — the
+  admin "new join request" notice with approve/decline/ban buttons was **removed**,
+  along with its `join_request` callback handler and the `alita:pendingJoins:*`
+  duplicate-suppression cache. Requests are otherwise left for Telegram's own admin
+  UI; don't reintroduce the notice.
 - **Locks**: `lockMap` (content types, perm watcher group 5) + `restrMap`
   (restriction types, group 6); both skip admins/approved and require `CanBotDelete`.
   The `bots` lock is handled by a separate `ChatMember` handler.

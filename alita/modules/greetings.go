@@ -3,7 +3,6 @@ package modules
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -11,9 +10,7 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
-	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/chatjoinrequest"
-	"github.com/eko/gocache/lib/v4/store"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 
@@ -884,7 +881,7 @@ func (moduleStruct) cleanService(bot *gotgbot.Bot, ctx *ext.Context) error {
 
 // pendingJoins handles chat join requests.
 // Auto-approves join requests if auto-approve is enabled for the chat.
-func (m moduleStruct) pendingJoins(bot *gotgbot.Bot, ctx *ext.Context) error {
+func (moduleStruct) pendingJoins(bot *gotgbot.Bot, ctx *ext.Context) error {
 	defer error_handling.RecoverFromPanic("Greetings", "pendingJoins")
 
 	chat := ctx.ChatJoinRequest.Chat
@@ -905,192 +902,10 @@ func (m moduleStruct) pendingJoins(bot *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.ContinueGroups
 }
 
-// joinRequestHandler processes admin responses to join request approval buttons.
-// Handles accept, decline, and ban actions for pending chat join requests.
-//
-//nolint:gocyclo // Validation and one-shot action handling stay together to prevent partial flows.
-func (m moduleStruct) joinRequestHandler(b *gotgbot.Bot, ctx *ext.Context) error {
-	defer error_handling.RecoverFromPanic("Greetings", "joinRequestHandler")
-
-	query, ok := callbackQueryFromContext(ctx)
-	if !ok {
-		return ext.EndGroups
-	}
-	if query.Message == nil {
-		return ext.EndGroups
-	}
-	user := query.From
-	chat := ctx.EffectiveChat
-	msg := query.Message
-
-	// permission checks
-	if !chat_status.RequireUserAdmin(b, ctx, chat, user.Id) {
-		chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_user_admin_cmd_error", "chat_status_user_admin_button_error", chat_status.WithReplyFallback())
-		return ext.EndGroups
-	}
-
-	response := ""
-	joinUserIDRaw := ""
-	if decoded, ok := decodeCallbackData(query.Data, "join_request"); ok {
-		response, _ = decoded.Field("a")
-		joinUserIDRaw, _ = decoded.Field("u")
-	}
-	if response == "" || joinUserIDRaw == "" {
-		log.Warnf("[Greetings] Invalid callback data format: %s", query.Data)
-		tr := i18n.English()
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-	if response != "accept" && response != "decline" && response != "ban" {
-		log.Warnf("[Greetings] Invalid join request action: %s", response)
-		tr := i18n.English()
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-	joinUserId, err := strconv.ParseInt(joinUserIDRaw, 10, 64)
-	if err != nil {
-		log.Errorf("[Greetings] Failed to parse join user ID '%s': %v", joinUserIDRaw, err)
-		tr := i18n.English()
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-
-	if response == "ban" {
-		if !chat_status.CanUserRestrict(b, ctx, chat, user.Id) {
-			chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_restrict_cmd_error", "chat_status_restrict_button_error")
-			return ext.EndGroups
-		}
-		if !chat_status.CanBotRestrict(b, ctx, chat) {
-			chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_bot_restrict_error", "chat_status_bot_restrict_error")
-			return ext.EndGroups
-		}
-	}
-	if response == "accept" || response == "decline" || response == "ban" {
-		if !chat_status.CanUserInvite(b, ctx, chat, user.Id) {
-			chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_invite_link_user_error", "chat_status_invite_link_user_error")
-			return ext.EndGroups
-		}
-		if !chat_status.CanBotInvite(b, ctx, chat) {
-			chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_invite_link_bot_error", "chat_status_invite_link_bot_error")
-			return ext.EndGroups
-		}
-	}
-
-	joinUser, err := b.GetChat(joinUserId, nil)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	var helpText string
-	tr := i18n.English()
-
-	switch response {
-	case "accept":
-		if _, err = b.ApproveChatJoinRequest(chat.Id, joinUser.Id, nil); err != nil {
-			if helpers.IsExpectedTelegramError(err) {
-				log.Debugf("[Greetings] Expected error approving join for user %d in chat %d: %v", joinUser.Id, chat.Id, err)
-			} else {
-				log.Error(err)
-				return err
-			}
-		}
-		helpText, _ = tr.GetString("greetings_join_request_accepted")
-	case "decline":
-		if _, err = b.DeclineChatJoinRequest(chat.Id, joinUser.Id, nil); err != nil {
-			if helpers.IsExpectedTelegramError(err) {
-				log.Debugf("[Greetings] Expected error declining join for user %d in chat %d: %v", joinUser.Id, chat.Id, err)
-			} else {
-				log.Error(err)
-				return err
-			}
-		}
-		helpText, _ = tr.GetString("greetings_join_request_declined")
-	case "ban":
-		if _, err = chat.BanMember(b, joinUser.Id, nil); err != nil {
-			if helpers.IsExpectedTelegramError(err) {
-				log.Debugf("[Greetings] Expected error banning user %d in chat %d: %v", joinUser.Id, chat.Id, err)
-			} else {
-				log.Error(err)
-				return err
-			}
-		}
-		if _, err = b.DeclineChatJoinRequest(chat.Id, joinUser.Id, nil); err != nil {
-			if helpers.IsExpectedTelegramError(err) {
-				log.Debugf("[Greetings] Expected error declining join after ban for user %d in chat %d: %v", joinUser.Id, chat.Id, err)
-			} else {
-				log.Error(err)
-				return err
-			}
-		}
-		helpText, _ = tr.GetString("greetings_join_request_banned")
-	}
-	m.clearPendingJoins(chat.Id, joinUser.Id)
-
-	_, _, err = msg.EditText(b,
-		fmt.Sprintf(helpText, formatting.MentionHtml(joinUser.Id, joinUser.FirstName)),
-		&gotgbot.EditMessageTextOpts{
-			ParseMode: formatting.HTML,
-		},
-	)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	_, err = query.Answer(b,
-		&gotgbot.AnswerCallbackQueryOpts{
-			Text: fmt.Sprintf(helpText, joinUser.FirstName),
-		},
-	)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	return ext.EndGroups
-}
-
 // autoApprove toggles automatic approval of chat join requests.
 // Admins can enable/disable auto-approval or check current setting for new join requests.
 func (m moduleStruct) autoApprove(bot *gotgbot.Bot, ctx *ext.Context) error {
 	return m.greetingToggle(bot, ctx, autoApproveToggleConfig)
-}
-
-// loadPendingJoins checks if a join request notification has already been sent for a user.
-// Prevents duplicate join request messages by checking cache for recent requests.
-func (moduleStruct) loadPendingJoins(chatId, userId int64) bool {
-	m := cache.GetMarshal()
-	if m == nil {
-		return false
-	}
-	alreadyAsked, err := m.Get(cache.Context, fmt.Sprintf("alita:pendingJoins:%d:%d", chatId, userId), new(bool))
-	if err != nil || alreadyAsked == nil {
-		return false
-	}
-	// Safe type assertion
-	if boolVal, ok := alreadyAsked.(*bool); ok && boolVal != nil {
-		return *boolVal
-	}
-	return false
-}
-
-// setPendingJoins marks a join request as processed in cache with expiration.
-// Stores request info for 5 minutes to prevent duplicate approval notifications.
-func (moduleStruct) setPendingJoins(chatId, userId int64) {
-	m := cache.GetMarshal()
-	if m == nil {
-		return
-	}
-	_ = m.Set(cache.Context, fmt.Sprintf("alita:pendingJoins:%d:%d", chatId, userId), true, store.WithExpiration(5*time.Minute))
-}
-
-func (moduleStruct) clearPendingJoins(chatId, userId int64) {
-	if m := cache.GetMarshal(); m != nil {
-		_ = m.Delete(cache.Context, fmt.Sprintf("alita:pendingJoins:%d:%d", chatId, userId))
-	}
 }
 
 // LoadGreetings registers all greeting-related handlers with the dispatcher.
@@ -1157,7 +972,6 @@ func LoadGreetings(dispatcher *ext.Dispatcher) {
 	dispatcher.AddHandler(handlers.NewCommand("cleangoodbye", greetingsModule.cleanGoodbye))
 	dispatcher.AddHandler(handlers.NewCommand("cleanservice", greetingsModule.delJoined))
 	dispatcher.AddHandler(handlers.NewCommand("autoapprove", greetingsModule.autoApprove))
-	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("join_request"), greetingsModule.joinRequestHandler))
 }
 
 func init() {
