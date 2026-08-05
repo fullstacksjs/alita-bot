@@ -1,957 +1,179 @@
 # Repository Guidelines
 
-Alita Robot is a Telegram group-management bot written in **Go 1.26** on top of
-the **gotgbot/v2** library (`v2.0.0-rc.35`). It provides admin tools, filters,
-notes, greetings, anti-flood / anti-raid / anti-spam, captcha verification,
-warns, locks, backups, connections and reactions. All bot text is **English
-only** — the multi-language system (`/lang`, per-chat/user locale preferences)
-was removed.
+Alita Robot is an English-only Telegram group-management bot written in Go using
+`gotgbot/v2`. `AGENTS.md` is the source of truth for contributor guidance;
+`CLAUDE.md` and `GEMINI.md` are symlinks to it.
 
-> `CLAUDE.md` and `GEMINI.md` are symlinks to this file — **AGENTS.md is the single
-> source of truth** for agent/contributor guidance. Edit this file only.
+Keep this file focused on non-obvious, repository-wide constraints. Update an
+existing section when a change invalidates it; do not duplicate facts that are
+easy to discover from code, tests, `sample.env`, or workflow files.
 
-## Maintaining This File
+## Project map
 
-This file is **not** auto-generated. When you make changes that affect anything
-documented here — build pipeline, scripts, env vars, routes, key systems,
-dependencies, directory layout, or code-style rules — update the relevant
-section in the same change so it stays accurate. `CLAUDE.md` and `GEMINI.md` are
-symlinks to this file, so edit `AGENTS.md`.
+- `main.go`: process bootstrap, polling/webhook selection, HTTP transport, and
+  shutdown wiring.
+- `alita/modules/`: Telegram commands, callbacks, watchers, and module registry.
+- `alita/db/models/`: GORM models; `alita/db/<domain>/`: domain repositories.
+- `alita/db/cache/`: repository read-through cache; `alita/utils/cache/`: Redis
+  connection and shared operational caches.
+- `alita/i18n/` and `locales/`: embedded English strings and command metadata.
+- `migrations/`: authoritative PostgreSQL schema and forward-only migrations.
+- `internal/repo_checks/`: source-structure assertions that may need updates after
+  renames or refactors.
+- `scripts/check_translations/`: separate Go module for locale validation.
 
----
-
-## 0. Maintaining this document (READ FIRST)
-
-**This file is a living knowledge base. Keep it current as you work.**
-
-- When you discover something **non-obvious, load-bearing, or surprising** about
-  the codebase (a hidden coupling, a "why it's done this way" decision, a footgun,
-  a corrected fact, a new subsystem), **record it here in the most relevant
-  section before you finish the task.** Treat it as part of "done."
-- **Consolidate, don't append.** Before adding a note, find where it belongs and
-  merge it with what's there. Fix stale/contradictory statements in place rather
-  than stacking a second version next to them. Prefer one accurate sentence over
-  three vague ones. Remove notes that have become false.
-- **Be specific and verifiable**: name the file/function/env-var/table/constant.
-  A future agent must be able to act on the note without re-deriving it.
-- **Verify before trusting.** This document reflects the code at the time each
-  note was written. If a note names a file, function, flag, table, or default,
-  confirm it still exists before relying on it — and if it has changed, update the
-  note as part of your change.
-- Don't duplicate what the code/tests/git history already make obvious; capture
-  the *why* and the *gotcha*, not a restatement of the code.
-- This document was last fully reconciled against the source by a whole-codebase
-  read; sections below marked with ⚠️ call out where older docs had drifted.
-
----
-
-## 1. Mental model — how it fits together
-
-A Telegram **update** flows like this:
-
-```
-Telegram ──► (polling updater  OR  webhook /webhook POST)
-          ──► ext.Dispatcher (tracing.TracingProcessor wraps each update in a span;
-                              dispatcherErrorHandler classifies errors → Noop)
-          ──► handlers, executed in HANDLER-GROUP order (negative → 0 → positive)
-                 • group -10/-5/-2/-1 : early interceptors (captcha pending, antiraid,
-                                        antispam, passive Users tracker)
-                 • group 0            : normal command handlers (return ext.EndGroups)
-                 • group 4..10        : message watchers (antiflood, locks, blacklists,
-                                        filters, reactions, reports) (return ext.ContinueGroups)
-          ──► handler reads/writes DB (GORM/Postgres) through per-domain repos,
-              which read-through a Redis cache; replies via locale strings + media/formatting
-```
-
-Big architectural facts an agent must hold in mind:
-
-- **Config and the DB connection are opened in package `init()` functions, not in
-  `main()`.** Importing `alita/config` loads+validates config into the global
-  `config.AppConfig`; importing `alita/db` opens the Postgres connection. Both
-  short-circuit for CLI flags (`--version`/`--health`) and when their required env
-  is unset (so tests can import them). Do **not** move this into `main()`.
-- **The DB layer is split into per-domain sub-packages** (`alita/db/<domain>/`)
-  with all GORM structs in `alita/db/models/`. `alita/db/db.go` is a
-  backward-compat shim that re-exports model types (`db.User = models.User`) and
-  message-type constants (`db.TEXT`…`db.VIDEO_NOTE`) — it does **not** re-export
-  cache helpers or TTL constants (those live in `alita/db/cache/`). ⚠️ Older docs
-  described a flat `alita/db/*_db.go` layout — that no longer exists.
-- **Schema source of truth is raw SQL in `migrations/*.sql`**, applied by a custom
-  runtime engine (`alita/db/migrations/runner.go`), **not** `gorm.AutoMigrate`.
-  GORM struct tags only affect runtime CRUD. Tests bootstrap schema via SQLite
-  `AutoMigrate` (`testmain_test.go`), so struct↔SQL drift is possible and not
-  caught by tests — keep them in sync manually.
-- **Cache is Redis-only** (via `eko/gocache` + `go-redis`). There is no in-memory
-  production fallback. Every cache helper is nil-safe: when the marshaler is nil
-  it bypasses caching and hits the DB directly.
-- **Modules self-register in `init()`** and load in ascending-priority order; the
-  Help module loads last (deferred) so it can render every module's metadata.
-- **Callback data uses a versioned codec** (`<namespace>|v1|<url-encoded>`) capped
-  at Telegram's 64-byte limit — never `strings.Split` raw callback data.
-
----
-
-## 2. Project structure
-
-- **`main.go`** — process entry point (CLI flags, bootstrap, polling/webhook
-  branch, dispatcher, shutdown wiring, tuned Bot-API HTTP transport).
-- **`alita/`** — application code
-  - `main.go` — `LoadModules`, `InitialChecks`, `ListModules`.
-  - `config/` — `config.go` (manual env loading, defaults, validation, logredact
-    wiring in `init()`), `types.go` (`typeConvertor`). **No viper here.**
-  - `db/`
-    - `db.go` — OTel-traced CRUD wrappers + re-export shim for models and message-type constants.
-    - `conn.go` — Postgres connection (opened in `init()`), pool tuning, optional `AUTO_MIGRATE`.
-    - `models/` — **all GORM structs** (one file per table) + `types.go` (JSONB types).
-    - `<domain>/` — per-domain repositories: `admin, antiflood, antiraid, approvals,
-      blacklists, captcha, channels, chats, connections, devs, disabling, filters,
-      greetings, locks, notes, pins, reports, rules, user, warns`
-      (usually `repository.go` + optional `optimized.go`).
-    - `cache/` — `CacheKey`, `GetFromCacheOrLoad` (singleflight read-through), `DeleteCache`, TTL constants.
-    - `migrations/` — `runner.go` (custom SQL migration engine).
-    - `monitoring/` — `metrics.go` (DB pool metrics for `/db_metrics`).
-    - `backup/` — `backup.go` + `types.go` (per-module export/import/clear, **17 modules**).
-  - `i18n/` — singleton `LocaleManager`, English `Translator`, `go:embed` locales.
-    Locale YAML is parsed into `map[string]any` (yaml.v3); key lookup is a dot-path
-    descent with case-insensitive fallback (for `alt_names.<Module>`). **No viper.**
-  - `modules/` — bot feature modules + shared plumbing (see §6).
-  - `utils/` — `chat_status` (permissions), `helpers` (command pipeline), `cache`,
-    `callbackcodec`, `formatting`, `keyboard`, `keyword_matcher`, `media`, `content`,
-    `extraction`, `error_handling`, `errors`, `logredact`, `ratelimit`, `constants`,
-    `monitoring`, `shutdown`, `tracing`, `httpserver`.
-- **`locales/`** — `en.yml` (the only user-facing locale) + **`config.yml`** (loaded
-  as a pseudo-locale `"config"`; holds `alt_names.<Module>` and `db_default_*`).
-- **`migrations/`** — timestamped `.sql` schema files (source of truth).
-- **`scripts/`** — `check_translations/` (**separate go.mod**),
-  `validate_orphaned_data.go`, `migrate_psql.sh`, `backup_database.sh`.
-- **`internal/repo_checks/`** — test-only structural-invariant assertions.
-- **`.github/workflows/`** — `ci.yml`, `release.yml`,
-  `dependabot-native-merge.yml`, `pullfrog.yml`.
-- **`docker/`** — `alpine` (prod), `alpine.debug`, `goreleaser`, `pr-build`.
-
----
-
-## 3. Build, Test & Development commands
+## Commands
 
 ```bash
-make run                # go run main.go
-make build              # goreleaser release --snapshot --skip=publish --clean --skip=sign
-make lint               # golangci-lint run (v2 config)
-make test               # go test -tags testtools -v -race -coverprofile=coverage.out \
-                        #   -coverpkg=<all except root main + scripts/> -count=1 -timeout 10m ./...
-make test-postgres-integrity # focused DB-native concurrency/constraint tests; requires DATABASE_URL
-make tidy / make vendor
+make run
+make build
+make lint
+make test
+make test-postgres-integrity   # requires DATABASE_URL
+make check-translations
+make check-duplicates
+make tidy
 
-# Single tests
-go test -v -run TestXxx ./alita/db
-go test -v -count=1 -timeout 10m ./alita/db
-go test -v -run TestProductContract ./alita # exact commands/callbacks/watchers/help surface
+# Focused tests
+go test -v -run TestXxx ./path/to/package
 
-# Translations
-make check-translations # runs scripts/check_translations (separate module) — missing-key gate
-make check-duplicates   # golangci-lint --enable dupl (duplicate Go CODE, NOT translation keys) ⚠️
+# Database tooling
+make psql-migrate
+make psql-status
+make validate-db
+make backup-db
 
-# Postgres migrations (require PSQL_DB_* env)
-make psql-migrate / psql-status / psql-reset
-make validate-db        # scripts/validate_orphaned_data.go
-make backup-db          # scripts/backup_database.sh
-
-# Release version bump (patches BotVersion in config.go + main.go fallback)
-make bump-version TAG=vX.Y.Z   # wraps scripts/bump_version.sh
+# Release version bump
+make bump-version TAG=vX.Y.Z
 ```
 
-The default test suite is self-contained: package `TestMain`s use SQLite and
-Redis-dependent tests use miniredis. `CGO_ENABLED=1` and a C toolchain are still
-required for `-race`; shipped binaries use `CGO_ENABLED=0`. CI additionally runs
-the complete migration chain and focused DB-native integrity tests serially
-against PostgreSQL 16 + Redis 7 before the self-contained full suite. `-coverpkg` excludes the root
-`main` package and `scripts/`, so changes there do not move coverage; `alita/*`
-changes do. Coverage gate is **78%** (hardcoded in `ci.yml`).
+The normal test suite uses SQLite and miniredis. Race tests require CGO and a C
+toolchain. CI also verifies the complete migration chain and PostgreSQL-specific
+integrity tests; consult `.github/workflows/ci.yml` for the current coverage gate
+and exact CI versions.
 
----
+## Architecture and startup
 
-## 4. CI/CD — how it actually works
+- Importing `alita/config` loads and validates global configuration; importing
+  `alita/db` opens PostgreSQL. Both happen in package `init()` and short-circuit
+  for supported CLI flags or missing test configuration. Do not move them into
+  `main()` without redesigning all import-time behavior.
+- `main()` initializes Redis before locales and modules, then tracing, the bot,
+  DB anchors, dispatcher, monitors, shutdown, and polling or webhook delivery.
+- Modules self-register in `init()` and load by ascending priority. Help is
+  deliberately loaded last so all module metadata is available.
+- Handler groups define update flow: negative groups are early interceptors,
+  group 0 is commands, and positive groups are watchers. Commands normally return
+  `ext.EndGroups`; watchers return `ext.ContinueGroups`.
+- Shutdown handlers run LIFO under one overall timeout. Register them in inverse
+  dependency order and give every background service a stop-and-join path.
 
-### `ci.yml` (push to `main` with **tags ignored**, all PRs, manual dispatch)
+## Handlers, callbacks, and permissions
 
-Concurrency cancels in-progress runs per PR/ref. Top-level perms `contents: read`
-+ `security-events: write`; all checkouts use `persist-credentials: false`.
+- Prefer the declarative command pipeline in
+  `alita/utils/helpers/command_pipeline.go` for new commands. Legacy handlers
+  remain valid where connection or anonymous-admin behavior requires them.
+- `ctx.EffectiveSender` and callback messages may be nil. Use
+  `callbackQueryFromContext`, `chat_status.GetEffectiveUser`, or
+  `chat_status.RequireUser` instead of unchecked access.
+- `IsUserAdmin` intentionally rejects channel IDs and all non-positive user IDs.
+  Do not weaken this or pass chat IDs as user IDs.
+- After `IsUserConnected`, assign the returned chat to `ctx.EffectiveChat`.
+- Anonymous-admin redispatch bypasses command-pipeline checks; wrappers on that
+  path must enforce permissions explicitly.
+- Chat-scoped deep links must re-check `chat_status.IsUserInChat`; admin-only
+  content must also re-check admin status.
+- Use `alita/utils/callbackcodec` for callback data. Telegram limits it to 64
+  bytes. Never parse raw callback data with `strings.Split`; store large or
+  user-controlled payloads in Redis behind a short, user-bound token.
+- Permission helpers may already answer callback queries. Do not answer a second
+  time after a failed check.
+- State changes that gate a confirmation or success response must complete
+  synchronously. Never report success after a persistence error.
+- Every fire-and-forget goroutine needs
+  `defer error_handling.RecoverFromPanic(function, module)`.
 
-Parallel jobs (no `needs`), then aggregation:
+## Database and migrations
 
-| Job | What it does | Gating? |
-|-----|--------------|---------|
-| `security` | gosec `-no-fail` → SARIF upload (`continue-on-error`); govulncheck (`continue-on-error`) | ⚠️ **Non-gating** — nothing here can fail the build despite being "required" by `ci-success`. |
-| `lint` | golangci-lint **binary v2.11.4**, `--timeout 10m`, `only-new-issues:true`; second run with `--enable dupl`; informational TODO/FIXME + gocyclo>15 step summaries | New issues block; pre-existing tolerated. |
-| `build` | `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"`, then `./alita_robot --version` from `/tmp` | Yes |
-| `test` | Service containers **postgres:16** + **redis:7**; verifies the raw migration chain, runs focused DB-native integrity tests serially under `-race`, then `make test` and coverage **≥78%** | Yes |
-| `translations-check` | `make check-translations` (translation completeness gate) | Yes |
-| `docker-verify` | single-arch `docker build -f docker/alpine` (no push) | Yes |
-| `docker-publish` | main-push only; multi-arch `linux/amd64,linux/arm64` → GHCR tags `dev`, `dev-<sha7>`, `<sha7>` (NOT `latest`), with `provenance:true` + `sbom:true`; GHA cache export is best-effort (`ignore-error=true`) while image build/push remains gating; waits for security, lint, build, test, translations-check, and docker-verify | Yes (on main push) |
-| `ci-success` | `if: always()`; re-checks each result; enforces `docker-publish` only on main-push | Final gate |
-
-### `release.yml` (`v*` tag push or manual dispatch with `tag` input)
-
-`release-ci-checks` runs gosec, informational govulncheck, the release build,
-the PostgreSQL migration/integrity pass, the full race/coverage suite,
-and translation checks. `goreleaser` (**v2.13.0**, deletes any
-pre-existing release for the tag to handle tag moves) then runs, followed by
-`attest-artifacts` (SLSA `attest-build-provenance` over `dist/*`) and
-`post-release-scan` (Trivy `CRITICAL,HIGH`, `exit-code:0`, informational).
-GoReleaser's `dockers_v2` publishes `ghcr.io/fullstacksjs/alita-bot` with tags
-`{{.Tag}}`, `{{.Version}}`, **`latest`** (only the release path publishes
-`latest`). ⚠️ The image name is **hardcoded** in `.goreleaser.yaml` — it is
-deliberately the repo name (`alita-bot`), not `{{ .ProjectName }}`
-(`alita_robot`), so release images land in the same GHCR package `ci.yml`
-pushes `dev`/`<sha7>` to via `ghcr.io/${{ github.repository }}`. Keep
-`org.opencontainers.image.source` pointing at `fullstacksjs/alita-bot` too —
-GHCR uses that label to attach the package to the repo (and thus to inherit its
-`packages: write` permissions).
-
-⚠️ **Tags must be `v`-prefixed** (`on: push: tags: ["v*"]`). The `goreleaser` job's
-**Resolve release tag** step normalizes the `workflow_dispatch` input to one `v`
-prefix and strictly validates `vMAJOR.MINOR.PATCH[-prerelease]` (on tag-push it
-passes `github.ref_name` through), exposing `steps.tag.outputs.tag`. For a manual
-release, the CI job applies the version bump before testing and records the exact
-Git tree. The release job recreates that tree from the tested SHA, refuses to
-continue if `main` moved or the tree differs, makes one normal push (never rebase
-or force-push), then creates an annotated tag at that exact commit. All git pushes
-use a token-in-URL
-(`https://x-access-token:$GITHUB_TOKEN@…`) because checkout keeps
-`persist-credentials: false`. `GITHUB_TOKEN` pushes don't re-trigger workflows,
-so there's no double release. `--version` reads `config.AppConfig.BotVersion`
-(patched by the bump script; currently `"2.21.0"`), with a hard-coded local
-fallback `version = "v2.21.0"` in `main.go` (used only when
-config didn't load). There are **no** `-X main.version/commit/date` ldflags anymore
-(they were no-ops — `package main` declares no such vars). ⚠️ After the bump step,
-`goreleaser` runs a **"Verify BotVersion matches tag"** gate that `grep`s **both**
-`alita/config/config.go` (`BotVersion:  "<ver>"`) **and** `main.go`
-(`version = "v<tag>"`) and fails the release on mismatch — this is the enforcement
-behind "don't hand-edit BotVersion."
-
-Tag pushes do not run `ci.yml`, but `release.yml` independently repeats the
-migration, race/coverage, and translation gates before publishing.
-
-### `dependabot-native-merge.yml`
-
-Runs on `pull_request_target` without checking out PR code. It auto-approves +
-`gh pr merge --auto --squash` for **patch/minor** updates except gotgbot and
-`gotg_md2html`; major and compatibility-sensitive updates get a warning comment.
-
-### `pullfrog.yml`
-
-Manual `workflow_dispatch` (with a `prompt` input) that runs the pullfrog agent
-(`pullfrog/pullfrog@v0`) against the checked-out code. Read-only permissions
-(`contents: read`); provider API keys come from repo secrets. Not part of the
-push/PR CI pipeline.
-
-### Local quality gates
-
-- **Pre-commit** (`.pre-commit-config.yaml`): trailing-whitespace, end-of-file,
-  check-yaml, large-file (max 1000 KB), merge-conflict, detect-private-key,
-  golangci-lint **v2.11.4** (same pinned version as CI),
-  `gofmt -l -w`, `go mod tidy`. Install: `pip install pre-commit && pre-commit install`.
-- **`.golangci.yml`** (v2 format): linters `godox`, `dupl` (threshold 100),
-  `gocyclo` (min-complexity **20**); `new:true` (only-new-issues); build-tag
-  `testtools`; excludes tests/db-migrations.
-
-### Deploy targets (they disagree — check the specific one)
-
-Docker Compose/Dokploy (`AUTO_MIGRATE=true`, port 8080), Railway (`RAILPACK`,
-healthcheck `/health`, injected `PORT` supported), Render (`AUTO_MIGRATE=true`,
-`HTTP_PORT=10000`), Heroku
-(`Procfile` → `bin/Alita_Robot` capitalized ⚠️, `app.json`), Nixpacks. Prod image
-is `distroless/static-debian12`, non-root UID 65532, EXPOSE 8080, healthcheck via
-the `--health` flag.
-
----
-
-## 5. Startup / bootstrap flow
-
-`main()` order (config + DB are already loaded by package `init()` before this runs):
-
-1. Capture `appStartTime` (for `/health` uptime).
-2. **CLI flags** by raw `os.Args`: `--health` GETs `/health` and exits 0/1
-   (distroless has no curl); `--version`/`-v` prints `BotVersion` and exits.
-3. Main-goroutine panic-recovery `defer` (`os.Exit(1)`).
-4. **`cache.InitCache()` FIRST** — fatal on failure;
-   FLUSHDBs Redis when `ClearCacheOnStartup` (default **true**).
-5. `i18n.GetManager().Initialize(&Locales, "locales")` (embedded YAML).
-6. `tracing.InitTracing()` — **non-fatal** (warns and continues).
-7. Tuned HTTP transport + optional `API_SERVER` through gotgbot's
-   `RequestOpts.APIURL` → `gotgbot.NewBot` → resolve username.
-8. `alita.InitialChecks(b)` — `user.EnsureBotInDb` (blocking, FK anchor).
-9. dispatcher (`TracingProcessor`, `dispatcherErrorHandler`,
-   `MaxRoutines` default 200) → monitoring systems → shutdown manager →
-   unified HTTP server.
-10. **Mode branch** on `UseWebhooks`: webhook (requires `WEBHOOK_DOMAIN` +
-    `WEBHOOK_SECRET`, else fatal; `select {}`) or polling (default;
-    `DeleteWebhook` then `StartPolling`; `updater.Idle()`). `postInit` (shared by
-    both) loads modules, restores/starts the captcha lifecycle, sets `/start` and
-    `/help`, and sends an HTML startup message to `MESSAGE_DUMP` (non-fatal).
-
-**Graceful shutdown** (`alita/utils/shutdown`): a goroutine waits on
-SIGTERM/SIGINT/Interrupt, then runs handlers **LIFO** (reverse of registration
-order in `main`), each with panic recovery, under a **60s** total timeout, then
-`os.Exit(0/1)`. `WaitForShutdown` starts only after the mode-specific HTTP/updater
-handlers are registered. Registration order is deliberately the inverse of
-shutdown dependencies: polling updater / HTTP stop first, then captcha, antiraid,
-tracing, DB monitoring and application monitors, and finally the DB pool.
-
----
-
-## 6. Module system
-
-### Registry (`alita/modules/registry.go`)
-
-- `RegisterLegacyModule(name, priority, loadFunc)` appends a `registeredModule`
-  record. Dedup is by name (duplicates silently ignored, first wins).
-- `LoadAllModules` stable-sorts **ascending** by priority. **Lower number loads
-  earlier.** `alita.LoadModules` resets `AbleMap`, **defers `LoadHelp`** (so Help
-  renders after every module pushed its metadata), then `LoadAllModules`.
-
-**Priorities** (edit the literal in each module's `init()` to reorder):
-
-| Pri | Module | Pri | Module | Pri | Module |
-|----:|--------|----:|--------|----:|--------|
-| -10 | BotUpdates | 80 | Mutes | 180 | Disabling |
-| 10 | Antispam | 90 | Purges | 190 | Rules |
-| 30 | Admin | 100 | Users | 200 | Warns |
-| 40 | Approvals | 110 | Reports | 210 | Greetings |
-| 50 | Pins | 120 | Dev | 220 | Captcha |
-| 60 | Misc | 130 | Locks | 230 | AntiRaid |
-| 70 | Bans | 140 | Filters | 240 | Blacklists |
-|     |        | 150 | Antiflood | 250 | Reactions |
-|     |        | 160 | Notes | 260 | Formatting |
-|     |        | 170 | Connections | 270 | Backup |
-
-Help is not in the registry (deferred-last). Every module, including BotUpdates,
-uses `RegisterLegacyModule`.
-
-### `moduleStruct` and the help registry (`core.go`)
-
-⚠️ There is **no `alita/modules/helpers.go`** (older docs claimed one). `moduleStruct`
-(fields `moduleName`, `handlerGroup`, `permHandlerGroup`, `restrHandlerGroup`,
-`defaultRulesBtn`, `AbleMap`, `AltHelpOptions`, `helpableKb`) lives in `core.go`.
-
-- A single package-global singleton `DefaultHelpRegistry()` doubles as the Help
-  module's state **and** the cross-module registry. Each module, at the end of its
-  `LoadXxx`, sets `DefaultHelpRegistry().AbleMap[name] = true` and optionally sets
-  `helpableKb[Name]` / `AltHelpOptions[Name]`. `AbleMap` is a plain
-  `map[string]bool` (**not** `sync.Map`, no mutex) — safe only because all writes
-  happen during single-threaded startup. Do not write it from a handler.
-- `helpableKb` keys are the **Title-cased** module name; per-module help text comes
-  from i18n key `<lowercase>_help_msg` rendered via `tgmd2html.MD2HTMLV2`.
-- ⚠️ `moduleStruct` is passed **by value** to handler methods, so it must never
-  embed a mutex/`sync.Map`. Temporary note/filter overwrite payloads live in
-  Redis, outside the copied module value.
-
-### Adding a module
-
-1. DB ops in `alita/db/<domain>/repository.go` (+ optimized.go for hot reads),
-   model in `alita/db/models/<domain>.go`, alias in `db.go`, migration in
-   `migrations/`.
-2. Handlers + `LoadYourModule(dispatcher)` in `alita/modules/your_module.go`.
-3. `RegisterLegacyModule("YourModule", <priority>, LoadYourModule)` in `init()`;
-   set `DefaultHelpRegistry().AbleMap[name] = true` inside `LoadXxx`.
-4. Add `<yourmodule>_help_msg` (and any keys) to `locales/en.yml`.
-
-### Command registration: two patterns coexist
-
-- **New declarative pipeline** (`alita/utils/helpers/command_pipeline.go`) — used by
-  `admin.go` and `pins.go`: `WrapCommand(dispatcher, CommandDescriptor, handler)`
-  runs panic-recovery → `BuildCommandContext` → ordered `RequiredChecks`
-  (`CheckFunc` builders like `RequireGroup`, `RequireUserAdmin`, `CanUserRestrict`)
-  → handler. `BuildCommandContext`'s "error" sentinel **is `ext.EndGroups`**, not a
-  real error. `Disableable:true` registers every alias as disableable.
-- **Legacy** — everything else: `dispatcher.AddHandler(handlers.NewCommand(...))`,
-  `helpers.MultiCommand(d, aliases, handler)`, `helpers.AddCmdToDisableable(cmd)`.
-
----
-
-## 7. Handler, callback & routing patterns
-
-- **Handler groups**: negative (early interceptors), 0 (commands), positive
-  (watchers). In use: captcha-pending **-10**, antiraid module **-5**, antispam
-  **-2**, Users tracker **-1**; locks perm **5** / restr **6**; blacklists **7**;
-  reports `@admin` watcher & reactions **8**; filters **9**; pins & some watchers
-  **10**; antiflood **4**.
-- **Return values**: commands return `ext.EndGroups`; watchers return
-  `ext.ContinueGroups` (so multiple watchers fire on one message). The Users
-  tracker (group -1, every message) **must** return `ContinueGroups`.
-- **Callback codec** (`alita/utils/callbackcodec`, wrapped by
-  `modules/callback_codec.go`): `Encode(namespace, fields)` →
-  `<namespace>|v1|<url-encoded fields>`, **hard-capped at 64 bytes**
-  (`MaxCallbackDataLen`). `decodeCallbackData(data, expectedNamespaces…)` filters
-  case-insensitively. Never `strings.Split` raw data. The module wrapper
-  `encodeCallbackData` returns `""` on overflow (broken button) — for user-supplied
-  values use the **token pattern** (store payload in Redis, put a short hex token
-  in the callback; see filters/notes overwrite flows). Decoding is strict:
-  deprecated dot-notation callbacks are intentionally rejected.
-- **`callbackQueryFromContext(ctx)`** is the nil-safe guard at the top of every
-  callback handler (duplicated verbatim in `chat_status` because Go can't share
-  unexported helpers). Always nil-check `query.Message`. gotgbot unmarshals an
-  accessible `CallbackQuery.Message` as a `gotgbot.Message` value, not a pointer;
-  use its interface methods to edit/delete and `ctx.EffectiveMessage` to read
-  concrete message fields rather than asserting `*gotgbot.Message`.
-- **Anonymous-admin flow**: on a `GroupAnonymousBot` sender, `chat_status.checkAnonAdmin`
-  either bypasses (if the chat's `AnonAdmin` DB setting is on) or caches the
-  original message (`alita:anonAdmin:<chat>:<msg>`, **20s TTL**) and shows a "prove
-  admin" button. `bot_updates.go:verifyAnonymousAdmin` re-checks admin status,
-  restores `ctx.EffectiveMessage`, **nils `SenderChat` and `CallbackQuery`** (to
-  stop re-detection), and re-dispatches via `HandleAnonymousAdmin`. ⚠️ This path
-  **bypasses `WrapCommand` RequiredChecks**, so anon wrappers (e.g. in `admin.go`)
-  must re-enforce permissions manually.
-- **Deep links** (`deeplink_router.go`): `/start <payload>` in private with 2 args →
-  `HandleDeepLink` (exact-match first, then **longest-prefix**). Registered:
-  `help_`, `about` (exact), `rules_`, `notes_`, `note_`, `note`, `connect_`.
-  ⚠️ **Security invariant**: every chat-scoped deep link (rules/notes/connect) must
-  gate data behind `chat_status.IsUserInChat` (and notes also `IsUserAdmin` for
-  admin-only notes) — omitting it leaks another chat's private content to anyone
-  who crafts a link. `connect_` revalidates authorization before its synchronous
-  `ConnectId`; transient Telegram lookup failures preserve existing connections,
-  while definitive non-membership disconnects them.
-- **Double-answer bug**: `RequireUserAdmin`/`RequireUserOwner` with `justCheck=false`
-  already answer the callback — don't answer again. The pipeline relies on
-  `WithReplyFallback()` to avoid duplicate answers.
-
----
-
-## 8. Permission system (`alita/utils/chat_status/`)
-
-Public `Can*/Require*` permission implementations live directly in `access.go`;
-`chat_status.go` holds shared status and membership logic.
-`permission_responder.go` centralizes failure messaging.
-
-- `RequireGroup`/`RequirePrivate`, `RequireBotAdmin`/`RequireUserAdmin`/
-  `RequireUserOwner` are **pure boolean** guards (no messages); messaging is done by
-  `NewPermissionResponder(b).Respond(ctx, cmdKey, btnKey, opts…)` which **always
-  returns false** (use `return responder.Respond(...)`), choosing callback-answer
-  vs `SendMessage`/`Reply` (`WithReply()`/`WithReplyFallback()`).
-- Granular `CanUser*` checks share `hasUserPermission`, which grants **creator a
-  bypass** for every flag. `CanBot*` checks have **no anon handling and no creator
-  fallback** (bots can't be creator) and `nil`-guard the bot.
-- ⚠️ **`IsUserAdmin` returns false for channel IDs and all non-positive IDs**, before
-  any API call (`IsValidUserId(id)` = `id > 0`; `IsChannelId(id)` = `id < -1e12`).
-  This is a privilege-escalation guard — do not weaken it. `IsBotAdmin` is true in
-  private chats and otherwise requires status exactly `"administrator"`.
-- `tgAdminList = {1087968824 (GroupAnonymousBot), 777000 (Telegram)}` are always
-  admin (id `136817688` is documented but intentionally **not** in the list).
-- `IsUserConnected(b, ctx, chatAdmin, botAdmin)` resolves the connected chat in PM
-  (nil = abort) — **callers must reassign `ctx.EffectiveChat`** to the returned chat
-  (why `antichannelpin`/`cleanlinked` stay raw handlers).
-- `GetEffectiveUser`/`RequireUser` are nil-safe (nil for channel posts;
-  `RequireUser` ignores its `b` arg). Admin lookups go through the Redis admin
-  cache (30-min TTL); **invalidation is the admin module's job, not this package's.**
-
----
-
-## 9. Database layer
-
-### Shared wrappers (`alita/db/db.go`)
-
-OTel-traced: `GetRecord`/`GetRecords`/`CreateRecord`/`UpdateRecord`/
-`UpdateRecordWithZeroValues` + `ChatExists`. Connection (`conn.go`) uses
-`PrepareStmt:true`, `NowFunc`=UTC, a logrus-backed GORM logger
-(`SlowThreshold 1s`, `IgnoreRecordNotFoundError`), and 5-retry exponential backoff
-(fatal on permanent failure).
-
-- ⚠️ **`UpdateRecord` ignores zero-valued struct fields** (GORM semantics) — to
-  persist `false`/`0`/`""` (e.g. turn a toggle OFF) you **must** use
-  `UpdateRecordWithZeroValues` with a `map[string]any`. This is a recurring footgun.
-- `UpdateRecord*` returns `gorm.ErrRecordNotFound` when `RowsAffected==0` (devs
-  add/update path relies on this). `ChatExists` treats any non-not-found error as
-  "exists" — not authoritative under DB stress.
-
-### Models & schema (`alita/db/models/`)
-
-- **Surrogate keys everywhere**: `ID uint` autoincrement PK; the real Telegram id
-  (`chat_id`/`user_id`) is a separate **unique** column (single or composite named
-  index). ⚠️ `id` is Go `uint` in structs but `bigint` in Postgres — SQL is
-  authoritative.
-- Custom JSONB types in `types.go`: `ButtonArray`, `StringArray`, `Int64Array` (each
-  implements `Scan`/`Value`; empty slices persist as the literal `"[]"`, not NULL).
-- `GreetingSettings` embeds `*WelcomeSettings`/`*GoodbyeSettings` with
-  `embeddedPrefix:welcome_`/`goodbye_` → real columns `welcome_text`, `goodbye_btns`,
-  … (the embedded pointers can be nil; nil-check before deref; map-based upserts must
-  use the **prefixed** column names).
-- ⚠️ **Table names ≠ struct names.** e.g. `AdminSettings→admin`,
-  `ConnectionSettings→connection` (per-user), `ConnectionChatSettings→connection_settings`
-  (per-chat — the naming is inverted), `WarnSettings→warns_settings`,
-  `Warns→warns_users`, `DisableSettings→disable`. Confirm `TableName()` before
+- Raw SQL in `migrations/*.sql` is the production schema source of truth; GORM
+  `AutoMigrate` is test-only. For schema changes, update the migration, model,
+  optimized query columns, repository behavior, and the SQLite AutoMigrate list
+  in `testmain_test.go`.
+- Applied migrations are immutable because the runners verify SHA-256 checksums
+  of raw bytes. Always add a newer timestamped migration. Do not use
+  `CREATE INDEX CONCURRENTLY`, because each migration runs in a transaction.
+- Keep runtime migration cleaning/splitting and `scripts/migrate_psql.sh`
+  behavior aligned.
+- Models use surrogate `ID` primary keys; Telegram IDs are separate unique
+  columns. Confirm each model's `TableName()` and actual migration columns before
   writing raw SQL.
-- Consolidated/dead fields — **do not reference**: `antiflood_settings.limit`/`.mode`
-  (use `flood_limit`/`action`), `devs.dev` (use `is_dev`), `connection_settings.enabled`
-  (use `allow_connect`); the `chat_users` table and its `ChatUser` GORM model have
-  been removed (membership lives in the `chats.users` JSONB array).
-  `ReportChatSettings`/`ReportUserSettings` still carry
-  both `Enabled` and `Status` (alias) columns — set both consistently.
-- Runtime uniqueness also depends on migration constraints: one `connection` row
-  per `user_id`, one `captcha_attempts` and `captcha_muted_users` row per
-  `(user_id,chat_id)`, and one case-insensitive non-empty `channels.username`
-  owner. Connection disconnects retain `chat_id` so `/reconnect` can restore it.
-- Captcha attempt lifecycle timestamps are timezone-aware; migration
-  `20260730030000_use_timestamptz_for_captcha_attempts.sql` interprets the legacy
-  captcha attempt timestamps as UTC before converting them to `timestamptz`.
-- Schema-change checklist: **migration → struct tag → optimized query column list →
-  repository function** (and add the struct to `testmain_test.go`'s AutoMigrate list).
+- GORM struct updates omit zero values. Persist `false`, `0`, or `""` with
+  `UpdateRecordWithZeroValues` and a map.
+- `ReportChatSettings` and `ReportUserSettings` retain alias fields `Enabled` and
+  `Status`; set them consistently.
+- Repository writes must invalidate every affected cache using the exact existing
+  key prefix. Prefixes are not consistently the same as package or table names,
+  so follow nearby repository code rather than guessing.
+- Use existing conflict-safe upsert and row-locking patterns for concurrently
+  writable data. Do not replace them with read-then-create logic.
+- Repository reads often return safe defaults instead of propagating errors; do
+  not use those defaults as proof that a row exists.
 
-### Per-domain repositories
+## Redis and cache behavior
 
-- Read-through cache via `cache.GetFromCacheOrLoad(cache.CacheKey(module, id), ttl,
-  loader)` with **singleflight** stampede protection and a **30s timeout** (on
-  timeout it `Forget`s the key and degrades to a direct DB load). Writes must
-  **explicitly `cache.DeleteCache(...)`** every affected key. A process-wide
-  invalidation generation prevents an in-flight loader from repopulating stale
-  data after any delete; do not bypass `DeleteCache`.
-- ⚠️ Cache key **prefixes differ from package/table names**: `blacklists→"blacklist"`,
-  `channels→"channel"`, `chats→"chat"`, `captcha→"captcha_settings"`,
-  `notes→"notes_settings"`, `disabling→"disabled_cmds"`, `warns→"warns"` (per-user)
-  + `"warn_settings"` (per-chat), `filters→"filter_list"` + `"filters_optimized"`,
-  `locks→"lock"` + `"locks_map"`. The `admin`, `connections`, `devs`, `pins`,
-  `reports`, `rules` packages have **no cache** at all. Reuse the exact existing
-  literal when invalidating.
-- Upserts that must survive concurrent writers use `clause.OnConflict`: locks,
-  captcha settings/mutes, filters, notes, connections, and parent user/chat
-  anchors. Warn and report read-modify-write operations lock their parent row.
-  Channel username reassignment clears the prior owner and both cache entries.
-  `chats.UpdateChat` appends to the JSONB `users` array with Postgres-specific raw
-  SQL (`users || to_jsonb(...)`), propagates append failures, and the Users tracker
-  coordinates the first `(chat,user)` write with `singleflight` before downstream
-  handlers can create FK-dependent rows. Its in-process write-throttle keys expire
-  after the same 5-minute update interval; keep that eviction when adding key types.
-- Disabling repository load errors are never cached as an empty command list.
-  Connection, rules, warns, and other settings mutators return write errors;
-  handlers must not send a success response until the write succeeds.
-- `reports.GetUserReportSettings` ensures the `users` FK parent because Telegram
-  admin lists include users who may never have sent the bot a message.
-- `user.GetUserBasicInfoCached` negative-caches a missing user as sentinel
-  `User{UserId:-9999}` → maps back to `ErrRecordNotFound` (preserve on both sides).
-- Most read helpers swallow errors and return safe defaults (empty slice/map,
-  `"en"`, default struct) — callers can't rely on errors to detect missing data.
+- Production caching is Redis-only; helpers must tolerate a nil marshaler and
+  fall back to the database where applicable. Access it through
+  `cache.GetMarshal()`/`SetMarshal()` rather than shared state directly.
+- `ClearAllCaches` flushes the entire selected Redis database. The deployment
+  assumes that database is dedicated to this bot.
+- Do not bypass repository `DeleteCache`: its invalidation generation prevents an
+  in-flight read from restoring stale data.
+- Keep independent named caches for filters and blacklists. Sharing them causes
+  cross-module eviction.
+- One-use confirmation payloads use Redis `GETDEL`; preserve user binding, TTLs,
+  and replay protection.
 
-### Migrations (`alita/db/migrations/runner.go`)
+## Locale and message content
 
-- Runs only when `AUTO_MIGRATE=true`. Globs `migrations/*.sql`, sorts
-  lexically (timestamp prefix = apply order), applies each unrecorded file in **one
-  transaction** (recording the `schema_migrations` row in the same tx).
-- **SHA-256 checksum over raw bytes** → applied files are **immutable**: editing one
-  (even whitespace) hard-fails startup with a mismatch (unless
-  `AUTO_MIGRATE_SILENT_FAIL`). **Always add a new timestamped file; never edit an
-  applied one.** New timestamps must be greater than the latest existing.
-- Runtime `cleanSupabaseSQL` strips Supabase GRANT/POLICY/extensions and injects
-  idempotency (`CREATE TABLE/INDEX → IF NOT EXISTS`, wraps `ADD CONSTRAINT`/`CREATE
-  TYPE` in `DO $$` blocks). A hand-rolled `splitSQLStatements` + `findDollarQuoteBlocks`
-  share a tokenizer — edit both together. ⚠️ `CREATE INDEX CONCURRENTLY` cannot run
-  inside the per-file transaction.
-- `scripts/migrate_psql.sh` follows the same raw-byte checksum and one-transaction-
-  per-file contract, backfills legacy blank checksums, rejects top-level transaction
-  control, and fails closed on every `psql` error. Keep its SQL cleaning behavior
-  aligned with the runtime cleaner.
-- ⚠️ Two schema definitions must be kept in sync with the SQL: GORM models and the
-  SQLite `AutoMigrate` list in `testmain_test.go`. Forward-only — there is no working
-  rollback automation (no `*.rollback.sql` files; the runner skips them).
+- The bot is English-only. User-facing strings belong in `locales/en.yml`;
+  `locales/config.yml` is a pseudo-locale containing command aliases and DB
+  defaults and must remain embedded.
+- `GetString` supports named and legacy positional placeholders. Extend the
+  ordered-key mapping when introducing positional parameters with new names.
+- Most locale text is Markdown but Telegram sends use HTML; follow neighboring
+  code and apply `tgmd2html.MD2HTMLV2` where required.
+- Moderation matching must inspect both `Entities` and `CaptionEntities`. Telegram
+  entity offsets are UTF-16 units; extract them with the existing helper rather
+  than byte or rune slicing.
+- Stored note/filter buttons support URLs only. Callback buttons are discarded.
+- `extraction.ExtractUserAndText` uses `-1` for an error already shown to the user
+  and `0` for no target; keep those cases distinct.
 
----
+## Operational and security invariants
 
-## 10. Cache layer (`alita/utils/cache/`)
+- Required and optional environment variables are documented in `sample.env` and
+  loaded manually in `alita/config/config.go`; struct validation/env tags are not
+  authoritative.
+- Add every new secret configuration field to the `logredact.RegisterSecret`
+  call. Never log tokens, credentials, webhook secrets, or authorization headers.
+- `/metrics` and `/db_metrics` are unauthenticated when `METRICS_AUTH_TOKEN` is
+  unset. Keep production configuration explicit; disable pprof in production.
+- Webhook requests use a static `/webhook` path and authenticate via the secret
+  header. Preserve constant-time secret comparisons and the request-size limit.
+- `BotVersion` in `alita/config/config.go` and the fallback in `main.go` must move
+  together. Use `make bump-version TAG=vX.Y.Z`; do not hand-edit one side.
+- Release behavior and image tags are defined by `.github/workflows/release.yml`
+  and `.goreleaser.yaml`. Review both when changing release or registry behavior.
+- Treat `gotgbot/v2` release-candidate changes and `gotg_md2html` pseudo-version
+  changes as compatibility-sensitive; do not auto-merge them without review.
 
-Redis-only via gocache. **Always** access the marshaler through mutex-guarded
-`cache.GetMarshal()`/`SetMarshal()` and nil-check it (`if m := cache.GetMarshal();
-m != nil`) — every helper bails when it's nil.
+## Go conventions
 
-- `InitCache` connects with 5-retry backoff, optionally FLUSHDBs (default
-  `ClearCacheOnStartup=true`), then installs the marshaler. ⚠️ `ClearAllCaches` does
-  **FLUSHDB on the whole Redis DB** — Redis is assumed dedicated to the bot.
-  Default `RedisDB=1`; an explicit `REDIS_DB=0` is honored.
-- Full `REDIS_URL` mode uses `redis.ParseURL`, including username, password, TLS,
-  and path-selected DB. An explicit `REDIS_ADDRESS` selects direct-address mode
-  and ignores URL-only credentials/options; `REDIS_PASSWORD` overrides either
-  source. With neither address variable set, the default is `localhost:6379`.
-- Key format `alita:{module}:{id}:{id}…` (`CacheKey` accepts variadic `...any`).
-- **Admin cache** (`adminCache.go`, key `alita:adminCache:<chat>`, 30-min): caches
-  Telegram admin lists with an O(1) `UserMap` + linear fallback; negative results
-  (bot-not-admin or an empty admin list) are cached with `Cached:true` to avoid
-  retry storms; `LoadAdminCache` stores the result before returning so later
-  invalidation cannot be undone by a stale background write. Two paths
-  invalidate the key (`InvalidateAdminCache` + a raw delete in `admin.go`).
-- **Restricted-chat cache** (`restrictedCache.go`, `alita:restricted:<chat>`, 30-min):
-  tracks chats where the bot can't send; 5-min probe window with a Redis `SETNX`
-  single-flight (`alita:restricted_probe:<chat>`). Fails **open** (returns false) on
-  malformed timestamp or nil Redis — do not change to fail-closed.
-- `MarkChatRestricted`/`IsChatRestricted`/`MarkChatNotRestricted` are driven by
-  `media.Send` and `helpers.SendMessageWithErrorHandling`.
-
----
-
-## 11. Locale strings (`alita/i18n/`)
-
-The bot is **English-only**. There is no `/lang` command, no per-user/per-chat
-language preference, and no `alita/db/lang` package — `alita/i18n` is now just a
-YAML-backed string table.
-
-- Singleton `LocaleManager` (`GetManager()` + `sync.Once`); `Initialize(fs, path)`
-  runs once from `main.go` (after `cache.InitCache`). `go:embed` pulls the **entire**
-  `locales/` dir; each `.yml` becomes a locale map keyed by filename.
-- `i18n.English()` (the ~370 call sites) returns the `en.yml` translator and
-  **never returns nil** — when the manager is uninitialized (unit tests) it returns
-  a bare translator whose lookups fail cleanly with `ErrManagerNotInit`.
-- ⚠️ **`locales/config.yml` is loaded as a pseudo-locale `"config"`** and read via
-  `i18n.Config()` for `alt_names.<Module>` (command aliases) and `db_default_*`.
-  Don't rename/move it or change the embed pattern.
-- `GetString(key, params…)` returns `ErrKeyNotFound` for a missing key (there is no
-  cross-language fallback any more). Supports **both** `{named}` and legacy
-  `%s`/`%d` placeholders; named→positional mapping uses a hard-coded `commonKeys`
-  order in `extractOrderedValues` (`first,second,…,question,answer,number,count,
-  value,name,user,username,…`). If you use a `%verb` with a param name not in that
-  list, the mapping is dropped/misordered — extend `commonKeys`.
-- **Parse mode**: locale strings are authored in Markdown but the bot sends HTML —
-  convert via `tgmd2html.MD2HTMLV2`. Some short status strings are already authored
-  in HTML; whether to convert depends on the specific key.
-- ⚠️ The SQL columns `users.language` and `chats.language` still exist (they are
-  referenced by covering indexes in
-  `migrations/20250806100000_critical_performance_indexes.sql`) but **no code reads
-  or writes them** — the GORM `Language` fields and the optimized `SELECT` column
-  lists were removed. Drop them only in a migration that also rebuilds those indexes.
-
----
-
-## 12. Anti-abuse internals (concise)
-
-- **Antiflood** (`antiflood.go`, group 4): per-user count via a per-key `*sync.Mutex`
-  (`floodMu`) + `syncHelperMap`, both cleaned together every 5 min. `/setflood`
-  accepts `off`/`0` (disable) or `3..100`. Admin check **fails open** on timeout/
-  semaphore-full (banning a real admin is worse than missing a flood). Mute/ban
-  inline buttons reuse the `unrestrict` callback namespace handled in `bans.go`.
-- **Antiraid** (`antiraid.go`, group -5): **Redis-only** live state
-  (`alita:antiraid:state:<chat>`, TTL covering the requested expiry) + a join
-  sorted-set that expires after its 60s counting window; enable/disable/duration/
-  expiry transitions use Redis compare-and-swap scripts so stale timers cannot
-  remove newer state. If expired-state cleanup loses to a fresh state, the join
-  path re-reads that state instead of failing open; Redis failures while disabling
-  are reported separately from “not active.” The 30s expiry poller is started by
-  `StartAntiRaidExpiryPoller`; `StopAntiRaidExpiryPoller` cancels and joins it.
-  `parseDuration`
-  treats a bare number as **seconds**, accepts `s/m/h/d/w`, and caps persisted
-  raid/action durations at **366 days**. Defaults `RaidTime=21600s`,
-  `RaidActionTime=3600s`, `AutoAntiRaidThreshold=0` (off). Once a multi-member
-  update triggers auto-raid, every later eligible member in that update is acted on.
-- **Antispam** (`antispam.go`, group -2): ⚠️ a **local** in-memory rate limiter
-  (18 msgs/sec) used for telemetry only; it always returns `ContinueGroups`, so
-  exceeding the threshold never bypasses antiflood/locks/filters. It is **not** a
-  CAS/Spamwatch global-ban integration.
-- **Captcha** (`captcha.go`, ~2100 lines): math-image/text verification with refresh
-  (cooldown 5s, max 3), timeout, max-attempts. `StartCaptchaLifecycle` recovers
-  persisted attempts before updates start; `StopCaptchaLifecycle` cancels and joins
-  workers and challenge-expiry timers. The DB permits one attempt per `(user,chat)`;
-  callback data carries `refresh_count`, and verify/refresh writes compare the
-  attempt ID, answer, message ID, and version so stale keyboards cannot mutate a
-  newer challenge. Successful/release claims atomically create an immediate unmute
-  retry row before deleting the attempt. `kick` uses Telegram's one-call
-  `unbanChatMember` removal semantics (`only_if_banned=false`), avoiding a
-  ban/unban failure gap; `mute` replaces that row with its 24-hour schedule before
-  restricting. Disabling captcha and approving a pending user release them instead
-  of applying the failure action. Pending messages are deleted in group -10 and
-  summarized—not replayed—after verification.
-- **Approvals**: per-chat whitelist exempt from antiflood/blacklists/locks/captcha/
-  antispam (`chat_status.IsApproved` → `approvals.IsUserApproved`). `/unapproveall`
-  is owner-only with synchronous confirm.
-- **Disabling**: `chat_status.CheckDisabledCmd` is the gate (bypasses admins +
-  private chats; optional message delete via `disabling.ShouldDel`). A command is
-  only disableable if registered via `helpers.AddCmdToDisableable`.
-
----
-
-## 13. Content modules (concise)
-
-- **Filters/Blacklists** use Aho-Corasick (`keyword_matcher`) with **separate named
-  caches** (`GetNamedCache("filters")` / `"blacklists")`) so they never evict each
-  other — do not revert to the shared global cache. Watchers use `FirstMatch`.
-  Search text is built by `buildModerationMatchText`
-  (text + caption + URL entities from **both** `Entities` and `CaptionEntities`);
-  raw Telegram entity offsets are UTF-16 code units, so slice them through
-  `extractEntityText`, never as Go byte or rune indexes.
-- **Overwrite confirmation**: filters and notes store user-bound pending payloads
-  in **Redis** (`alita:{filter|note}_overwrite:<token>`, 5-min TTL, short hex token
-  in callback). Confirmation consumes the value with `GETDEL`, so replay and
-  concurrent double-submit cannot recreate deleted content. `AddFilter`/`AddNote`
-  use `ON CONFLICT DO NOTHING` and preserve an existing value; only the explicit
-  `UpdateFilter`/`UpdateNote` confirmation path may overwrite it.
-- **Greetings**: a join fires **both** a `ChatMemberUpdated` and a service message —
-  `claimRecentJoinProcessing` (Redis SETNX, 5s) dedupes to avoid double welcome/
-  captcha. `SendCaptcha` owns the durable mute → Telegram restrict → challenge
-  sequence and its rollback; approved users bypass captcha. ⚠️ `pendingJoins`
-  (`chatjoinrequest.All`) only auto-approves when `ShouldAutoApprove` is set — the
-  admin "new join request" notice with approve/decline/ban buttons was **removed**,
-  along with its `join_request` callback handler and the `alita:pendingJoins:*`
-  duplicate-suppression cache. Requests are otherwise left for Telegram's own admin
-  UI; don't reintroduce the notice.
-- **Locks**: `lockMap` (content types, perm watcher group 5) + `restrMap`
-  (restriction types, group 6); both skip admins/approved and require `CanBotDelete`.
-  The `bots` lock is handled by a separate `ChatMember` handler.
-- **Rules**: stored as HTML (`tgmd2html.MD2HTMLV2`); `normalizeRulesForHTML`
-  re-renders legacy Markdown only when no HTML tags are present. **No Redis cache.**
-- **Reactions** accept only Telegram's documented built-in reaction emoji; keyword
-  and emoji values are HTML-escaped in replies. `FormattingReplacer` recognizes
-  `{rules[:up|same]}` only in the stored template, never in user-substituted text,
-  and removes the directive when no rules exist.
-- **Media** (`utils/media`): `Send` dispatches on `MsgType` (TEXT=1…VIDEO_NOTE=8;
-  0/unknown → text; empty `FileID` → text fallback), short-circuits on
-  `IsChatRestricted`, and marks chats restricted on permission errors. `SendNote`/
-  `SendFilter` do `%%%` random-variant selection + `FormattingReplacer`.
-  ⚠️ Only **URL** buttons survive note/filter storage (callback buttons are dropped).
-- Moderation commands share `moderationCommand` (`moderation.go`):
-  RequireUser → gates → extract → validate → execute → reply, always returning
-  `ext.EndGroups`. `standardModGates` = RequireGroup→RequireUserAdmin→RequireBotAdmin
-  →CanUserRestrict→CanBotRestrict; `deleteModGates` adds CanBot/UserDelete.
-  ⚠️ `extraction.ExtractUserAndText` returns `-1` (error already replied — abort
-  silently) vs `0` (nothing specified) — distinguish them. Warn-mode `kick`
-  uses the same one-call `kickMember` path as `/kick`; do not reintroduce delayed
-  ban/unban goroutines, which can strand users in a permanent ban.
-
----
-
-## 14. Observability & ops
-
-- **`alita/utils/monitoring`** (distinct from `alita/db/monitoring`): three
-  background services — `ActivityMonitor` (per-chat & per-user DAU/WAU/MAU, marks
-  chats inactive; ⚠️ user counts ignore `is_inactive`, chat counts don't),
-  `BackgroundStatsCollector` (3 ticker goroutines — 30s system / 1m DB / 5m report —
-  that write the shared metrics struct directly under a mutex; no worker pool or
-  channels), `AutoRemediationManager` (one action per minute, ascending severity,
-  5-min cooldown; also emits a >100ms GC-pause warn each cycle). The 4 tiers:
-  LogWarning(0) at goroutines>0.8× or mem>0.5×, GC(1) at mem>0.6× or GCPause>50ms,
-  MemoryCleanup(2) at mem>`ResourceGCThresholdMB` (**raw MB**, not %),
-  RestartRecommendation(10) at goroutines>1.5× or mem>1.6× (logs only). In
-  non-Debug mode performance/background monitoring default on, but explicit
-  `ENABLE_PERFORMANCE_MONITORING=false` / `ENABLE_BACKGROUND_STATS=false` is honored.
-- **`tracing`**: OTel via OTLP gRPC or stdout console (env `OTEL_*` read with raw
-  `os.Getenv`, not config). Disabled if neither exporter is set (propagator still
-  installed). `TracingProcessor` roots one span per polling update. ⚠️ It has **no
-  cache-key sanitization helpers** (older docs claimed it did — false).
-- **`httpserver`**: single server on `HTTP_PORT`, then platform `PORT`, then 8080 —
-  `/health` (DB ping + Redis
-  set/get/del; 503 if either fails), `/metrics` + `/db_metrics` (Bearer
-  `METRICS_AUTH_TOKEN`, constant-time compare; unauthenticated with a warning if
-  unset), `/debug/pprof/*` (only if `ENABLE_PPROF`), and webhook on a **static
-  `/webhook` path**. The secret header is compared in constant time before the
-  10MB-limited body is read. Processing uses a detached, 30s-bounded trace/opt-in
-  handler context, but gotgbot's `ProcessUpdate` itself is not cancellable. `Stop`
-  rejects new requests, waits for tracked dispatches under its timeout, and does not
-  delete Telegram's webhook, so webhook-mode restarts retain it.
-
----
-
-## 15. Error handling & logging
-
-- **Four-layer recovery**: dispatcher (`dispatcherErrorHandler`) → gotgbot worker
-  goroutines → decorator (`WrapCommand`/`WrapCommandRaw`) → handler/goroutine. Use
-  `defer error_handling.RecoverFromPanic(funcName, modName)` in every fire-and-forget
-  goroutine (it logs + stack, invokes the global `onErrorCallback`, swallows the
-  panic — it does not propagate, so forgetting the `defer` crashes the process).
-- **`errors.Wrap`/`Wrapf`** capture file/line/function via `runtime.Caller(1)`
-  (nil-safe; returns nil for nil err). Only `dispatcherErrorHandler` consumes the
-  structured `*errors.WrappedError` fields.
-- **`logredact`** (installed in `config.init()` before config load): a logrus hook
-  scrubbing **all** levels/fields. Structural patterns mask Telegram bot tokens,
-  DSN passwords (`scheme://user:pass@`), and `Authorization: Bearer/Basic`; exact
-  secrets are registered via `RegisterSecret(BotToken, DatabaseURL, RedisPassword,
-  WebhookSecret, MetricsAuthToken)` (longest-first, ≥6 chars). ⚠️ **When adding a new
-  secret config field, add it to that `RegisterSecret` call.** `logredact.Scrub(s)`
-  pre-sanitizes a string manually.
-- ⚠️ **Never ignore DB errors with `_`** on state-changing paths; handlers must not
-  announce success after a failed persistence operation.
-- `helpers.IsExpectedTelegramError` (suppress noise) vs `IsPermissionError` (drives
-  `MarkChatRestricted`) are **separate** hardcoded lists — update the right one.
-  `SendMessageWithErrorHandling`/`DeleteMessageWithErrorHandling` may return
-  `(nil, nil)` — nil-check the returned message.
-
----
-
-## 16. Backups & rate limiting
-
-- `alita/db/backup` exports/imports/clears **17 modules**:
-  admin, antiflood, antiraid, approvals, blacklists, captcha, connections,
-  disabling, filters, greetings, locks, notes, pins, reactions, reports, rules,
-  warns. `BackupFormatVersion = "1.1"`; legacy `1.0` remains accepted. Current
-  backups require payloads for every named module. Export aborts on any module
-  failure; import validates first, replaces requested module data in one
-  transaction, invalidates affected caches after commit, and round-trips complete
-  filter/note/greeting/pin/report/warn/reaction state.
-- `alita/modules/backup.go` adds Telegram UI, **in-memory** pending-import/reset
-  confirmation state with one-use random nonces and a 10-minute TTL (lost on
-  restart, not cross-instance), and rate limiting via
-  `ratelimit.GetBackupRateLimiter()`. Reservations are atomic in Redis or the
-  in-process fallback, fail open only when Redis is unavailable, and failures
-  consume the cooldown (export 5m / import 10m / reset 1h). Import download is
-  limited to 10MB and requires the exact configured Telegram file URL scheme+host,
-  preventing arbitrary-host fetches.
-
----
-
-## 17. Scripts & tooling
-
-- **`scripts/check_translations/`** — a **separate Go module** (own `go.mod`); cannot
-  import `alita`; uses hardcoded `../../alita` and `../../locales`. Only validates
-  **string-literal** keys passed to `tr.GetString`/`GetStringSlice`.
-- **`scripts/validate_orphaned_data.go`** — 21 referential-integrity checks
-  (`defaultOrphanChecks()`); keep in sync with
-  `migrations/20250805204145_add_foreign_key_relations.sql` step 1.
-- **`internal/repo_checks/`** — test-only structural-invariant assertions (string/
-  regex over source files via `../..`); **sensitive to renames/reformatting** of the
-  functions it inspects — update expectations alongside refactors.
-- **`alita/product_contract_test.go`** — the executable product-surface seam. Its
-  single `productContract` expectation inventories commands, callback namespaces,
-  grouped message/membership watchers, and visible help modules from the configured
-  dispatcher and fake Telegram client; update that expectation with every product
-  slice that adds or removes handlers.
-- `migrate_psql.sh` is the sole manual forward-only migration path (`make
-  psql-migrate`). It cleans Supabase-specific SQL, applies each file and its
-  `schema_migrations` record in one transaction, verifies raw-file SHA-256
-  checksums, and fails closed on status/backfill/apply errors.
-- **`scripts/bump_version.sh <vX.Y.Z>`** — sed-patches the two version strings
-  (`BotVersion` in `alita/config/config.go` + the `--version` fallback in `main.go`);
-  BSD/GNU-sed portable, idempotent (a no-op leaves the tree clean so the release
-  workflow skips the commit). Wrapped by `make bump-version TAG=vX.Y.Z`.
-
----
-
-## 18. Coding conventions
-
-- **Imports**: stdlib → third-party → internal, blank-line separated.
-- **gofmt** enforced (pre-commit); keep lines under ~100 chars; comments are full
-  sentences starting with `// FunctionName`.
-- **Naming**: exported PascalCase, unexported camelCase; tests `TestXxx`, helpers
-  camelCase; `_test.go` in the same package.
-- Value receiver on handler methods — unnamed `(moduleStruct)`, named
-  `(m moduleStruct)` only when accessing fields.
-- Use `helpers.Ptr[T]` for `*bool`/`*int` literals in gotgbot opts; do not roll your
-  own.
-
-### Conventional commits
-
-`feat:` `fix:` `refactor:` `perf:` `test:` `docs:` `chore:` `deps:` (scopes like
-`feat(i18n):`). Before committing: `git status`, review `git diff`, stage only
-relevant files, run `make lint` + `make test`. Add new user-facing strings to
-`locales/en.yml`. Never commit secrets/`.env`.
-
----
-
-## 19. Critical rules (hard-won — violating these causes real bugs)
-
-**Go / data**
-- Never ignore DB errors with `_`. `ctx.EffectiveSender` can be nil (channel posts).
-- `IsUserAdmin` returns false for channel/non-positive IDs — never pass a chat ID
-  as a user ID.
-- DB writes that gate a user confirmation must be **synchronous** (not goroutines).
-- `UpdateRecord` skips zero values — use `UpdateRecordWithZeroValues` for `false`/`0`/`""`.
-- Set alias fields consistently (e.g. report `Enabled`+`Status`).
-
-**Handlers / callbacks**
-- Watchers return `ext.ContinueGroups`; commands return `ext.EndGroups`.
-- Use the versioned callback codec; never `strings.Split` raw data; respect the
-  64-byte limit (use the Redis-token pattern for user text).
-- After `IsUserConnected`, reassign `ctx.EffectiveChat` to the returned chat.
-- Don't double-answer callbacks already answered by `RequireUserAdmin`.
-- Check both `msg.Entities` AND `msg.CaptionEntities` for URLs/mentions.
-- Chat-scoped deep links must gate on `IsUserInChat`.
-
-**Database**
-- Migration → struct → optimized query → repository function (+ `testmain_test.go`).
-- Invalidate the exact cache key on every write; key **prefixes ≠ package names**.
-- Surrogate keys (`id` PK, external IDs unique). Never edit an applied migration.
-
-**Locale strings**
-- Double-quote YAML with escapes; `%d` needs a real int; verify keys exist in
-  `locales/en.yml`; convert Markdown→HTML for sends.
-
-**Boolean logic**
-- `IsAnonymousChannel() || IsLinkedChannel()` matches almost everything — test lock/
-  filter predicates with multiple message types.
-
----
-
-## 20. Environment configuration
-
-See `sample.env`. **Required**: `BOT_TOKEN`, `OWNER_ID`, `MESSAGE_DUMP`, and
-`DATABASE_URL`. Redis itself is required; the endpoint defaults to
-`localhost:6379`, or can be overridden with `REDIS_ADDRESS`/`REDIS_URL`.
-Conditionally required when `USE_WEBHOOKS=true`: `WEBHOOK_DOMAIN`,
-`WEBHOOK_SECRET`.
-
-Notable defaults & ⚠️ gotchas (config is loaded manually in `config.go`; `validate:`
-and `env:` struct tags are decorative — `ValidateConfig` is hand-written):
-
-- `HTTP_PORT`, then platform `PORT`, then 8080; `DISPATCHER_MAX_ROUTINES` 200;
-  `REDIS_DB` **1** by default (an explicit `0` is honored); pool:
-  `DB_MAX_IDLE_CONNS` 50 / `DB_MAX_OPEN_CONNS` 200 /
-  `DB_CONN_MAX_LIFETIME_MIN` 240 / `DB_CONN_MAX_IDLE_TIME_MIN` 60.
-- `ENABLE_PERFORMANCE_MONITORING`, `ENABLE_BACKGROUND_STATS`,
-  `ENABLE_AUTO_CLEANUP`, and `CLEAR_CACHE_ON_STARTUP` default true in their
-  documented modes and honor an explicit `false`.
-- `AUTO_MIGRATE` / `AUTO_MIGRATE_SILENT_FAIL`, `MIGRATIONS_PATH` (default
-  `"migrations"`, relative to cwd), `API_SERVER`,
-  `DROP_PENDING_UPDATES`, `ENABLE_PPROF`, `METRICS_AUTH_TOKEN`, `DEBUG`.
-- `OTEL_*` (service name, sample rate, OTLP endpoint, console/insecure) are read via
-  raw `os.Getenv`, not config, and are intentionally not in `sample.env`.
-- `BotVersion` lives in `config.go` (currently `"2.21.0"`), mirrored by a CLI
-  fallback `version = "v2.21.0"` in `main.go`. **Don't hand-edit it** —
-  `scripts/bump_version.sh <vX.Y.Z>` patches both, and the release workflow runs it
-  automatically on `workflow_dispatch`; the `goreleaser` job then re-greps both files
-  and fails on mismatch. For a manual tag-push release, run the script (or
-  `make bump-version TAG=vX.Y.Z`) and commit before tagging.
-
-Additional env vars present in `config.go` (defaults in parens) not covered above:
-`ENABLE_DB_MONITORING` (false; gates `/db_metrics`),
-`INACTIVITY_THRESHOLD_DAYS` (30),
-`ACTIVITY_CHECK_INTERVAL` (1), `HTTP_MAX_IDLE_CONNS` (100),
-`HTTP_MAX_IDLE_CONNS_PER_HOST` (50), `RESOURCE_MAX_GOROUTINES` (1000),
-`RESOURCE_MAX_MEMORY_MB` (500), `RESOURCE_GC_THRESHOLD_MB` (400, the raw-MB
-`MemoryCleanup` trigger in §14).
-
----
-
-## 21. Dependency risks (tracked, not oversights)
-
-- **`gotgbot/v2 v2.0.0-rc.35`** — a release candidate; a future `rc.36`/`v2.0.0`
-  may break the hot path (handler signatures, Update parsing). Evaluate/migrate when
-  `v2.0.0` final ships. **Do not auto-merge** Dependabot PRs that bump its major or
-  RC number without a code-compatibility review.
-- **`gotg_md2html v0.0.0-20260314092343-…`** — an untagged pseudo-version; a force-
-  push upstream breaks reproducible builds. Keep the `go.sum` entry pinned; prefer a
-  tagged release if published. Don't run `go get ./...` blindly.
-
-The Dependabot auto-merge workflow explicitly excludes both dependencies from
-patch/minor auto-merge and requires manual review.
-
----
-
-## 22. Security notes
-
-- Never commit secrets; pre-commit detects private keys + large files. Secrets are
-  scrubbed from logs by `logredact` (register new secret fields there).
-- Disable `ENABLE_PPROF` in production. Webhook mode needs HTTPS (Cloudflare Tunnel
-  supported) and validates only the secret-token header on a static path.
-- `/metrics` + `/db_metrics` require a Bearer token when `METRICS_AUTH_TOKEN` is set
-  (constant-time compare); they are unauthenticated (with a warning) otherwise.
-- Deep links and callback confirmation handlers **re-check permissions** (stale/
-  forwarded buttons) — never remove those re-checks.
-
-## Agent skills
-
-### Issue tracker
-
-Issues live as GitHub issues in `Divkix/Alita_Robot` (use the `gh` CLI);
-external PRs are not a triage surface.
-
-### Triage labels
-
-Five canonical triage roles map to GitHub labels with their default names:
-`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`.
-
-### Domain modeling
-
-This repo does **not** use the single-context layout yet — there is no
-`CONTEXT.md` and no ADR directory at the repo root. Proceed silently while those
-files are absent; `/domain-modeling` creates them lazily when terms or decisions
-actually get resolved.
+- Run `gofmt`; group imports as standard library, third-party, then internal.
+- Use exported PascalCase and unexported camelCase names. Keep tests in the same
+  package and name them `TestXxx`.
+- Use `helpers.Ptr[T]` for pointer literals in gotgbot options.
+- Add user-facing strings to `locales/en.yml` and run the relevant focused tests,
+  `make lint`, `make test`, and `make check-translations` as appropriate.
+- Never commit secrets or `.env` files. Preserve unrelated worktree changes and
+  stage only files relevant to the task.
