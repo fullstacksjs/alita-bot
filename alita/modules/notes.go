@@ -3,7 +3,6 @@ package modules
 import (
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
@@ -201,7 +200,7 @@ func (m moduleStruct) addNote(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
-	_, err := msg.Reply(b, fmt.Sprintf(noteString, noteWord, noteWord, noteWord), formatting.Shtml())
+	_, err := msg.Reply(b, fmt.Sprintf(noteString, noteWord, noteWord), formatting.Shtml())
 	if err != nil {
 		log.Error(err)
 		return err
@@ -287,60 +286,6 @@ func (moduleStruct) rmNote(b *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.EndGroups
 }
 
-// privNote handles the /privnote command to toggle private notes
-// setting, controlling whether notes are sent privately or in group.
-func (moduleStruct) privNote(b *gotgbot.Bot, ctx *ext.Context) error {
-	msg := ctx.EffectiveMessage
-	chat := ctx.EffectiveChat
-	user := chat_status.RequireUser(b, ctx)
-	if user == nil {
-		return ext.EndGroups
-	}
-	if !chat_status.RequireUserAdmin(b, ctx, nil, user.Id) {
-		chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_user_admin_cmd_error", "chat_status_user_admin_button_error", chat_status.WithReplyFallback())
-		return ext.EndGroups
-	}
-	args := ctx.Args()[1:]
-	var txt string
-
-	if len(args) == 1 {
-		option := args[0]
-		switch option {
-		case "on", "yes", "true":
-			tr := i18n.English()
-			txt, _ = tr.GetString("notes_private_enabled")
-			// Fix Issue 2a: Remove go keyword and handle error
-			if err := notes.TooglePrivateNote(chat.Id, true); err != nil {
-				log.Errorf("[Notes] Failed to enable private notes for chat %d: %v", chat.Id, err)
-			}
-		case "off", "no", "false":
-			tr := i18n.English()
-			txt, _ = tr.GetString("notes_private_disabled")
-			// Fix Issue 2b: Remove go keyword and handle error
-			if err := notes.TooglePrivateNote(chat.Id, false); err != nil {
-				log.Errorf("[Notes] Failed to disable private notes for chat %d: %v", chat.Id, err)
-			}
-		default:
-			tr := i18n.English()
-			txt, _ = tr.GetString("notes_private_invalid_option")
-		}
-	} else {
-		tmp := notes.GetNotes(chat.Id).PrivateNotesEnabled()
-		tr := i18n.English()
-		if tmp {
-			txt, _ = tr.GetString("notes_private_status_on")
-		} else {
-			txt, _ = tr.GetString("notes_private_status_off")
-		}
-	}
-	_, err := msg.Reply(b, txt, formatting.Smarkdown())
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	return ext.EndGroups
-}
-
 // notesList handles the /notes command to display all available
 // notes in the chat with appropriate access controls.
 func (moduleStruct) notesList(b *gotgbot.Bot, ctx *ext.Context) error {
@@ -374,68 +319,19 @@ func (moduleStruct) notesList(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
-	// if user uses the /note command in private chat
-	// No matter if privRules are set or not
-	if ctx.Message.Chat.Type == "private" {
-		// check if want admin notes or not
-		admin := chat_status.IsUserAdmin(b, chat.Id, user.Id)
-		noteKeys := notes.GetNotesList(chat.Id, admin)
-		listText, _ := tr.GetString("notes_list_for_chat")
-		info = fmt.Sprintf(listText, chat.Title)
-		var sb strings.Builder
-		for _, note := range noteKeys {
-			fmt.Fprintf(&sb, "\n - <a href='https://t.me/%s?start=note_%d_%s'>%s</a>",
-				b.Username, chat.Id, note, note)
-		}
-		info += sb.String()
-		_, err := msg.Reply(b, info, formatting.Shtml())
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		return ext.EndGroups
+	currentNotesText, _ := tr.GetString("notes_current_in_chat")
+	info = currentNotesText
+	var sb strings.Builder
+	for _, note := range noteKeys {
+		fmt.Fprintf(&sb, " - <code>#%s</code>\n", note)
 	}
-
-	privNote := notes.GetNotes(chat.Id).PrivateNotesEnabled()
-	if privNote {
-		checkBtnText, _ := tr.GetString("notes_check_button")
-		_, err := msg.Reply(b, checkBtnText,
-			&gotgbot.SendMessageOpts{
-				ReplyMarkup: gotgbot.InlineKeyboardMarkup{
-					InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
-						{
-							{
-								Text: func() string {
-									tr := i18n.English()
-									t, _ := tr.GetString("button_click_me")
-									return t
-								}(),
-								Url: fmt.Sprintf("https://t.me/%s?start=notes_%d", b.Username, chat.Id),
-							},
-						},
-					},
-				},
-			},
-		)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-	} else {
-		currentNotesText, _ := tr.GetString("notes_current_in_chat")
-		info = currentNotesText
-		var sb strings.Builder
-		for _, note := range noteKeys {
-			fmt.Fprintf(&sb, " - <code>#%s</code>\n", note)
-		}
-		info += sb.String()
-		instructionText, _ := tr.GetString("notes_get_instruction")
-		info += instructionText
-		_, err := msg.Reply(b, info, formatting.Shtml())
-		if err != nil {
-			log.Error(err)
-			return err
-		}
+	info += sb.String()
+	instructionText, _ := tr.GetString("notes_get_instruction")
+	info += instructionText
+	_, err := msg.Reply(b, info, formatting.Shtml())
+	if err != nil {
+		log.Error(err)
+		return err
 	}
 
 	return ext.EndGroups
@@ -794,165 +690,7 @@ func (m moduleStruct) notesWatcher(b *gotgbot.Bot, ctx *ext.Context) error {
 			return err
 		}
 	} else {
-
-		// chat has private notes enabled or note is private and not group note
-		privateNoteOnly := (notes.GetNotes(chat.Id).PrivateNotesEnabled() || noteData.PrivateOnly) && !noteData.GroupOnly
-
-		// send private note if private notes is enabled or note is private, and it is not group note
-		if privateNoteOnly {
-			if ctx.Message.Chat.Type == "private" {
-				_, err = media.SendNote(b, ctx, chat, noteData, replyMsgId, ctx.Message.MessageThreadId)
-			} else {
-				tr := i18n.English()
-				clickForPrivateText, _ := tr.GetString("notes_click_for_private")
-				_, err = msg.Reply(b,
-					fmt.Sprintf(clickForPrivateText, noteName),
-					&gotgbot.SendMessageOpts{
-						ReplyParameters: &gotgbot.ReplyParameters{
-							MessageId:                replyMsgId,
-							AllowSendingWithoutReply: true,
-						},
-						ReplyMarkup: gotgbot.InlineKeyboardMarkup{
-							InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
-								{
-									{
-										Text: trS(tr, "button_click_me"),
-										Url:  fmt.Sprintf("https://t.me/%s?start=note_%d_%s", b.Username, chat.Id, noteName),
-									},
-								},
-							},
-						},
-						ParseMode: formatting.Markdown,
-					},
-				)
-			}
-		} else {
-			_, err = media.SendNote(b, ctx, chat, noteData, replyMsgId, ctx.Message.MessageThreadId)
-		}
-	}
-
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	return ext.EndGroups
-}
-
-// getNotes handles the /get command to retrieve and send
-// specific notes by name with format options.
-func (m moduleStruct) getNotes(b *gotgbot.Bot, ctx *ext.Context) error {
-	msg := ctx.EffectiveMessage
-	// if command is disabled, return
-	if chat_status.CheckDisabledCmd(b, msg, "get") {
-		return ext.EndGroups
-	}
-	// connection status
-	connectedChat := chat_status.IsUserConnected(b, ctx, false, false)
-	if connectedChat == nil {
-		return ext.EndGroups
-	}
-	ctx.EffectiveChat = connectedChat
-	chat := ctx.EffectiveChat
-	args := ctx.Args()[1:]
-	var err error
-
-	if len(args) == 0 {
-		tr := i18n.English()
-		text, _ := tr.GetString("notes_get_insufficient_args")
-		_, err := msg.Reply(b, text, formatting.Shtml())
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		return ext.EndGroups
-	}
-
-	var replyMsgId int64
-
-	if reply := msg.ReplyToMessage; reply != nil {
-		replyMsgId = reply.MessageId
-	} else {
-		replyMsgId = msg.MessageId
-	}
-
-	user := chat_status.RequireUser(b, ctx)
-	if user == nil {
-		return ext.EndGroups
-	}
-	noteName := args[0]
-
-	// check if note exists or not
-	if !slices.Contains(notes.GetNotesList(chat.Id, true), strings.ToLower(noteName)) {
-		tr := i18n.English()
-		text, _ := tr.GetString("notes_does_not_exist")
-		_, err := msg.Reply(b, text, formatting.Shtml())
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		return ext.EndGroups
-	}
-
-	noteData := notes.GetNote(chat.Id, strings.ToLower(noteName))
-
-	// check if notedata is correct or not
-	if noteData.NoteContent == "" && noteData.FileID == "" {
-		tr := i18n.English()
-		text, _ := tr.GetString("notes_parsing_error_support")
-		_, err := msg.Reply(b, text, formatting.Shtml())
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		return ext.EndGroups
-	}
-
-	// check for admin only notes
-	// admin notes follow the group note policy
-	if noteData.AdminOnly {
-		if !chat_status.IsUserAdmin(b, chat.Id, user.Id) {
-			tr := i18n.English()
-			text, _ := tr.GetString("notes_admin_only_access")
-			_, err = msg.Reply(b, text, formatting.Shtml())
-			if err != nil {
-				log.Error(err)
-				return err
-			}
-			return ext.ContinueGroups
-		}
-	}
-
-	if len(args) == 2 && strings.ToLower(args[1]) == "noformat" {
-		err = m.sendNoFormatNote(b, ctx, replyMsgId, noteData)
-	} else {
-		// send private note if private notes is enabled or note is private, and it is not group note
-		if (notes.GetNotes(chat.Id).PrivateNotesEnabled() || noteData.PrivateOnly) && !noteData.GroupOnly {
-			tr := i18n.English()
-			clickForPrivateText, _ := tr.GetString("notes_click_for_private")
-			_, err = msg.Reply(b,
-				fmt.Sprintf(clickForPrivateText, noteName),
-				&gotgbot.SendMessageOpts{
-					ReplyMarkup: gotgbot.InlineKeyboardMarkup{
-						InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
-							{
-								{
-									Text: trS(tr, "button_click_me"),
-									Url:  fmt.Sprintf("https://t.me/%s?start=note_%d_%s", b.Username, chat.Id, noteName),
-								},
-							},
-						},
-					},
-					ParseMode: formatting.Markdown,
-					ReplyParameters: &gotgbot.ReplyParameters{
-						MessageId:                replyMsgId,
-						AllowSendingWithoutReply: true,
-					},
-				},
-			)
-		} else {
-			_, err = media.SendNote(b, ctx, chat, noteData, replyMsgId, ctx.Message.MessageThreadId)
-		}
+		_, err = media.SendNote(b, ctx, chat, noteData, replyMsgId, ctx.Message.MessageThreadId)
 	}
 
 	if err != nil {
@@ -1023,13 +761,10 @@ func LoadNotes(dispatcher *ext.Dispatcher) {
 			},
 		},
 	} // Adds Formatting kb button to Notes Menu
-	dispatcher.AddHandler(handlers.NewCommand("save", notesModule.addNote))
 	dispatcher.AddHandler(handlers.NewCommand("addnote", notesModule.addNote))
 	dispatcher.AddHandler(handlers.NewCommand("clear", notesModule.rmNote))
 	dispatcher.AddHandler(handlers.NewCommand("rmnote", notesModule.rmNote))
 	dispatcher.AddHandler(handlers.NewCommand("notes", notesModule.notesList))
-	// Alias: /saved should behave like /notes per documentation
-	dispatcher.AddHandler(handlers.NewCommand("saved", notesModule.notesList))
 	helpers.AddCmdToDisableable("notes")
 	dispatcher.AddHandler(handlers.NewCommand("clearall", notesModule.rmAllNotes))
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("rmAllNotes"), notesModule.notesButtonHandler))
@@ -1042,146 +777,8 @@ func LoadNotes(dispatcher *ext.Dispatcher) {
 			notesModule.notesWatcher,
 		),
 	)
-	helpers.MultiCommand(dispatcher, []string{"privnote", "privatenotes"}, notesModule.privNote)
-	dispatcher.AddHandler(handlers.NewCommand("get", notesModule.getNotes))
-	helpers.AddCmdToDisableable("get")
 }
 
 func init() {
 	RegisterLegacyModule("Notes", 160, LoadNotes)
-	RegisterDeepLinkHandler("notes_", notesListDeepLinkHandler)
-	RegisterDeepLinkHandler("note_", noteDeepLinkHandler)
-	RegisterDeepLinkHandler("note", invalidNoteDeepLinkHandler)
-}
-
-func parseChatInfoFromDeepLink(b *gotgbot.Bot, ctx *ext.Context, arg string) (chatinfo *gotgbot.ChatFullInfo, err error) {
-	nArgs := strings.SplitN(arg, "_", 3)
-	msg := ctx.EffectiveMessage
-
-	// Validate deep link has at least chat ID
-	if len(nArgs) < 2 {
-		tr := i18n.English()
-		text, _ := tr.GetString("helpers_invalid_deep_link")
-		_, _ = msg.Reply(b, text, formatting.Shtml())
-		return nil, ext.EndGroups
-	}
-
-	chatID, parseErr := strconv.Atoi(nArgs[1])
-	if parseErr != nil {
-		tr := i18n.English()
-		text, _ := tr.GetString("helpers_invalid_deep_link")
-		_, _ = msg.Reply(b, text, formatting.Shtml())
-		return nil, ext.EndGroups
-	}
-
-	chatinfo, chatErr := b.GetChat(int64(chatID), nil)
-	if chatErr != nil || chatinfo == nil {
-		tr := i18n.English()
-		text, _ := tr.GetString("helpers_chat_not_found")
-		_, _ = msg.Reply(b, text, formatting.Shtml())
-		return nil, ext.EndGroups
-	}
-	return chatinfo, nil
-}
-
-func notesListDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, arg string) error {
-	msg := ctx.EffectiveMessage
-
-	chatinfo, err := parseChatInfoFromDeepLink(b, ctx, arg)
-	if err != nil {
-		return err
-	}
-
-	_chat := chatinfo.ToChat()
-	if !chat_status.IsUserInChat(b, &_chat, user.Id) {
-		tr := i18n.English()
-		text, _ := tr.GetString("helpers_chat_not_found")
-		_, _ = msg.Reply(b, text, formatting.Shtml())
-		return ext.EndGroups
-	}
-
-	admin := chat_status.IsUserAdmin(b, chatinfo.Id, user.Id)
-	noteKeys := notes.GetNotesList(chatinfo.Id, admin)
-	tr := i18n.English()
-	info, _ := tr.GetString("notes_none_in_chat")
-	if len(noteKeys) > 0 {
-		info, _ = tr.GetString("helpers_notes_current_header")
-		var sb strings.Builder
-		for _, note := range noteKeys {
-			fmt.Fprintf(&sb, " - <a href='https://t.me/%s?start=note_%d_%s'>%s</a>\n", b.Username, chatinfo.Id, note, note)
-		}
-		info += sb.String()
-	}
-
-	_, err = msg.Reply(b, info, formatting.Shtml())
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	return ext.EndGroups
-}
-
-func noteDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, arg string) error {
-	msg := ctx.EffectiveMessage
-
-	chatinfo, err := parseChatInfoFromDeepLink(b, ctx, arg)
-	if err != nil {
-		return err
-	}
-
-	_chat := chatinfo.ToChat()
-	if !chat_status.IsUserInChat(b, &_chat, user.Id) {
-		tr := i18n.English()
-		text, _ := tr.GetString("helpers_chat_not_found")
-		_, _ = msg.Reply(b, text, formatting.Shtml())
-		return ext.EndGroups
-	}
-
-	nArgs := strings.SplitN(arg, "_", 3)
-	// Validate deep link has note name
-	if len(nArgs) < 3 {
-		tr := i18n.English()
-		text, _ := tr.GetString("helpers_invalid_deep_link")
-		_, _ = msg.Reply(b, text, formatting.Shtml())
-		return ext.EndGroups
-	}
-
-	noteName := strings.ToLower(nArgs[2])
-	noteData := notes.GetNote(chatinfo.Id, noteName)
-	tr := i18n.English()
-	if noteData == nil {
-		text, _ := tr.GetString("helpers_note_not_exist")
-		_, err := msg.Reply(b, text, formatting.Shtml())
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		return ext.EndGroups
-	}
-	if noteData.AdminOnly {
-		if !chat_status.IsUserAdmin(b, chatinfo.Id, user.Id) {
-			text, _ := tr.GetString("helpers_note_admin_only")
-			_, err := msg.Reply(b, text, formatting.Shtml())
-			if err != nil {
-				log.Error(err)
-				return err
-			}
-			return ext.ContinueGroups
-		}
-	}
-	_, err = media.SendNote(b, ctx, &_chat, noteData, msg.MessageId, msg.MessageThreadId)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	return ext.EndGroups
-}
-
-// invalidNoteDeepLinkHandler handles malformed note deep links (e.g. /start note without underscore).
-// Preserves the old behavior from the monolithic startHelpPrefixHandler.
-func invalidNoteDeepLinkHandler(b *gotgbot.Bot, ctx *ext.Context, user *gotgbot.User, arg string) error {
-	tr := i18n.English()
-	text, _ := tr.GetString("helpers_invalid_deep_link")
-	_, _ = ctx.EffectiveMessage.Reply(b, text, formatting.Shtml())
-	return ext.EndGroups
 }

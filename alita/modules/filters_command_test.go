@@ -33,7 +33,7 @@ func TestAddListWatchAndRemoveTextFilter(t *testing.T) {
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 	member := gotgbot.User{Id: 42, FirstName: "Member"}
 
-	addCtx := newModuleMessageContext(bot, chat, admin, "/filter hello Hi there")
+	addCtx := newModuleMessageContext(bot, chat, admin, "/addfilter hello Hi there")
 	if err := filtersModule.addFilter(bot, addCtx); err != ext.EndGroups {
 		t.Fatalf("addFilter error = %v, want EndGroups", err)
 	}
@@ -59,7 +59,7 @@ func TestAddListWatchAndRemoveTextFilter(t *testing.T) {
 		t.Fatalf("filter watcher text = %q, want stored reply", lastText)
 	}
 
-	removeCtx := newModuleMessageContext(bot, chat, admin, "/stop hello")
+	removeCtx := newModuleMessageContext(bot, chat, admin, "/rmfilter hello")
 	if err := filtersModule.rmFilter(bot, removeCtx); err != ext.EndGroups {
 		t.Fatalf("rmFilter error = %v, want EndGroups", err)
 	}
@@ -74,7 +74,7 @@ func TestFilterCommandValidationBranches(t *testing.T) {
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Filter Chat"}
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 
-	replyWithoutKeyword := newModuleMessageContext(bot, chat, admin, "/filter")
+	replyWithoutKeyword := newModuleMessageContext(bot, chat, admin, "/addfilter")
 	replyWithoutKeyword.EffectiveMessage.ReplyToMessage = &gotgbot.Message{
 		MessageId: 222,
 		Date:      1,
@@ -87,8 +87,8 @@ func TestFilterCommandValidationBranches(t *testing.T) {
 	}
 
 	for _, text := range []string{
-		"/filter",
-		"/filter " + strings.Repeat("x", 101) + " value",
+		"/addfilter",
+		"/addfilter " + strings.Repeat("x", 101) + " value",
 	} {
 		ctx := newModuleMessageContext(bot, chat, admin, text)
 		if err := filtersModule.addFilter(bot, ctx); err != ext.EndGroups {
@@ -97,7 +97,7 @@ func TestFilterCommandValidationBranches(t *testing.T) {
 	}
 
 	unicodeKeyword := strings.Repeat("界", 100)
-	unicodeCtx := newModuleMessageContext(bot, chat, admin, "/filter "+unicodeKeyword+" value")
+	unicodeCtx := newModuleMessageContext(bot, chat, admin, "/addfilter "+unicodeKeyword+" value")
 	if err := filtersModule.addFilter(bot, unicodeCtx); err != ext.EndGroups {
 		t.Fatalf("addFilter 100-rune keyword error = %v, want EndGroups", err)
 	}
@@ -108,7 +108,7 @@ func TestFilterCommandValidationBranches(t *testing.T) {
 	if err := filters.AddFilter(chat.Id, "dupe", "old", "", nil, db.TEXT); err != nil {
 		t.Fatalf("AddFilter setup error = %v", err)
 	}
-	overwriteCtx := newModuleMessageContext(bot, chat, admin, "/filter dupe new")
+	overwriteCtx := newModuleMessageContext(bot, chat, admin, "/addfilter dupe new")
 	if err := filtersModule.addFilter(bot, overwriteCtx); err != ext.EndGroups {
 		t.Fatalf("addFilter duplicate error = %v, want EndGroups", err)
 	}
@@ -130,7 +130,7 @@ func TestAddFilterRejectsLimitAndNonAdmin(t *testing.T) {
 			}
 		}
 
-		ctx := newModuleMessageContext(bot, chat, admin, "/filter overflow nope")
+		ctx := newModuleMessageContext(bot, chat, admin, "/addfilter overflow nope")
 		if err := filtersModule.addFilter(bot, ctx); err != ext.EndGroups {
 			t.Fatalf("addFilter limit error = %v, want EndGroups", err)
 		}
@@ -144,7 +144,7 @@ func TestAddFilterRejectsLimitAndNonAdmin(t *testing.T) {
 		bot := newModuleTestBot(client)
 		chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Filter Chat"}
 		member := gotgbot.User{Id: 42, FirstName: "Member"}
-		ctx := newModuleMessageContext(bot, chat, member, "/filter hello nope")
+		ctx := newModuleMessageContext(bot, chat, member, "/addfilter hello nope")
 
 		if err := filtersModule.addFilter(bot, ctx); err != ext.EndGroups {
 			t.Fatalf("addFilter non-admin error = %v, want EndGroups", err)
@@ -161,7 +161,7 @@ func TestRemoveAndListFilterValidationBranches(t *testing.T) {
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Filter Chat"}
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 
-	for _, text := range []string{"/stop", "/stop missing"} {
+	for _, text := range []string{"/rmfilter", "/rmfilter missing"} {
 		ctx := newModuleMessageContext(bot, chat, admin, text)
 		if err := filtersModule.rmFilter(bot, ctx); err != ext.EndGroups {
 			t.Fatalf("rmFilter(%q) error = %v, want EndGroups", text, err)
@@ -284,76 +284,7 @@ func TestFilterOverwriteCallbackCancelAndExpired(t *testing.T) {
 	}
 }
 
-func TestRemoveAllFiltersConfirmationAndCallback(t *testing.T) {
-	client := newModuleBotClient()
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Filter Chat"}
-	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	if err := filters.AddFilter(chat.Id, "one", "1", "", nil, db.TEXT); err != nil {
-		t.Fatalf("AddFilter setup error = %v", err)
-	}
-	if err := filters.AddFilter(chat.Id, "two", "2", "", nil, db.TEXT); err != nil {
-		t.Fatalf("AddFilter setup error = %v", err)
-	}
 
-	confirmCtx := newModuleMessageContext(bot, chat, owner, "/stopall")
-	if err := filtersModule.rmAllFilters(bot, confirmCtx); err != ext.EndGroups {
-		t.Fatalf("rmAllFilters error = %v, want EndGroups", err)
-	}
-	calls := client.callsFor("sendMessage")
-	if len(calls) != 1 || calls[0].Params["reply_markup"] == nil {
-		t.Fatalf("rmAllFilters confirmation calls = %+v, want reply markup", calls)
-	}
-
-	data := encodeCallbackData("rmAllFilters", map[string]string{"a": "yes"})
-	callbackCtx := newModuleCallbackContext(bot, chat, owner, data)
-	if err := filtersModule.filtersButtonHandler(bot, callbackCtx); err != ext.EndGroups {
-		t.Fatalf("filtersButtonHandler error = %v, want EndGroups", err)
-	}
-	waitForModuleCondition(t, func() bool {
-		return len(filters.GetFiltersList(chat.Id)) == 0
-	})
-}
-
-func TestRemoveAllFiltersEmptyCancelAndInvalidCallback(t *testing.T) {
-	client := newModuleBotClient()
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Filter Chat"}
-	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-
-	emptyCtx := newModuleMessageContext(bot, chat, owner, "/stopall")
-	if err := filtersModule.rmAllFilters(bot, emptyCtx); err != ext.EndGroups {
-		t.Fatalf("rmAllFilters empty error = %v, want EndGroups", err)
-	}
-
-	if err := filters.AddFilter(chat.Id, "keep", "reply", "", nil, db.TEXT); err != nil {
-		t.Fatalf("AddFilter setup error = %v", err)
-	}
-	cancelCtx := newModuleCallbackContext(bot, chat, owner, "rmAllFilters.no")
-	if err := filtersModule.filtersButtonHandler(bot, cancelCtx); err != ext.EndGroups {
-		t.Fatalf("filtersButtonHandler cancel error = %v, want EndGroups", err)
-	}
-	if !filters.DoesFilterExists(chat.Id, "keep") {
-		t.Fatal("filter was removed after cancel callback")
-	}
-
-	invalidCtx := newModuleCallbackContext(bot, chat, owner, "rmAllFilters")
-	if err := filtersModule.filtersButtonHandler(bot, invalidCtx); err != ext.EndGroups {
-		t.Fatalf("filtersButtonHandler invalid error = %v, want EndGroups", err)
-	}
-	unknownCtx := newModuleCallbackContext(
-		bot,
-		chat,
-		owner,
-		encodeCallbackData("rmAllFilters", map[string]string{"a": "crafted"}),
-	)
-	if err := filtersModule.filtersButtonHandler(bot, unknownCtx); err != ext.EndGroups {
-		t.Fatalf("filtersButtonHandler unknown action error = %v, want EndGroups", err)
-	}
-	if calls := client.callsFor("answerCallbackQuery"); len(calls) != 3 {
-		t.Fatalf("answerCallbackQuery calls = %d, want cancel and invalid acknowledgements", len(calls))
-	}
-}
 
 func TestFilterCommandsPropagateGotgbotRequestErrors(t *testing.T) {
 	requestErr := errors.New("telegram request failed")
@@ -367,11 +298,11 @@ func TestFilterCommandsPropagateGotgbotRequestErrors(t *testing.T) {
 		run   func(*gotgbot.Bot, *ext.Context) error
 		user  gotgbot.User
 	}{
-		{name: "add filter validation reply", text: "/filter", run: filtersModule.addFilter, user: admin},
-		{name: "add filter success reply", text: "/filter hello Hi", run: filtersModule.addFilter, user: admin},
+		{name: "add filter validation reply", text: "/addfilter", run: filtersModule.addFilter, user: admin},
+		{name: "add filter success reply", text: "/addfilter hello Hi", run: filtersModule.addFilter, user: admin},
 		{
 			name: "add filter overwrite confirmation reply",
-			text: "/filter hello New",
+			text: "/addfilter hello New",
 			setup: func(t *testing.T, chat gotgbot.Chat) {
 				t.Helper()
 				if err := filters.AddFilter(chat.Id, "hello", "old", "", nil, db.TEXT); err != nil {
@@ -381,11 +312,11 @@ func TestFilterCommandsPropagateGotgbotRequestErrors(t *testing.T) {
 			run:  filtersModule.addFilter,
 			user: admin,
 		},
-		{name: "remove filter missing keyword reply", text: "/stop", run: filtersModule.rmFilter, user: admin},
-		{name: "remove filter missing filter reply", text: "/stop missing", run: filtersModule.rmFilter, user: admin},
+		{name: "remove filter missing keyword reply", text: "/rmfilter", run: filtersModule.rmFilter, user: admin},
+		{name: "remove filter missing filter reply", text: "/rmfilter missing", run: filtersModule.rmFilter, user: admin},
 		{
 			name: "remove filter success reply",
-			text: "/stop hello",
+			text: "/rmfilter hello",
 			setup: func(t *testing.T, chat gotgbot.Chat) {
 				t.Helper()
 				if err := filters.AddFilter(chat.Id, "hello", "old", "", nil, db.TEXT); err != nil {
@@ -393,32 +324,6 @@ func TestFilterCommandsPropagateGotgbotRequestErrors(t *testing.T) {
 				}
 			},
 			run:  filtersModule.rmFilter,
-			user: admin,
-		},
-		{name: "filters empty list reply", text: "/filters", run: filtersModule.filtersList, user: member},
-		{
-			name: "filters populated list reply",
-			text: "/filters",
-			setup: func(t *testing.T, chat gotgbot.Chat) {
-				t.Helper()
-				if err := filters.AddFilter(chat.Id, "hello", "old", "", nil, db.TEXT); err != nil {
-					t.Fatalf("AddFilter setup error = %v", err)
-				}
-			},
-			run:  filtersModule.filtersList,
-			user: member,
-		},
-		{name: "remove all empty reply", text: "/stopall", run: filtersModule.rmAllFilters, user: admin},
-		{
-			name: "remove all confirmation reply",
-			text: "/stopall",
-			setup: func(t *testing.T, chat gotgbot.Chat) {
-				t.Helper()
-				if err := filters.AddFilter(chat.Id, "hello", "old", "", nil, db.TEXT); err != nil {
-					t.Fatalf("AddFilter setup error = %v", err)
-				}
-			},
-			run:  filtersModule.rmAllFilters,
 			user: admin,
 		},
 		{
@@ -475,30 +380,7 @@ func TestFilterCallbackHandlersPropagateGotgbotRequestErrors(t *testing.T) {
 		data   string
 		setup  func(t *testing.T, chat gotgbot.Chat)
 	}{
-		{
-			name:   "remove all edit failure",
-			method: "editMessageText",
-			run:    filtersModule.filtersButtonHandler,
-			data:   encodeCallbackData("rmAllFilters", map[string]string{"a": "yes"}),
-			setup: func(t *testing.T, chat gotgbot.Chat) {
-				t.Helper()
-				if err := filters.AddFilter(chat.Id, "hello", "old", "", nil, db.TEXT); err != nil {
-					t.Fatalf("AddFilter setup error = %v", err)
-				}
-			},
-		},
-		{
-			name:   "remove all answer failure",
-			method: "answerCallbackQuery",
-			run:    filtersModule.filtersButtonHandler,
-			data:   encodeCallbackData("rmAllFilters", map[string]string{"a": "no"}),
-			setup: func(t *testing.T, chat gotgbot.Chat) {
-				t.Helper()
-				if err := filters.AddFilter(chat.Id, "hello", "old", "", nil, db.TEXT); err != nil {
-					t.Fatalf("AddFilter setup error = %v", err)
-				}
-			},
-		},
+
 		{
 			name:   "overwrite edit failure",
 			method: "editMessageText",
@@ -568,16 +450,7 @@ func TestFilterCallbackHandlersReturnEarlyWithoutChat(t *testing.T) {
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Filter Chat"}
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 
-	rmAllCtx := newModuleCallbackContext(
-		bot,
-		chat,
-		admin,
-		encodeCallbackData("rmAllFilters", map[string]string{"a": "yes"}),
-	)
-	rmAllCtx.EffectiveChat = nil
-	if err := filtersModule.filtersButtonHandler(bot, rmAllCtx); err != ext.EndGroups {
-		t.Fatalf("filtersButtonHandler(no chat) error = %v, want EndGroups", err)
-	}
+
 
 	overwriteCtx := newModuleCallbackContext(bot, chat, admin, encodeCallbackData("filters_overwrite", map[string]string{"a": "cancel"}))
 	overwriteCtx.EffectiveChat = nil

@@ -390,34 +390,32 @@ filters_help_msg:
 
   Commands:
 
-  - /filter <trigger> <reply>: Every time someone says trigger, the bot will reply
+  - /addfilter <trigger> <reply>: Every time someone says trigger, the bot will reply
   with sentence. For multiple word filters, quote the trigger.
 
   - /filters: List all chat filters.
 
-  - /stop <trigger>: Stop the bot from replying to trigger.
-
-  - /stopall: Stop ALL filters in the current chat. This action cannot be undone.
+  - /rmfilter <trigger>: Stop the bot from replying to trigger.
 
 
   Examples:
 
   - Set a filter:
 
-  -> /filter hello Hello there! How are you?
+  -> /addfilter hello Hello there! How are you?
 
   - Set a multiword filter:
 
-  -> /filter hello friend Hello back! Long time no see!
+  -> /addfilter hello friend Hello back! Long time no see!
 
   - Set a filter that can only be used by admins:
 
-  -> /filter example This filter won't  happen if a normal user says it {admin}
+  -> /addfilter example This filter won't  happen if a normal user says it {admin}
 
   - To save a file, image, gif, or any other attachment, simply reply to the file
   with:
 
-  -> /filter trigger"
+  -> /addfilter trigger"
 formatting_fillings: "<b>Fillings</b>
 
 
@@ -689,25 +687,20 @@ notes_help_msg: 'Save data for future users with notes!
 
   *User commands:*
 
-  - /get <notename>: Get a note.
-
-  - #notename: Same as /get.
+  - #notename: Retrieve a note.
 
   Admin commands:
 
-  - /save <notename> <note text>: Save a new note called "word". Replying to a message
+  - /addnote <notename> <note text>: Save a new note called "word". Replying to a message
   will save that message. Even works on media!
+
+  - /rmnote <notename>: Delete the associated note.
 
   - /clear <notename>: Delete the associated note.
 
   - /notes: List all notes in the current chat.
 
-  - /saved: Same as /notes.
-
-  - /clearall: Delete ALL notes in a chat. This cannot be undone.
-
-  - /privatenotes: Whether or not to send notes in PM. Will send a message with a
-  button which users can click to get the note in PM.'
+  - /clearall: Delete ALL notes in a chat. This cannot be undone.'
 pins_help_msg:
   "All the pin-related commands can be found here; keep your chat up
   to date on the latest news with a simple pinned message!
@@ -1268,7 +1261,7 @@ greetings_auto_approve_invalid_option: "I understand 'on/yes' or 'off/no' only!"
 
 
 # Notes module strings
-notes_save_success: "Saved Note <b>%s</b>!\nGet it with <code>#%s</code> or <code>/get %s</code>."
+notes_save_success: "Saved Note <b>%s</b>!\nGet it with <code>#%s</code>."
 notes_save_failed: "Failed to save note. Please try again later."
 notes_keyword_required: "Please give a keyword to reply to!"
 notes_overwrite_confirm: "Note already exists!\nDo you want to overwrite it?"
@@ -1285,7 +1278,7 @@ notes_list_for_chat: "These are the current notes in <b>%s</b>:"
 notes_check_button: "Check on the button below to get Notes!"
 notes_click_me_btn: "Click Me!"
 notes_current_in_chat: "These are the current notes in this Chat:\n"
-notes_get_instruction: "\nYou can get a note by <code>#notename</code> or <code>/get notename</code>"
+notes_get_instruction: "\nYou can get a note by <code>#notename</code>"
 notes_clear_all_confirm: "Are you sure you want to remove all Notes from this chat?"
 notes_creator_only: "Only Chat Creator can use this command."
 notes_overwrite_cancelled: "Cancelled overwriting of note ❌"
