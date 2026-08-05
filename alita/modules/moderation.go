@@ -76,7 +76,8 @@ func deleteModGates(c *moderationCtx) bool {
 type target struct {
 	userID    int64
 	reason    string
-	timeVal   string // used by time-based commands (e.g., tban)
+	timeVal   string // used by time-based commands
+	untilDate int64  // Unix timestamp for duration actions (0 for permanent)
 	isChannel bool   // true if original target was a channel ID
 }
 

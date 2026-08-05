@@ -769,6 +769,46 @@ func TestExtractTimeParsesValidInputAndRepliesForErrors(t *testing.T) {
 	}
 }
 
+func TestExtractOptionalTime(t *testing.T) {
+	client := &extractionBotClient{}
+	bot := newExtractionBot(client)
+	ctx := newExtractionContext(bot, "/ban 2h spamming")
+
+	// 1. Valid duration with reason
+	untilDate, timeStr, reason, err := ExtractOptionalTime(bot, ctx, "2h spamming")
+	if err != nil || untilDate <= 0 || timeStr != "2 hours" || reason != "spamming" {
+		t.Fatalf("ExtractOptionalTime(2h spamming) = (%d, %q, %q, %v)", untilDate, timeStr, reason, err)
+	}
+
+	// 2. Omitted duration (plain text reason)
+	untilDate, timeStr, reason, err = ExtractOptionalTime(bot, ctx, "spamming")
+	if err != nil || untilDate != 0 || timeStr != "" || reason != "spamming" {
+		t.Fatalf("ExtractOptionalTime(spamming) = (%d, %q, %q, %v)", untilDate, timeStr, reason, err)
+	}
+
+	// 3. Word ending in 'm' but not numeric
+	untilDate, timeStr, reason, err = ExtractOptionalTime(bot, ctx, "spam")
+	if err != nil || untilDate != 0 || timeStr != "" || reason != "spam" {
+		t.Fatalf("ExtractOptionalTime(spam) = (%d, %q, %q, %v)", untilDate, timeStr, reason, err)
+	}
+
+	// 4. Empty input
+	untilDate, timeStr, reason, err = ExtractOptionalTime(bot, ctx, "")
+	if err != nil || untilDate != 0 || timeStr != "" || reason != "" {
+		t.Fatalf("ExtractOptionalTime('') = (%d, %q, %q, %v)", untilDate, timeStr, reason, err)
+	}
+
+	// 5. Invalid duration amount sends error reply
+	client.calls = nil
+	untilDate, _, _, err = ExtractOptionalTime(bot, ctx, "0m")
+	if err == nil || untilDate != -1 {
+		t.Fatalf("ExtractOptionalTime(0m) = (%d, %v), want (-1, error)", untilDate, err)
+	}
+	if len(client.callsFor("sendMessage")) != 1 {
+		t.Fatalf("ExtractOptionalTime(0m) should send an error reply")
+	}
+}
+
 func TestIdFromReply_NilReply(t *testing.T) {
 	t.Parallel()
 
