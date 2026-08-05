@@ -913,7 +913,6 @@ func TestModuleNames(t *testing.T) {
 			backup.BackupModuleLocks,
 			backup.BackupModuleNotes,
 			backup.BackupModulePins,
-			backup.BackupModuleReports,
 			backup.BackupModuleRules,
 			backup.BackupModuleWarns,
 		}

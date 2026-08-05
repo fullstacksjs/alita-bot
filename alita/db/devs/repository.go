@@ -21,7 +21,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/models"
 	"github.com/divkix/Alita_Robot/alita/db/notes"
 	"github.com/divkix/Alita_Robot/alita/db/pins"
-	"github.com/divkix/Alita_Robot/alita/db/reports"
 	"github.com/divkix/Alita_Robot/alita/db/rules"
 	"github.com/divkix/Alita_Robot/alita/db/user"
 	"github.com/dustin/go-humanize"
@@ -153,11 +152,10 @@ func LoadAllStats() string {
 	dag, wag, mag := chats.LoadActivityStats()
 	dau, wau, mau := user.LoadUserActivityStats()
 	AcCount, ClCount := pins.LoadPinStats()
-	uRCount, gRCount := reports.LoadReportStats()
 	antiCount := antiflood.LoadAntifloodStats()
 	setRules, pvtRules := rules.LoadRulesStats()
 	blacklistTriggers, blacklistChats := blacklists.LoadBlacklistsStats()
-	connectedUsers, connectedChats := connections.LoadConnectionStats()
+	connectedUsers, _ := connections.LoadConnectionStats()
 	disabledCmds, disableEnabledChats := disabling.LoadDisableStats()
 	filtersNum, filtersChats := filters.LoadFilterStats()
 	enabledWelcome, enabledGoodbye, cleanServiceEnabled, cleanWelcomeEnabled, cleanGoodbyeEnabled := greetings.LoadGreetingsStats()
@@ -201,11 +199,6 @@ func LoadAllStats() string {
 		"\n<b>Pins:</b>" +
 		fmt.Sprintf("\n    <b>CleanLinked Enabled:</b> %s", humanize.Comma(ClCount)) +
 		fmt.Sprintf("\n    <b>AntiChannelPin Enabled:</b> %s", humanize.Comma(AcCount)) +
-		fmt.Sprintf(
-			"\n<b>Reports:</b> %s users enabled reports in %s Chats",
-			humanize.Comma(uRCount),
-			humanize.Comma(gRCount),
-		) +
 		"\n<b>Rules:</b>" +
 		fmt.Sprintf("\n    <b>Set:</b> %s", humanize.Comma(setRules)) +
 		fmt.Sprintf("\n    <b>Private:</b> %s", humanize.Comma(pvtRules)) +
@@ -216,7 +209,6 @@ func LoadAllStats() string {
 		) +
 		"\n<b>Connections:</b>" +
 		fmt.Sprintf("\n    %s users connected to chats", humanize.Comma(connectedUsers)) +
-		fmt.Sprintf("\n    %s chats allow user connections", humanize.Comma(connectedChats)) +
 		fmt.Sprintf(
 			"\n<b>Disabling:</b> %s commands disabled in %s chats",
 			humanize.Comma(disabledCmds),

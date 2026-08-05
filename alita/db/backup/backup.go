@@ -41,8 +41,6 @@ func ExportModuleData(chatID int64, module string) (interface{}, error) {
 		return exportPinsData(chatID)
 	case BackupModuleReactions:
 		return exportReactionsData(chatID)
-	case BackupModuleReports:
-		return exportReportsData(chatID)
 	case BackupModuleRules:
 		return exportRulesData(chatID)
 	case BackupModuleWarns:
@@ -325,19 +323,14 @@ func exportAdminData(chatID int64) (*AdminBackup, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get antiflood settings: %w", err)
 	}
-	connectionSettings, err := findChatSetting[models.ConnectionChatSettings](chatID)
-	if err != nil {
-		return nil, fmt.Errorf("get connection settings: %w", err)
-	}
 	blacklistEntries, err := findChatRows[models.BlacklistSettings](chatID)
 	if err != nil {
 		return nil, fmt.Errorf("get blacklist settings: %w", err)
 	}
 
 	result := &AdminBackup{
-		AdminSettings:      adminSettings,
-		AntifloodSettings:  antifloodSettings,
-		ConnectionSettings: connectionSettings,
+		AdminSettings:     adminSettings,
+		AntifloodSettings: antifloodSettings,
 	}
 	if len(blacklistEntries) > 0 {
 		result.BlacklistMode = blacklistEntries[0].Action
@@ -373,9 +366,9 @@ func exportBlacklistsData(chatID int64) (*BlacklistsBackup, error) {
 }
 
 
-func exportConnectionsData(chatID int64) (*ConnectionsBackup, error) {
-	settings, err := findChatSetting[models.ConnectionChatSettings](chatID)
-	return &ConnectionsBackup{Settings: settings}, err
+func exportConnectionsData(_ int64) (*ConnectionsBackup, error) {
+	// Connection authorization settings were removed; active user connections are not exported.
+	return &ConnectionsBackup{}, nil
 }
 
 func exportDisablingData(chatID int64) (*DisablingBackup, error) {
@@ -427,11 +420,6 @@ func exportReactionsData(chatID int64) (*ReactionsBackup, error) {
 	return &ReactionsBackup{Reactions: rows}, err
 }
 
-func exportReportsData(chatID int64) (*ReportsBackup, error) {
-	settings, err := findChatSetting[models.ReportChatSettings](chatID)
-	return &ReportsBackup{Settings: settings}, err
-}
-
 func exportRulesData(chatID int64) (*RulesBackup, error) {
 	settings, err := findChatSetting[models.RulesSettings](chatID)
 	return &RulesBackup{Settings: settings}, err
@@ -480,8 +468,6 @@ func importModuleData(tx *gorm.DB, chatID int64, module string, data interface{}
 		return importPins(tx, chatID, data)
 	case BackupModuleReactions:
 		return importReactions(tx, chatID, data)
-	case BackupModuleReports:
-		return importReports(tx, chatID, data)
 	case BackupModuleRules:
 		return importRules(tx, chatID, data)
 	case BackupModuleWarns:
@@ -502,18 +488,12 @@ func importAdmin(tx *gorm.DB, chatID int64, payload interface{}) ([]string, erro
 	if data.AntifloodSettings != nil {
 		data.AntifloodSettings.ChatId = chatID
 	}
-	if data.ConnectionSettings != nil {
-		data.ConnectionSettings.ChatId = chatID
-	}
 
 	if err := replaceChatSetting(tx, chatID, data.AdminSettings); err != nil {
 		return nil, fmt.Errorf("restore admin settings: %w", err)
 	}
 	if err := replaceChatSetting(tx, chatID, data.AntifloodSettings); err != nil {
 		return nil, fmt.Errorf("restore antiflood settings: %w", err)
-	}
-	if err := replaceChatSetting(tx, chatID, data.ConnectionSettings); err != nil {
-		return nil, fmt.Errorf("restore connection settings: %w", err)
 	}
 	if data.BlacklistMode != "" {
 		if err := tx.Model(&models.BlacklistSettings{}).
@@ -606,15 +586,12 @@ func importBlacklists(tx *gorm.DB, chatID int64, payload interface{}) ([]string,
 }
 
 
-func importConnections(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
-	var data ConnectionsBackup
-	if err := decodeModuleData(payload, BackupModuleConnections, &data); err != nil {
+func importConnections(_ *gorm.DB, _ int64, payload interface{}) ([]string, error) {
+	// Accept empty payloads and ignore obsolete allow_connect settings from older exports.
+	if err := decodeModuleData(payload, BackupModuleConnections, &ConnectionsBackup{}); err != nil {
 		return nil, err
 	}
-	if data.Settings != nil {
-		data.Settings.ChatId = chatID
-	}
-	return nil, replaceChatSetting(tx, chatID, data.Settings)
+	return nil, nil
 }
 
 func importDisabling(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) { //nolint:dupl // module-specific schema
@@ -745,18 +722,6 @@ func importReactions(tx *gorm.DB, chatID int64, payload interface{}) ([]string, 
 	return []string{cacheKey("reactions", chatID)}, nil
 }
 
-func importReports(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
-	var data ReportsBackup
-	if err := decodeModuleData(payload, BackupModuleReports, &data); err != nil {
-		return nil, err
-	}
-	if data.Settings != nil {
-		data.Settings.ChatId = chatID
-		data.Settings.Status = data.Settings.Enabled
-	}
-	return nil, replaceChatSetting(tx, chatID, data.Settings)
-}
-
 func importRules(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
 	var data RulesBackup
 	if err := decodeModuleData(payload, BackupModuleRules, &data); err != nil {
@@ -870,8 +835,6 @@ func clearModuleData(tx *gorm.DB, chatID int64, module string) ([]string, error)
 		return clearPins(tx, chatID)
 	case BackupModuleReactions:
 		return clearReactions(tx, chatID)
-	case BackupModuleReports:
-		return clearReports(tx, chatID)
 	case BackupModuleRules:
 		return clearRules(tx, chatID)
 	case BackupModuleWarns:
@@ -934,7 +897,7 @@ func clearBlacklists(tx *gorm.DB, chatID int64) ([]string, error) {
 
 
 func clearConnections(tx *gorm.DB, chatID int64) ([]string, error) {
-	return nil, replaceChatSetting(tx, chatID, &models.ConnectionChatSettings{ChatId: chatID})
+	return nil, tx.Where("chat_id = ?", chatID).Delete(&models.ConnectionSettings{}).Error
 }
 
 func clearDisabling(tx *gorm.DB, chatID int64) ([]string, error) {
@@ -988,16 +951,6 @@ func clearPins(tx *gorm.DB, chatID int64) ([]string, error) {
 
 func clearReactions(tx *gorm.DB, chatID int64) ([]string, error) {
 	return []string{cacheKey("reactions", chatID)}, replaceChatRows[models.Reactions](tx, chatID, nil)
-}
-
-func clearReports(tx *gorm.DB, chatID int64) ([]string, error) {
-	settings := &models.ReportChatSettings{
-		ChatId:      chatID,
-		Enabled:     true,
-		Status:      true,
-		BlockedList: models.Int64Array{},
-	}
-	return nil, replaceChatSetting(tx, chatID, settings)
 }
 
 func clearRules(tx *gorm.DB, chatID int64) ([]string, error) {

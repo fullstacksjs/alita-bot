@@ -253,32 +253,7 @@ commonstrings_admin_cache_cache_reloaded: Successfully reloaded admin cache.
 commonstrings_admin_cache_not_found:
   Admincache not found. Ask an admin to use /admincache
   to reload the admin cache.
-connections_allow_connect_currently_off:
-  "User connections are currently turned <b>off</b>.
-
-  Users can't connect this chat to their PMs!"
-connections_allow_connect_currently_on:
-  "User connections are currently turned <b>on</b>.
-
-  Users can connect this chat to their PMs!"
-connections_allow_connect_turned_off:
-  "Turned <b>off</b> User connections to this
-  chat!
-
-  Users can't connect chat to their PM's!"
-connections_allow_connect_turned_on:
-  "Turned <b>on</b> User connections to this chat!
-
-  Users can now connect chat to their PMs!"
 connections_connect_connected: You are now connected to <b>%s</b>!
-connections_connect_connection_disabled:
-  "User connections are currently <b>disabled</b>
-  to this chat.
-
-  Please ask admins to allow if you want to connect!"
-connections_connect_tap_btn_connect:
-  Please press the button below to connect this
-  chat to your PM.
 connections_connected: You are currently connected to <b>%s</b>!
 connections_connections_btns_admin_conn_cmds: Available Admin commands
 connections_connections_btns_user_conn_cmds: Available User commands
@@ -306,10 +281,7 @@ connections_is_user_connected_need_group:
   chats, not in PM!
 connections_is_user_connected_user_not_admin: You need to be an admin to do this.
 connections_not_connected: You aren't connected to any chats.
-connections_stale_connection: "Your connection is stale - I can no longer access this chat. Please use /connect to reconnect to a valid chat."
-connections_reconnect_need_pm: You need to be in a PM with me to reconnect to a chat!
-connections_reconnect_no_last_chat: You have no last chat to reconnect!
-connections_reconnect_reconnected: You are now reconnected to <b>%s</b>!!
+connections_stale_connection: "Your connection is stale - I can no longer access this chat. Please use /connect again with a valid chat."
 disabling_help_msg:
   "This module allows you to disable some commonly used commands,
   So, no one can use them. It'll also allow you to autodelete them, stopping people
@@ -873,8 +845,6 @@ admin_need_admin: You need to be admin to do this!
 # Reports module strings
 reports_reply_to_report: You need to reply to a message to report it.
 reports_expose_yourself: You need to expose yourself first!
-reports_reply_to_block: You must reply to a user to block them.
-reports_reply_to_unblock: You must reply to a user to unblock them.
 
 # Mute module strings
 mute_reply_to_dmute: You need to reply to a message to delete it and mute the user!
@@ -1406,21 +1376,7 @@ reports_special_account: "It's a special account of telegram!"
 reports_admin_report: "You're an admin, whom will I report your issues to?"
 reports_why_report_myself: "Why would I report myself?"
 reports_why_report_admin: "Why would I report an admin?"
-reports_turned_on_personal: "Turned on reporting! You'll be notified whenever anyone reports something in groups you are admin."
-reports_turned_on_group: "Users will now be able to report messages."
-reports_turned_off_personal: "Turned off reporting! You'll no longer be notified whenever anyone reports something in groups you are admin."
-reports_turned_off_group: "Users will no longer be able to report via @admin or /report."
-reports_group_only: "This command can only be used in a group!"
-reports_user_blocked: "Blocked user %s from reporting."
-reports_user_unblocked: "Unblocked user %s from reporting."
-reports_no_blocked_users: "No users are currently blocked from using report commands!"
-reports_preference_enabled: "Your current preference is true, You'll be notified whenever anyone reports something in groups you are admin."
-reports_preference_disabled: "You haven't enabled reports, You won't be notified."
-reports_status_enabled: "Reports are currently enabled in this chat.\nUsers can use the /report command, or mention @admin, to tag all admins."
-reports_status_disabled: "Reports are currently disabled in this chat."
-reports_user_kicked: "User kicked!"
-reports_user_banned: "User banned!"
-reports_message_deleted: "Message Deleted!"
+reports_message_template: "<b>⚠️ Report:</b>\n<b> • Report by:</b> %s\n<b> • Reported user:</b> %s"
 
 # Bot updates module additional strings
 bot_updates_need_supergroup: "Sorry, but to use my all my features, you need to convert this group to supergroup."
@@ -1475,28 +1431,6 @@ button_mute: "Mute"
 button_unban: "Unban"
 button_unmute: "Unmute"
 
-# Reports module strings
-reports_button_message: "➡ Message"
-reports_button_kick: "⚠ Kick"
-reports_button_ban: "⛔️ Ban"
-reports_button_delete: "❎ Delete Message"
-reports_button_resolved: "✔️ Mark Resolved"
-reports_blocked_users_header: "Users blocked from using report commands:"
-reports_invalid_input: "Your input was not recognised as one of: <code><yes/on/no/off> or <block/unblock/showblocklist></code>"
-reports_preference_enabled_private: "Your current preference is true. You'll be notified whenever anyone reports something in groups you are admin."
-reports_preference_disabled_private: "You haven't enabled reports. You won't be notified."
-reports_status_enabled_group: "Reports are currently enabled in this chat.\nUsers can use the /report command, or mention @admin, to tag all admins."
-reports_status_disabled_group: "Reports are currently disabled in this chat."
-reports_change_settings_hint: "\n\nTo change this setting, try this command again, with one of the following args: yes/no/on/off"
-reports_success_kick: "✅ Successfully kicked"
-reports_success_ban: "✅ Successfully banned"
-reports_success_delete: "✅ Successfully deleted"
-reports_resolved_success: "✅ Resolved report"
-reports_action_by: "Action taken by %s"
-reports_resolved_by: "<b>Resolved by:</b> %s"
-reports_message_template: "<b>⚠️ Report:</b>\n<b> • Report by:</b> %s\n<b> • Reported user:</b> %s\n<b>Status:</b> <i>Pending...</i>"
-reports_invalid_action: "Invalid action."
-
 # Captcha module strings
 captcha_mode_math_desc: "mathematical problems"
 captcha_mode_text_desc: "text recognition from images"
@@ -1519,10 +1453,6 @@ message_type_voice: "voice"
 message_type_video: "video"
 message_type_video_note: "video note"
 message_type_unknown: "unknown"
-
-# Connections module strings
-connections_invalid_option: "Please give me a valid option from <yes/on/no/off>"
-connections_button_connect: "Connect to chat"
 
 # Bot updates module strings
 bot_updates_convert_instruction: "After converting this group to supergroup, you can add me again to use me.\n"
@@ -1716,7 +1646,6 @@ backup_module_greetings: "Greetings"
 backup_module_locks: "Locks"
 backup_module_notes: "Notes"
 backup_module_pins: "Pin Settings"
-backup_module_reports: "Reports"
 backup_module_rules: "Rules"
 backup_module_warns: "Warnings"
 

@@ -228,7 +228,6 @@ func TestLoadAllStats(t *testing.T) {
 		"Pins",
 		"CleanLinked Enabled",
 		"AntiChannelPin Enabled",
-		"Reports",
 		"Rules",
 		"Set",
 		"Private",

@@ -23,7 +23,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/models"
 	"github.com/divkix/Alita_Robot/alita/db/notes"
 	"github.com/divkix/Alita_Robot/alita/db/pins"
-	"github.com/divkix/Alita_Robot/alita/db/reports"
 	"github.com/divkix/Alita_Robot/alita/db/rules"
 	"github.com/divkix/Alita_Robot/alita/db/warns"
 )
@@ -234,27 +233,30 @@ func TestImportModuleDataRejectsMalformedPayloadForEveryModule(t *testing.T) {
 	}
 }
 
-func TestClearModuleDataConnectionsDisablesAllowConnect(t *testing.T) {
+func TestClearModuleDataConnectionsDisconnectsUsers(t *testing.T) {
 	skipIfNoDb(t)
 
-	chatID := time.Now().UnixNano()
+	base := time.Now().UnixNano()
+	chatID := base
+	userID := base + 1
 	require.NoError(t, chats.EnsureChatInDb(chatID, "test_backup_connections_clear"))
 	t.Cleanup(func() {
-		if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.ConnectionChatSettings{}).Error; err != nil {
-			t.Fatalf("cleanup Delete(ConnectionChatSettings) error: %v", err)
+		if err := db.DB.Where("user_id = ?", userID).Delete(&models.ConnectionSettings{}).Error; err != nil {
+			t.Fatalf("cleanup Delete(ConnectionSettings) error: %v", err)
 		}
 		if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.Chat{}).Error; err != nil {
 			t.Fatalf("cleanup Delete(Chat) error: %v", err)
 		}
 	})
 
-	_ = connections.GetChatConnectionSetting(chatID)
-	connections.ToggleAllowConnect(chatID, true)
-	require.True(t, connections.GetChatConnectionSetting(chatID).AllowConnect)
+	require.NoError(t, connections.ConnectId(userID, chatID))
+	require.True(t, connections.Connection(userID).Connected)
 
 	require.NoError(t, ClearModuleData(chatID, BackupModuleConnections))
 
-	assert.False(t, connections.GetChatConnectionSetting(chatID).AllowConnect)
+	conn := connections.Connection(userID)
+	assert.False(t, conn.Connected)
+	assert.Equal(t, int64(0), conn.ChatId)
 }
 
 func TestExportChatData(t *testing.T) {
@@ -325,8 +327,8 @@ func cleanupBackupChat(t *testing.T, chatID int64) {
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.BlacklistSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting BlacklistSettings: %v", err)
 	}
-	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.ConnectionChatSettings{}).Error; err != nil {
-		t.Errorf("cleanup failed deleting ConnectionChatSettings: %v", err)
+	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.ConnectionSettings{}).Error; err != nil {
+		t.Errorf("cleanup failed deleting ConnectionSettings: %v", err)
 	}
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.DisableSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting DisableSettings: %v", err)
@@ -351,9 +353,6 @@ func cleanupBackupChat(t *testing.T, chatID int64) {
 	}
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.PinSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting PinSettings: %v", err)
-	}
-	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.ReportChatSettings{}).Error; err != nil {
-		t.Errorf("cleanup failed deleting ReportChatSettings: %v", err)
 	}
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.RulesSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting RulesSettings: %v", err)
@@ -762,13 +761,9 @@ func TestExportImportConnectionsRoundTrip(t *testing.T) {
 		cleanupBackupChat(t, dstChat)
 	})
 
-	connections.ToggleAllowConnect(srcChat, true)
-
 	exported, err := exportConnectionsData(srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
-	require.NotNil(t, exported.Settings)
-	assert.True(t, exported.Settings.AllowConnect)
 
 	payload := map[string]interface{}{
 		"settings": map[string]interface{}{
@@ -778,9 +773,7 @@ func TestExportImportConnectionsRoundTrip(t *testing.T) {
 	}
 
 	require.NoError(t, ImportModuleData(dstChat, BackupModuleConnections, payload))
-
-	settings := connections.GetChatConnectionSetting(dstChat)
-	assert.True(t, settings.AllowConnect)
+	require.NoError(t, ImportModuleData(dstChat, BackupModuleConnections, map[string]interface{}{}))
 }
 
 func TestExportImportAntifloodRoundTrip(t *testing.T) {
@@ -907,45 +900,6 @@ func TestExportImportPinsRoundTrip(t *testing.T) {
 	settings := pins.GetPinData(dstChat)
 	require.NotNil(t, settings)
 	assert.True(t, settings.AntiChannelPin)
-}
-
-func TestExportImportReportsRoundTrip(t *testing.T) {
-	skipIfNoDb(t)
-
-	srcChat := time.Now().UnixNano()
-	dstChat := srcChat + 1
-	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_reports"))
-	require.NoError(t, chats.EnsureChatInDb(dstChat, "dst_reports"))
-	t.Cleanup(func() {
-		cleanupBackupChat(t, srcChat)
-		cleanupBackupChat(t, dstChat)
-	})
-
-	// Ensure src record exists, then disable
-	_ = reports.GetChatReportSettings(srcChat)
-	require.NoError(t, reports.SetChatReportStatus(srcChat, false))
-
-	exported, err := exportReportsData(srcChat)
-	require.NoError(t, err)
-	require.NotNil(t, exported)
-	require.NotNil(t, exported.Settings)
-	assert.False(t, exported.Settings.Enabled)
-
-	// Ensure dst record exists before import (create if missing)
-	_ = reports.GetChatReportSettings(dstChat)
-
-	payload := map[string]interface{}{
-		"settings": map[string]interface{}{
-			"chat_id": float64(dstChat),
-			"enabled": false,
-		},
-	}
-
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleReports, payload))
-
-	settings := reports.GetChatReportSettings(dstChat)
-	require.NotNil(t, settings)
-	assert.False(t, settings.Enabled)
 }
 
 func TestImportChatData_Validation(t *testing.T) {
@@ -1113,12 +1067,6 @@ func TestClearModuleData_IndividualModules(t *testing.T) {
 	require.NoError(t, ClearModuleData(chatID, BackupModulePins))
 	assert.False(t, pins.GetPinData(chatID).AntiChannelPin)
 
-	// --- Reports ---
-	_ = reports.GetChatReportSettings(chatID)
-	require.NoError(t, reports.SetChatReportStatus(chatID, false))
-	require.NoError(t, ClearModuleData(chatID, BackupModuleReports))
-	assert.True(t, reports.GetChatReportSettings(chatID).Enabled)
-
 	// --- Antiflood ---
 	require.NoError(t, antiflood.SetFlood(chatID, 8))
 	require.NoError(t, ClearModuleData(chatID, BackupModuleAntiflood))
@@ -1173,10 +1121,6 @@ func TestExportModuleData_EdgeCases(t *testing.T) {
 	pinsData, err := exportPinsData(chatID)
 	require.NoError(t, err)
 	require.NotNil(t, pinsData)
-
-	reportsData, err := exportReportsData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, reportsData)
 
 	rulesData, err := exportRulesData(chatID)
 	require.NoError(t, err)

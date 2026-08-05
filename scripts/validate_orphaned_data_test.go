@@ -155,7 +155,7 @@ func newValidationTestDB(t *testing.T) *gorm.DB {
 	for _, check := range defaultOrphanChecks() {
 		columns := "chat_id INTEGER"
 		switch check.table {
-		case "devs", "report_user_settings":
+		case "devs":
 			columns = "user_id INTEGER"
 		case "chat_users", "connection", "warns_users":
 			columns = "chat_id INTEGER, user_id INTEGER"

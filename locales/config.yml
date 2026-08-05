@@ -24,6 +24,6 @@ alt_names:
   Pins: [antichannelpin, cleanlinked, pins]
   Purges: [purge]
   Reactions: [reaction, addreaction, removereaction]
-  Reports: [report, reporting]
+  Reports: [report]
   Rules: [rule]
   Warns: [warn, warns, rmwarn, resetwarns, resetallwarns, setwarnlimit, warnings]

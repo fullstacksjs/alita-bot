@@ -66,12 +66,6 @@ func defaultOrphanChecks() []orphanCheck {
 				"AND channel_id NOT IN (SELECT chat_id FROM chats);",
 		},
 		{
-			table:     "connection_settings",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM connection_settings WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
 			table:     "disable",
 			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
 			issue:     "Records with non-existent chat_id",
@@ -114,12 +108,6 @@ func defaultOrphanChecks() []orphanCheck {
 			cleanup:   "DELETE FROM pins WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
 		},
 		{
-			table:     "report_chat_settings",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM report_chat_settings WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
 			table:     "rules",
 			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
 			issue:     "Records with non-existent chat_id",
@@ -136,12 +124,6 @@ func defaultOrphanChecks() []orphanCheck {
 			condition: "user_id NOT IN (SELECT user_id FROM users)",
 			issue:     "Records with non-existent user_id",
 			cleanup:   "DELETE FROM devs WHERE user_id NOT IN (SELECT user_id FROM users);",
-		},
-		{
-			table:     "report_user_settings",
-			condition: "user_id NOT IN (SELECT user_id FROM users)",
-			issue:     "Records with non-existent user_id",
-			cleanup:   "DELETE FROM report_user_settings WHERE user_id NOT IN (SELECT user_id FROM users);",
 		},
 		{
 			table: "chat_users",
