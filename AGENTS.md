@@ -145,6 +145,7 @@ make tidy / make vendor
 # Single tests
 go test -v -run TestXxx ./alita/db
 go test -v -count=1 -timeout 10m ./alita/db
+go test -v -run TestProductContract ./alita # exact commands/callbacks/watchers/help surface
 
 # Translations
 make check-translations # runs scripts/check_translations (separate module) — missing-key gate
@@ -799,6 +800,11 @@ YAML-backed string table.
 - **`internal/repo_checks/`** — test-only structural-invariant assertions (string/
   regex over source files via `../..`); **sensitive to renames/reformatting** of the
   functions it inspects — update expectations alongside refactors.
+- **`alita/product_contract_test.go`** — the executable product-surface seam. Its
+  single `productContract` expectation inventories commands, callback namespaces,
+  grouped message/membership watchers, and visible help modules from the configured
+  dispatcher and fake Telegram client; update that expectation with every product
+  slice that adds or removes handlers.
 - `migrate_psql.sh` is the sole manual forward-only migration path (`make
   psql-migrate`). It cleans Supabase-specific SQL, applies each file and its
   `schema_migrations` record in one transaction, verifies raw-file SHA-256
