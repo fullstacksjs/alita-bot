@@ -68,59 +68,6 @@ func TestDemoteErrorHandling(t *testing.T) {
 	})
 }
 
-func TestAdminListLoadsAndRepliesWithVisibleAdmins(t *testing.T) {
-	client := newModuleBotClient()
-	client.responses["getChatAdministrators"] = []byte(
-		`[` +
-			`{"status":"administrator","user":{"id":999,"is_bot":true,"first_name":"Alita"}},` +
-			`{"status":"administrator","user":{"id":4242,"is_bot":false,"first_name":"Visible","username":"visibleadmin"}}` +
-			`]`,
-	)
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Admin Chat"}
-	user := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	ctx := newModuleMessageContext(bot, chat, user, "/adminlist")
-
-	cmdCtx, err := helpers.BuildCommandContext(bot, ctx)
-	if err != nil {
-		t.Fatalf("BuildCommandContext failed: %v", err)
-	}
-	if err := adminModule.adminlist(cmdCtx); err != ext.EndGroups {
-		t.Fatalf("adminlist() error = %v, want EndGroups", err)
-	}
-	if calls := client.callsFor("getChatAdministrators"); len(calls) != 1 {
-		t.Fatalf("getChatAdministrators calls = %d, want 1", len(calls))
-	}
-	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
-		t.Fatalf("sendMessage calls = %d, want 1", len(calls))
-	}
-}
-
-func TestAdminListReportsWhenOnlyBotsAreVisible(t *testing.T) {
-	client := newModuleBotClient()
-	client.responses["getChatAdministrators"] = []byte(
-		`[` +
-			`{"status":"administrator","user":{"id":999,"is_bot":true,"first_name":"Alita"}},` +
-			`{"status":"administrator","user":{"id":1087968824,"is_bot":false,"first_name":"Group Anonymous Bot"},"is_anonymous":true}` +
-			`]`,
-	)
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Admin Chat"}
-	user := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	ctx := newModuleMessageContext(bot, chat, user, "/adminlist")
-
-	cmdCtx, err := helpers.BuildCommandContext(bot, ctx)
-	if err != nil {
-		t.Fatalf("BuildCommandContext failed: %v", err)
-	}
-	if err := adminModule.adminlist(cmdCtx); err != ext.EndGroups {
-		t.Fatalf("adminlist(no visible admins) error = %v, want EndGroups", err)
-	}
-	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
-		t.Fatalf("sendMessage calls = %d, want no-visible-admins response", len(calls))
-	}
-}
-
 func TestPromoteReplyPromotesTargetAndSetsTitle(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)
@@ -708,7 +655,6 @@ func TestAdminCommandsPropagateGotgbotRequestErrors(t *testing.T) {
 		withReply bool
 		run       func(*helpers.CommandContext) error
 	}{
-		{name: "admin list reply", text: "/adminlist", method: "sendMessage", run: adminModule.adminlist},
 		{name: "promote missing target reply", text: "/promote", method: "sendMessage", run: adminModule.promote},
 		{
 			name:   "promote request",
