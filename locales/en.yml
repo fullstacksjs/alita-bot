@@ -1,4 +1,3 @@
-admin_adminlist: "Admins in <b>%s</b>:"
 admin_anon_admin_already_disabled: AnonAdmin mode is already <b>disabled</b> for %s
 admin_anon_admin_already_enabled: AnonAdmin mode is already <b>enabled</b> for %s
 admin_anon_admin_disabled: "AnonAdmin mode is currently <b>disabled</b> for %s.
@@ -37,11 +36,6 @@ admin_errors_admin_cache_failed: "I'm having trouble accessing the admin list. P
 admin_help_msg: "Make it easy to promote and demote users with the admin module!
 
 
-  *User Commands:*
-
-  × /adminlist: List the admins in the current chat.
-
-
   *Admin Commands:*
 
   × /promote `<reply/username/mention/userid>`: Promote a user.
@@ -66,7 +60,6 @@ admin_title_is_owner: This person created this chat, and how am I supposed to
 admin_title_success_set: Successfully set %s's admin title to <b>%s</b>
 admin_title_truncated: "\nNote: Admin title truncated to 16 characters from %d"
 admin_cache_cleared: Successfully cleared admin cache.
-admin_no_visible_admins: "\nNo visible admins (all are bots or anonymous)."
 admin_anon_admin_db_error: Failed to update anonymous admin setting. Please try again.
 approvals_help_msg: |
   <b>👤 Approvals</b>
@@ -1121,8 +1114,6 @@ common_status_on: "On"
 common_status_off: "Off"
 
 # Admin module missing strings
-admin_adminlist_note_cached: "\n\nNote: These values are cached and may not be up-to-date"
-admin_adminlist_note_fresh: "\n\nNote: These are up-to-date values"
 admin_invitelink_public: "Here is the invite link of this chat: %s"
 admin_invitelink_private: "Here is the invite link of this chat: %s"
 

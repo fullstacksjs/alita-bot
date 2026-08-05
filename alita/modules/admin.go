@@ -23,66 +23,6 @@ import (
 
 var adminModule = moduleStruct{moduleName: "Admin"}
 
-/*
-	Used to list all the admin in a group
-
-Connection - false, false
-*/
-// adminlist handles the /adminlist command to display all admins in a group.
-// It returns a cached or fresh list of group administrators excluding bots and anonymous admins.
-func (m moduleStruct) adminlist(c *helpers.CommandContext) error {
-	chat := c.Chat
-	msg := c.Msg
-	cached := true
-
-	tr := c.Tr
-
-	temp, _ := tr.GetString(strings.ToLower(m.moduleName) + "_adminlist")
-	text := fmt.Sprintf(temp, formatting.HtmlEscape(chat.Title))
-
-	adminsAvail, admins := cache.GetAdminCacheList(chat.Id)
-	if !adminsAvail {
-		admins = cache.LoadAdminCache(c.Bot, chat.Id)
-		cached = false
-	}
-
-	var sb strings.Builder
-	for i := range admins.UserInfo {
-		admin := &admins.UserInfo[i]
-		user := admin.User
-		if user.IsBot || admin.IsAnonymous {
-			// don't list bots and anonymous admins
-			continue
-		}
-		if user.Username != "" {
-			fmt.Fprintf(&sb, "\n- @%s", formatting.HtmlEscape(user.Username))
-		} else {
-			fmt.Fprintf(&sb, "\n- %s", formatting.MentionHtml(user.Id, user.FirstName))
-		}
-	}
-	if sb.Len() == 0 {
-		// All admins are bots or anonymous
-		noVisibleText, _ := tr.GetString("admin_no_visible_admins")
-		text += noVisibleText
-	} else {
-		text += sb.String()
-	}
-	if !cached {
-		noteText, _ := tr.GetString("admin_adminlist_note_fresh")
-		text += noteText
-	} else {
-		noteText, _ := tr.GetString("admin_adminlist_note_cached")
-		text += noteText
-	}
-	_, err := msg.Reply(c.Bot, text, formatting.Shtml())
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	return ext.EndGroups
-}
-
 /* Used to Demote a member in chat
 
 connection = true, true
@@ -696,15 +636,6 @@ func (moduleStruct) adminCache(c *helpers.CommandContext) error {
 }
 
 var (
-	adminlistDesc = helpers.CommandDescriptor{
-		Name:        "adminlist",
-		Disableable: true,
-		RequiredChecks: []helpers.CheckFunc{
-			helpers.CheckDisabled("adminlist"),
-			helpers.RequireBotAdmin(),
-			helpers.RequireGroup(),
-		},
-	}
 	promoteDesc = helpers.CommandDescriptor{
 		Name: "promote",
 		RequiredChecks: []helpers.CheckFunc{
@@ -765,7 +696,6 @@ var (
 func LoadAdmin(dispatcher *ext.Dispatcher) {
 	DefaultHelpRegistry().AbleMap["Admin"] = true
 
-	helpers.WrapCommand(dispatcher, adminlistDesc, adminModule.adminlist)
 	helpers.WrapCommand(dispatcher, promoteDesc, adminModule.promote)
 	helpers.WrapCommand(dispatcher, demoteDesc, adminModule.demote)
 	helpers.WrapCommand(dispatcher, setTitleDesc, adminModule.setTitle)
