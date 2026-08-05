@@ -34,7 +34,6 @@ func TestCallbackHandlersIgnoreMissingCallbackQuery(t *testing.T) {
 		{name: "warnsButtonHandler", want: ext.EndGroups, call: module.warnsButtonHandler},
 		{name: "unpinallCallback", want: ext.EndGroups, call: module.unpinallCallback},
 		{name: "reactionsHelpHandler", want: ext.EndGroups, call: module.reactionsHelpHandler},
-		{name: "markResolvedButtonHandler", want: ext.EndGroups, call: module.markResolvedButtonHandler},
 		{name: "connectionButtons", want: ext.EndGroups, call: module.connectionButtons},
 		{name: "buttonHandler", want: ext.EndGroups, call: module.buttonHandler},
 		{name: "antiRaidCallbackHandler", want: ext.ContinueGroups, call: antiRaid.callbackHandler},
@@ -79,7 +78,6 @@ func TestCallbackHandlersRejectMissingCallbackMessage(t *testing.T) {
 		call func(*gotgbot.Bot, *ext.Context) error
 	}{
 		{name: "verifyAnonymousAdmin", call: verifyAnonymousAdmin},
-		{name: "markResolvedButtonHandler", call: module.markResolvedButtonHandler},
 		{name: "connectionButtons", call: module.connectionButtons},
 	}
 

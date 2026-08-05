@@ -12,7 +12,6 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/chats"
-	"github.com/divkix/Alita_Robot/alita/db/connections"
 	"github.com/divkix/Alita_Robot/alita/db/notes"
 	"github.com/divkix/Alita_Robot/alita/db/rules"
 	"github.com/divkix/Alita_Robot/alita/i18n"
@@ -201,7 +200,7 @@ func TestHandleDeepLinkRoutesHelpDeepLink(t *testing.T) {
 	}
 }
 
-func TestHandleDeepLinkRoutesConnectAndRulesDeepLinks(t *testing.T) {
+func TestHandleDeepLinkRoutesRulesDeepLinks(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)
 	chatID := uniqueModuleChatID()
@@ -214,28 +213,18 @@ func TestHandleDeepLinkRoutesConnectAndRulesDeepLinks(t *testing.T) {
 	if err := chats.EnsureChatInDb(chatID, "Deep Link Chat"); err != nil {
 		t.Fatalf("EnsureChatInDb() error = %v", err)
 	}
-	connections.ToggleAllowConnect(chatID, true)
 	rules.SetChatRules(chatID, "Be kind.")
 	t.Cleanup(func() {
-		connections.ToggleAllowConnect(chatID, false)
 		rules.SetChatRules(chatID, "")
 	})
-
-	connectCtx := newModuleMessageContext(bot, chat, user, fmt.Sprintf("/start connect_%d", chatID))
-	if err := HandleDeepLink(bot, connectCtx, &user, fmt.Sprintf("connect_%d", chatID)); err != ext.EndGroups {
-		t.Fatalf("HandleDeepLink(connect) error = %v, want EndGroups", err)
-	}
-	if connection := connections.Connection(user.Id); !connection.Connected || connection.ChatId != chatID {
-		t.Fatalf("connection = %#v, want connected chat %d", connection, chatID)
-	}
 
 	rulesCtx := newModuleMessageContext(bot, chat, user, fmt.Sprintf("/start rules_%d", chatID))
 	if err := HandleDeepLink(bot, rulesCtx, &user, fmt.Sprintf("rules_%d", chatID)); err != ext.EndGroups {
 		t.Fatalf("HandleDeepLink(rules) error = %v, want EndGroups", err)
 	}
 
-	if calls := client.callsFor("sendMessage"); len(calls) != 2 {
-		t.Fatalf("sendMessage calls = %d, want connect and rules responses", len(calls))
+	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
+		t.Fatalf("sendMessage calls = %d, want rules response", len(calls))
 	}
 }
 
@@ -283,7 +272,7 @@ func TestHandleDeepLinkHandlesMissingChatsAndAdminOnlyNotes(t *testing.T) {
 	user := gotgbot.User{Id: 42, FirstName: "Tester"}
 	privateChat := gotgbot.Chat{Id: 42, Type: "private", FirstName: "Tester"}
 
-	for _, arg := range []string{"connect_404", "rules_404"} {
+	for _, arg := range []string{"rules_404"} {
 		t.Run(arg, func(t *testing.T) {
 			client := newModuleBotClient()
 			client.errors["getChat"] = fmt.Errorf("chat not found")
@@ -307,7 +296,6 @@ func TestHandleDeepLinkRejectsInvalidDeepLinks(t *testing.T) {
 	user := gotgbot.User{Id: 42, FirstName: "Tester"}
 
 	for _, arg := range []string{
-		"connect_bad",
 		"rules_bad",
 	} {
 		t.Run(arg, func(t *testing.T) {
@@ -318,7 +306,7 @@ func TestHandleDeepLinkRejectsInvalidDeepLinks(t *testing.T) {
 		})
 	}
 
-	if calls := client.callsFor("sendMessage"); len(calls) != 2 {
+	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
 		t.Fatalf("sendMessage calls = %d, want one invalid-link reply per arg", len(calls))
 	}
 }
