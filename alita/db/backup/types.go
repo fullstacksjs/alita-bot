@@ -112,7 +112,6 @@ const (
 	BackupModuleNotes       = "notes"
 	BackupModulePins        = "pins"
 	BackupModuleReactions   = "reactions"
-	BackupModuleReports     = "reports"
 	BackupModuleRules       = "rules"
 	BackupModuleWarns       = "warns"
 )
@@ -133,7 +132,6 @@ func AllExportableModules() []string {
 		BackupModuleNotes,
 		BackupModulePins,
 		BackupModuleReactions,
-		BackupModuleReports,
 		BackupModuleRules,
 		BackupModuleWarns,
 	}
@@ -164,10 +162,9 @@ func FilterValidModules(modules []string) []string {
 
 // AdminBackup represents admin settings backup data
 type AdminBackup struct {
-	AdminSettings      *models.AdminSettings          `json:"admin_settings,omitempty"`
-	AntifloodSettings  *models.AntifloodSettings      `json:"antiflood_settings,omitempty"`
-	BlacklistMode      string                         `json:"blacklist_mode,omitempty"`
-	ConnectionSettings *models.ConnectionChatSettings `json:"connection_settings,omitempty"`
+	AdminSettings     *models.AdminSettings     `json:"admin_settings,omitempty"`
+	AntifloodSettings *models.AntifloodSettings `json:"antiflood_settings,omitempty"`
+	BlacklistMode     string                    `json:"blacklist_mode,omitempty"`
 }
 
 // AntifloodBackup represents antiflood settings backup data
@@ -183,10 +180,8 @@ type BlacklistsBackup struct {
 }
 
 
-// ConnectionsBackup represents connection settings backup data
-type ConnectionsBackup struct {
-	Settings *models.ConnectionChatSettings `json:"settings,omitempty"`
-}
+// ConnectionsBackup is retained for backup format compatibility; connections have no settings.
+type ConnectionsBackup struct{}
 
 // DisablingBackup represents disabled commands backup data
 type DisablingBackup struct {
@@ -218,11 +213,6 @@ type NotesBackup struct {
 // PinsBackup represents pin settings backup data
 type PinsBackup struct {
 	Settings *models.PinSettings `json:"settings,omitempty"`
-}
-
-// ReportsBackup represents report settings backup data
-type ReportsBackup struct {
-	Settings *models.ReportChatSettings `json:"settings,omitempty"`
 }
 
 // RulesBackup represents rules backup data

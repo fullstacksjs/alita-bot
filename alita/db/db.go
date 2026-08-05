@@ -33,13 +33,10 @@ type (
 	BlacklistSettings      = models.BlacklistSettings
 	BlacklistSettingsSlice = models.BlacklistSettingsSlice
 	PinSettings            = models.PinSettings
-	ReportChatSettings     = models.ReportChatSettings
-	ReportUserSettings     = models.ReportUserSettings
 	DevSettings            = models.DevSettings
 	ChannelSettings        = models.ChannelSettings
 	AntifloodSettings      = models.AntifloodSettings
 	ConnectionSettings     = models.ConnectionSettings
-	ConnectionChatSettings = models.ConnectionChatSettings
 	DisableSettings        = models.DisableSettings
 	DisableChatSettings    = models.DisableChatSettings
 	RulesSettings          = models.RulesSettings

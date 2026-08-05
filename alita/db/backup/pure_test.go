@@ -365,7 +365,6 @@ func TestAllExportableModules(t *testing.T) {
 		BackupModuleNotes,
 		BackupModulePins,
 		BackupModuleReactions,
-		BackupModuleReports,
 		BackupModuleRules,
 		BackupModuleWarns,
 	}

@@ -51,12 +51,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, db.DB.Create(&models.BlacklistSettings{
 		ChatId: srcChat, Word: "scam", Action: "tban", Reason: "custom reason",
 	}).Error)
-	require.NoError(t, db.DB.Create(&models.ConnectionChatSettings{
-		ChatId: srcChat, AllowConnect: true,
-	}).Error)
-	require.NoError(t, db.DB.Model(&models.ConnectionChatSettings{}).
-		Where("chat_id = ?", srcChat).
-		Update("allow_connect", false).Error)
 	require.NoError(t, db.DB.Create(&models.DisableChatSettings{
 		ChatId: srcChat, DeleteCommands: true,
 	}).Error)
@@ -103,12 +97,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, db.DB.Create(&models.Reactions{
 		ChatID: srcChat, Keyword: "nice", Emoji: "🔥",
 	}).Error)
-	require.NoError(t, db.DB.Create(&models.ReportChatSettings{
-		ChatId: srcChat, Enabled: true, Status: true, BlockedList: models.Int64Array{303, 404},
-	}).Error)
-	require.NoError(t, db.DB.Model(&models.ReportChatSettings{}).
-		Where("chat_id = ?", srcChat).
-		Updates(map[string]interface{}{"enabled": false, "status": false}).Error)
 	require.NoError(t, db.DB.Create(&models.RulesSettings{
 		ChatId: srcChat, Rules: "be kind", RulesBtn: "Read", Private: true,
 	}).Error)
@@ -175,8 +163,7 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 
 	connectionsData, err := exportConnectionsData(dstChat)
 	require.NoError(t, err)
-	require.NotNil(t, connectionsData.Settings)
-	assert.False(t, connectionsData.Settings.AllowConnect)
+	require.NotNil(t, connectionsData)
 
 	disablingData, err := exportDisablingData(dstChat)
 	require.NoError(t, err)
@@ -253,13 +240,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.Len(t, reactionsData.Reactions, 1)
 	assert.Equal(t, "nice", reactionsData.Reactions[0].Keyword)
 	assert.Equal(t, "🔥", reactionsData.Reactions[0].Emoji)
-
-	reportsData, err := exportReportsData(dstChat)
-	require.NoError(t, err)
-	require.NotNil(t, reportsData.Settings)
-	assert.False(t, reportsData.Settings.Enabled)
-	assert.False(t, reportsData.Settings.Status)
-	assert.Equal(t, models.Int64Array{303, 404}, reportsData.Settings.BlockedList)
 
 	rulesData, err := exportRulesData(dstChat)
 	require.NoError(t, err)

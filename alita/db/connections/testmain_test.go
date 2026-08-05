@@ -47,7 +47,6 @@ func TestMain(m *testing.M) {
 			&models.User{},
 			&models.Chat{},
 			&models.ConnectionSettings{},
-			&models.ConnectionChatSettings{},
 		); err != nil {
 			fmt.Printf("AutoMigrate failed: %v\n", err)
 			os.Exit(1)
