@@ -37,14 +37,6 @@ func checkGreetingSettings(chatID int64) (greetingSrc *models.GreetingSettings) 
 					WelcomeType:   db.TEXT,
 					Button:        models.ButtonArray{},
 				},
-				GoodbyeSettings: &models.GoodbyeSettings{
-					LastMsgId:     0,
-					CleanGoodbye:  false,
-					ShouldGoodbye: false,
-					GoodbyeText:   db.DefaultGoodbye,
-					GoodbyeType:   db.TEXT,
-					Button:        models.ButtonArray{},
-				},
 			}
 		}
 
@@ -58,14 +50,6 @@ func checkGreetingSettings(chatID int64) (greetingSrc *models.GreetingSettings) 
 				ShouldWelcome: true,
 				WelcomeText:   db.DefaultWelcome,
 				WelcomeType:   db.TEXT,
-				Button:        models.ButtonArray{},
-			},
-			GoodbyeSettings: &models.GoodbyeSettings{
-				LastMsgId:     0,
-				CleanGoodbye:  false,
-				ShouldGoodbye: false,
-				GoodbyeText:   db.DefaultGoodbye,
-				GoodbyeType:   db.TEXT,
 				Button:        models.ButtonArray{},
 			},
 		}
@@ -88,18 +72,10 @@ func checkGreetingSettings(chatID int64) (greetingSrc *models.GreetingSettings) 
 				WelcomeType:   db.TEXT,
 				Button:        models.ButtonArray{},
 			},
-			GoodbyeSettings: &models.GoodbyeSettings{
-				LastMsgId:     0,
-				CleanGoodbye:  false,
-				ShouldGoodbye: false,
-				GoodbyeText:   db.DefaultGoodbye,
-				GoodbyeType:   db.TEXT,
-				Button:        models.ButtonArray{},
-			},
 		}
 	}
 
-	// Ensure WelcomeSettings and GoodbyeSettings are initialized even for existing records
+	// Ensure WelcomeSettings is initialized even for existing records.
 	if greetingSrc.WelcomeSettings == nil {
 		greetingSrc.WelcomeSettings = &models.WelcomeSettings{
 			LastMsgId:     0,
@@ -112,20 +88,6 @@ func checkGreetingSettings(chatID int64) (greetingSrc *models.GreetingSettings) 
 	} else if greetingSrc.WelcomeSettings.WelcomeText == "" {
 		// Set default welcome text if it's empty (for existing records with empty text)
 		greetingSrc.WelcomeSettings.WelcomeText = db.DefaultWelcome
-	}
-
-	if greetingSrc.GoodbyeSettings == nil {
-		greetingSrc.GoodbyeSettings = &models.GoodbyeSettings{
-			LastMsgId:     0,
-			CleanGoodbye:  false,
-			ShouldGoodbye: false,
-			GoodbyeText:   db.DefaultGoodbye,
-			GoodbyeType:   db.TEXT,
-			Button:        models.ButtonArray{},
-		}
-	} else if greetingSrc.GoodbyeSettings.GoodbyeText == "" {
-		// Set default goodbye text if it's empty (for existing records with empty text)
-		greetingSrc.GoodbyeSettings.GoodbyeText = db.DefaultGoodbye
 	}
 
 	return greetingSrc
@@ -147,16 +109,6 @@ func GetWelcomeButtons(chatId int64) []models.Button {
 	return []models.Button{}
 }
 
-// GetGoodbyeButtons retrieves the goodbye message buttons for the specified chat.
-// Returns an empty slice if no buttons are configured or settings are missing.
-func GetGoodbyeButtons(chatId int64) []models.Button {
-	greetingSettings := checkGreetingSettings(chatId)
-	if greetingSettings.GoodbyeSettings != nil {
-		return []models.Button(greetingSettings.GoodbyeSettings.Button)
-	}
-	return []models.Button{}
-}
-
 func defaultGreetingSettingsAttrs(chatID int64) map[string]any {
 	return map[string]any{
 		"chat_id":                chatID,
@@ -165,10 +117,6 @@ func defaultGreetingSettingsAttrs(chatID int64) map[string]any {
 		"welcome_text":           db.DefaultWelcome,
 		"welcome_type":           db.TEXT,
 		"welcome_btns":           models.ButtonArray{},
-		"goodbye_enabled":        false,
-		"goodbye_text":           db.DefaultGoodbye,
-		"goodbye_type":           db.TEXT,
-		"goodbye_btns":           models.ButtonArray{},
 	}
 }
 
@@ -195,8 +143,6 @@ func upsertGreetingSettings(chatID int64, updates map[string]any) error {
 
 // SetWelcomeText updates the welcome message text, file ID, buttons, and type for a chat.
 // Creates default greeting settings if they don't exist.
-//
-//nolint:dupl // SetGoodbyeText has similar structure but different struct fields
 func SetWelcomeText(chatID int64, welcometxt, fileId string, buttons []models.Button, welcType int) error {
 	updates := map[string]any{
 		"welcome_text":    welcometxt,
@@ -230,47 +176,6 @@ func SetWelcomeToggle(chatID int64, pref bool) error {
 	}
 
 	// Invalidate cache after updating welcome toggle
-	cache.DeleteCache(cache.CacheKey("greetings", chatID))
-	return nil
-}
-
-// SetGoodbyeText updates the goodbye message text, file ID, buttons, and type for a chat.
-// Creates default greeting settings if they don't exist.
-//
-//nolint:dupl // SetGoodbyeText has similar structure to SetWelcomeText but different struct fields
-func SetGoodbyeText(chatID int64, goodbyetext, fileId string, buttons []models.Button, goodbyeType int) error {
-	updates := map[string]any{
-		"goodbye_text":    goodbyetext,
-		"goodbye_btns":    models.ButtonArray(buttons),
-		"goodbye_type":    goodbyeType,
-		"goodbye_file_id": fileId,
-	}
-
-	err := upsertGreetingSettings(chatID, updates)
-	if err != nil {
-		log.Errorf("[Database][SetGoodbyeText]: %v", err)
-		return err
-	}
-
-	// Invalidate cache after updating goodbye text
-	cache.DeleteCache(cache.CacheKey("greetings", chatID))
-	return nil
-}
-
-// SetGoodbyeToggle enables or disables goodbye messages for the specified chat.
-// Creates default greeting settings if they don't exist.
-func SetGoodbyeToggle(chatID int64, pref bool) error {
-	updates := map[string]any{
-		"goodbye_enabled": pref,
-	}
-
-	err := upsertGreetingSettings(chatID, updates)
-	if err != nil {
-		log.Errorf("[Database][SetGoodbyeToggle]: %v", err)
-		return err
-	}
-
-	// Invalidate cache after updating goodbye toggle
 	cache.DeleteCache(cache.CacheKey("greetings", chatID))
 	return nil
 }
@@ -329,70 +234,29 @@ func SetCleanWelcomeMsgId(chatId, msgId int64) error {
 	return nil
 }
 
-// SetCleanGoodbyeSetting sets whether old goodbye messages should be automatically cleaned.
-// Creates default greeting settings if they don't exist.
-func SetCleanGoodbyeSetting(chatID int64, pref bool) error {
-	updates := map[string]any{
-		"goodbye_clean_old": pref,
-	}
-
-	err := upsertGreetingSettings(chatID, updates)
-	if err != nil {
-		log.Errorf("[Database][SetCleanGoodbyeSetting]: %v", err)
-		return err
-	}
-
-	// Invalidate cache after updating clean goodbye setting
-	cache.DeleteCache(cache.CacheKey("greetings", chatID))
-	return nil
-}
-
-// SetCleanGoodbyeMsgId updates the message ID of the last goodbye message for cleanup purposes.
-// Creates default greeting settings if they don't exist.
-func SetCleanGoodbyeMsgId(chatId, msgId int64) error {
-	updates := map[string]any{
-		"goodbye_last_msg_id": msgId,
-	}
-
-	err := upsertGreetingSettings(chatId, updates)
-	if err != nil {
-		log.Errorf("[Database][SetCleanGoodbyeMsgId]: %v", err)
-		return err
-	}
-
-	// Invalidate cache after updating goodbye message ID
-	cache.DeleteCache(cache.CacheKey("greetings", chatId))
-	return nil
-}
-
-// LoadGreetingsStats returns statistics about greeting features across all chats.
-// Returns counts for enabled welcome messages, goodbye messages, clean service, clean welcome, and clean goodbye features.
-func LoadGreetingsStats() (enabledWelcome, enabledGoodbye, cleanServiceEnabled, cleanWelcomeEnabled, cleanGoodbyeEnabled int64) {
+// LoadGreetingsStats returns statistics about retained greeting features across all chats.
+func LoadGreetingsStats() (enabledWelcome, cleanServiceEnabled, cleanWelcomeEnabled int64) {
 	// Use a single query with COUNT and CASE WHEN for better performance
 	type greetingStats struct {
 		EnabledWelcome      int64
-		EnabledGoodbye      int64
 		CleanServiceEnabled int64
 		CleanWelcomeEnabled int64
-		CleanGoodbyeEnabled int64
 	}
 
 	var stats greetingStats
 	query := `
 		SELECT
 			COUNT(CASE WHEN welcome_enabled = true THEN 1 END) as enabled_welcome,
-			COUNT(CASE WHEN goodbye_enabled = true THEN 1 END) as enabled_goodbye,
 			COUNT(CASE WHEN clean_service_settings = true THEN 1 END) as clean_service_enabled,
-			COUNT(CASE WHEN welcome_clean_old = true THEN 1 END) as clean_welcome_enabled,
-			COUNT(CASE WHEN goodbye_clean_old = true THEN 1 END) as clean_goodbye_enabled
+			COUNT(CASE WHEN welcome_clean_old = true THEN 1 END) as clean_welcome_enabled
 		FROM greetings
 	`
 
 	err := db.DB.Raw(query).Scan(&stats).Error
 	if err != nil {
 		log.Errorf("[Database][LoadGreetingsStats] querying stats: %v", err)
-		return 0, 0, 0, 0, 0
+		return 0, 0, 0
 	}
 
-	return stats.EnabledWelcome, stats.EnabledGoodbye, stats.CleanServiceEnabled, stats.CleanWelcomeEnabled, stats.CleanGoodbyeEnabled
+	return stats.EnabledWelcome, stats.CleanServiceEnabled, stats.CleanWelcomeEnabled
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
-	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/message"
 	log "github.com/sirupsen/logrus"
 
@@ -40,8 +39,6 @@ func LoadReactions(dispatcher *ext.Dispatcher) {
 	dispatcher.AddHandler(handlers.NewCommand("addreaction", reactionsModule.addReaction))
 	dispatcher.AddHandler(handlers.NewCommand("removereaction", reactionsModule.removeReaction))
 	dispatcher.AddHandler(handlers.NewCommand("reactions", reactionsModule.listReactions))
-	dispatcher.AddHandler(handlers.NewCommand("resetreactions", reactionsModule.resetReactions))
-	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("reactions_help"), reactionsModule.reactionsHelpHandler))
 
 	// Message watcher for reactions (positive handler group for monitoring)
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(message.All, reactionsModule.checkReactions), reactionsModule.handlerGroup)
@@ -51,90 +48,7 @@ func LoadReactions(dispatcher *ext.Dispatcher) {
 
 	// Add help text
 	DefaultHelpRegistry().AltHelpOptions["Reactions"] = []string{"reaction"}
-	DefaultHelpRegistry().helpableKb["Reactions"] = [][]gotgbot.InlineKeyboardButton{
-		{
-			{
-				Text:         "Add Reaction",
-				CallbackData: encodeCallbackData("reactions_help", map[string]string{"action": "add"}),
-			},
-			{
-				Text:         "Remove Reaction",
-				CallbackData: encodeCallbackData("reactions_help", map[string]string{"action": "remove"}),
-			},
-		},
-	}
-
 	log.Info("[Modules] Reactions module loaded")
-}
-
-// reactionsHelpHandler handles inline help callbacks for reaction commands.
-func (m moduleStruct) reactionsHelpHandler(b *gotgbot.Bot, ctx *ext.Context) error {
-	query, ok := callbackQueryFromContext(ctx)
-	if !ok {
-		return ext.EndGroups
-	}
-	if query == nil {
-		return ext.EndGroups
-	}
-
-	action := ""
-	if decoded, ok := decodeCallbackData(query.Data, "reactions_help"); ok {
-		action, _ = decoded.Field("action")
-	}
-	tr := i18n.English()
-	if action == "" {
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-
-	var helpText string
-	switch action {
-	case "add":
-		helpText, _ = tr.GetString("reactions_add_usage")
-	case "remove":
-		helpText, _ = tr.GetString("reactions_remove_usage")
-	default:
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-
-	if query.Message == nil {
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: helpText})
-		return ext.EndGroups
-	}
-
-	backText, _ := tr.GetString("common_back")
-	_, _, err := query.Message.EditText(
-		b,
-		helpText,
-		&gotgbot.EditMessageTextOpts{
-			ParseMode: formatting.HTML,
-			ReplyMarkup: gotgbot.InlineKeyboardMarkup{
-				InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
-					{
-						{
-							Text:         backText,
-							CallbackData: encodeCallbackData("helpq", map[string]string{"m": "Reactions"}),
-						},
-					},
-				},
-			},
-		},
-	)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	_, err = query.Answer(b, nil)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	return ext.EndGroups
 }
 
 // addReaction handles /addreaction <keyword> <emoji> command
@@ -306,47 +220,6 @@ func (m moduleStruct) listReactions(b *gotgbot.Bot, ctx *ext.Context) error {
 	text, _ := tr.GetString("reactions_list_header", i18n.TranslationParams{
 		"list": sb.String(),
 	})
-	_, err := msg.Reply(b, text, formatting.Shtml())
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	return ext.EndGroups
-}
-
-// resetReactions handles /resetreactions command
-func (m moduleStruct) resetReactions(b *gotgbot.Bot, ctx *ext.Context) error {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Errorf("[Reactions][resetReactions] Recovered from panic: %v", r)
-		}
-	}()
-
-	msg := ctx.EffectiveMessage
-	chat := ctx.EffectiveChat
-	user := chat_status.RequireUser(b, ctx)
-	if user == nil {
-		return ext.EndGroups
-	}
-
-	// Check permission
-	if !chat_status.CanUserChangeInfo(b, ctx, chat, user.Id) {
-		chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_change_info_cmd_error", "chat_status_change_info_button_error")
-		return ext.EndGroups
-	}
-
-	// Delete all reactions from DB (cache is invalidated by the repository).
-	if err := reactions.ResetReactions(chat.Id); err != nil {
-		log.Errorf("[Reactions] Failed to reset reactions: %v", err)
-		tr := i18n.English()
-		text, _ := tr.GetString("reactions_remove_error")
-		_, _ = msg.Reply(b, text, formatting.Shtml())
-		return ext.EndGroups
-	}
-
-	tr := i18n.English()
-	text, _ := tr.GetString("reactions_reset_success")
 	_, err := msg.Reply(b, text, formatting.Shtml())
 	if err != nil {
 		log.Error(err)

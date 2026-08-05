@@ -1,7 +1,6 @@
 ---
 #stringcode: string
 db_default_welcome: "Hey {first}, how are you?"
-db_default_goodbye: "Sad to see you leaving {first}"
 db_warn_no_reason: "No Reason"
 alt_names:
   Admin: [admins, promote, demote, title]
@@ -16,7 +15,7 @@ alt_names:
   Disabling: [disable, enable]
   Filters: [filter]
   Formatting: [markdownhelp, mdhelp]
-  Greetings: [welcome, goodbye, greeting]
+  Greetings: [welcome, greeting]
   Locks: [lock, unlock]
   Misc: [extra, extras]
   Mutes: [mute, unmute]

@@ -237,10 +237,8 @@ func TestLoadAllStats(t *testing.T) {
 		"Filters",
 		"Greetings",
 		"Welcome Enabled",
-		"Goodbye Enabled",
 		"CleanService",
 		"CleanWelcome",
-		"CleanGoodbye",
 		"Notes",
 		"Channels Stored",
 	}

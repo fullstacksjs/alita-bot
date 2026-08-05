@@ -479,30 +479,18 @@ formatting_random: |
   %%%
 
   Sup? <code>{first}</code>
-greetings_help_msg:
-  "Welcome new members to your groups or say Goodbye after they
-  leave!
-
+greetings_help_msg: |
+  Welcome new members to your groups.
 
   *Admin Commands:*
 
-  × /setwelcome `<reply/text>`: Sets welcome text for group.
+  × /setwelcome `<reply/text>`: Sets the group's welcome message.
 
-  × /welcome `<yes/no/on/off>`: Enables or Disables welcome setting for group.
+  × /welcome `<yes/no/on/off>`: Enables or disables welcomes.
 
-  × /resetwelcome: Resets the welcome message to default.
+  × /cleanservice `<yes/no/on/off>`: Deletes member-joined service messages.
 
-  × /setgoodbye `<reply/text>`: Sets goodbye text for group.
-
-  × /goodbye `<yes/no/on/off>`: Enables or Disables goodbye setting for group.
-
-  × /resetgoodbye: Resets the goodbye message to default.
-
-  × /cleanservice `<yes/no/on/off>`: Delete all service messages such as 'x joined
-  the group' notification.
-
-  × /cleanwelcome `<yes/no/on/off>`: Delete the old welcome message whenever a new
-  member joins."
+  × /cleanwelcome `<yes/no/on/off>`: Deletes the previous welcome when a new member joins.
 help_about: "@%s  is one of the fastest and most feature-filled group managers.
 
 
@@ -1121,27 +1109,12 @@ greetings_welcome_enabled: "I'll welcome users from now on."
 greetings_welcome_disabled: "I'll not welcome users from now on."
 greetings_welcome_invalid_option: "I understand 'on/yes' or 'off/no' only!"
 greetings_welcome_set_success: "Successfully set custom welcome message!"
-greetings_welcome_reset_success: "Successfully reset custom welcome message to default!"
-greetings_goodbye_status: |
-  I am currently goodbying users: <code>%s</code>
-  I am currently deleting old goodbyes: <code>%s</code>
-  I am currently deleting service messages: <code>%s</code>
-  The goodbye message not filling the {} is:
-greetings_goodbye_enabled: "I'll goodbye users from now on."
-greetings_goodbye_disabled: "I'll not goodbye users from now on."
-greetings_goodbye_invalid_option: "I understand 'on/yes' or 'off/no' only!"
-greetings_goodbye_set_success: "Successfully set custom goodbye message!"
-greetings_goodbye_reset_success: "Successfully reset custom goodbye message to default!"
+greetings_welcome_not_configured: "No welcome message is configured for this chat."
 greetings_clean_welcome_status_should: "I should be deleting welcome messages up to two days old."
 greetings_clean_welcome_status_not: "I'm currently not deleting old welcome messages!"
 greetings_clean_welcome_disabled: "I'll not delete old welcome messages!"
 greetings_clean_welcome_enabled: "I'll try to delete old welcome messages!"
 greetings_clean_welcome_invalid_option: "I understand 'on/yes' or 'off/no' only!"
-greetings_clean_goodbye_status_should: "I should be deleting goodbye messages up to two days old."
-greetings_clean_goodbye_status_not: "I'm currently not deleting old goodbye messages!"
-greetings_clean_goodbye_disabled: "I'll not delete old goodbye messages!"
-greetings_clean_goodbye_enabled: "I'll try to delete old goodbye messages!"
-greetings_clean_goodbye_invalid_option: "I understand 'on/yes' or 'off/no' only!"
 greetings_clean_service_enabled: "I should be deleting `user` joined the chat messages now."
 greetings_clean_service_disabled: "I'm currently not deleting joined messages."
 greetings_clean_service_disable: "I won't delete joined messages."
@@ -1287,7 +1260,6 @@ extraction_invalid_time_format: "Invalid time format specified."
 
 # Database default strings
 db_default_welcome: "Hey {first}, how are you?"
-db_default_goodbye: "Sad to see you leaving {first}"
 db_warn_no_reason: "No Reason"
 db_not_initialized: "database not initialized"
 
@@ -1305,18 +1277,10 @@ captcha_internal_update_error: "Internal error updating captcha."
 captcha_internal_error: "An internal error occurred while updating captcha settings. Please try again."
 
 # Greetings additional strings
-greetings_goodbye_enable: "I'll goodbye users from now on."
-greetings_goodbye_disable: "I'll not goodbye users from now on."
-greetings_goodbye_invalid: "I understand 'on/yes' or 'off/no' only!"
-greetings_goodbye_reset: "Successfully reset custom goodbye message to default!"
 greetings_clean_welcome_should: "I should be deleting welcome messages up to two days old."
 greetings_clean_welcome_not: "I'm currently not deleting old welcome messages!"
 greetings_clean_welcome_disable: "I'll not delete old welcome messages!"
 greetings_clean_welcome_enable: "I'll try to delete old welcome messages!"
-greetings_clean_goodbye_should: "I should be deleting goodbye messages up to two days old."
-greetings_clean_goodbye_not: "I'm currently not deleting old goodbye messages!"
-greetings_clean_goodbye_disable: "I'll not delete old goodbye messages!"
-greetings_clean_goodbye_enable: "I'll try to delete old goodbye messages!"
 greetings_clean_service_should: "I should be deleting 'user' joined the chat messages now."
 greetings_clean_service_not: "I'm currently not deleting joined messages."
 
@@ -1524,7 +1488,6 @@ reactions_help_msg: |
   • /addreaction <keyword> <emoji> - Add an auto-reaction
   • /removereaction <keyword> - Remove a reaction
   • /reactions - List configured reactions
-  • /resetreactions - Clear all reactions
 
   <b>Example:</b>
   • /addreaction hello 👋 - Bot reacts with 👋 when someone says "hello"
@@ -1540,7 +1503,6 @@ reactions_remove_error: "Failed to remove reaction. Please try again."
 reactions_remove_success: "Reaction removed for keyword: <code>{keyword}</code>"
 reactions_none: "No reactions are configured in this chat."
 reactions_list_header: "<b>Configured reactions:</b>\n{list}"
-reactions_reset_success: "All reactions have been reset for this chat."
 
 # Backup/Restore module strings
 backup_help_msg: |

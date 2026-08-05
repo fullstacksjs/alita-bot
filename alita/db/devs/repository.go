@@ -158,7 +158,7 @@ func LoadAllStats() string {
 	connectedUsers, _ := connections.LoadConnectionStats()
 	disabledCmds, disableEnabledChats := disabling.LoadDisableStats()
 	filtersNum, filtersChats := filters.LoadFilterStats()
-	enabledWelcome, enabledGoodbye, cleanServiceEnabled, cleanWelcomeEnabled, cleanGoodbyeEnabled := greetings.LoadGreetingsStats()
+	enabledWelcome, cleanServiceEnabled, cleanWelcomeEnabled := greetings.LoadGreetingsStats()
 	notesNum, notesChats := notes.LoadNotesStats()
 	numChannels := channels.LoadChannelStats()
 
@@ -221,10 +221,8 @@ func LoadAllStats() string {
 		) +
 		"\n<b>Greetings:</b>" +
 		fmt.Sprintf("\n    <b>Welcome Enabled:</b> %s", humanize.Comma(enabledWelcome)) +
-		fmt.Sprintf("\n    <b>Goodbye Enabled:</b> %s", humanize.Comma(enabledGoodbye)) +
 		fmt.Sprintf("\n    <b>CleanService:</b> %s", humanize.Comma(cleanServiceEnabled)) +
 		fmt.Sprintf("\n    <b>CleanWelcome:</b> %s", humanize.Comma(cleanWelcomeEnabled)) +
-		fmt.Sprintf("\n    <b>CleanGoodbye:</b> %s", humanize.Comma(cleanGoodbyeEnabled)) +
 		fmt.Sprintf(
 			"\n<b>Notes:</b> %s notes saved in %s chats",
 			humanize.Comma(notesNum),

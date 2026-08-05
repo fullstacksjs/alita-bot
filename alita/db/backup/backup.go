@@ -365,7 +365,6 @@ func exportBlacklistsData(chatID int64) (*BlacklistsBackup, error) {
 	return result, nil
 }
 
-
 func exportConnectionsData(_ int64) (*ConnectionsBackup, error) {
 	// Connection authorization settings were removed; active user connections are not exported.
 	return &ConnectionsBackup{}, nil
@@ -584,7 +583,6 @@ func importBlacklists(tx *gorm.DB, chatID int64, payload interface{}) ([]string,
 	}
 	return []string{cacheKey("blacklist", chatID)}, nil
 }
-
 
 func importConnections(_ *gorm.DB, _ int64, payload interface{}) ([]string, error) {
 	// Accept empty payloads and ignore obsolete allow_connect settings from older exports.
@@ -895,7 +893,6 @@ func clearBlacklists(tx *gorm.DB, chatID int64) ([]string, error) {
 	return []string{cacheKey("blacklist", chatID)}, replaceChatRows[models.BlacklistSettings](tx, chatID, nil)
 }
 
-
 func clearConnections(tx *gorm.DB, chatID int64) ([]string, error) {
 	return nil, tx.Where("chat_id = ?", chatID).Delete(&models.ConnectionSettings{}).Error
 }
@@ -920,11 +917,6 @@ func clearGreetings(tx *gorm.DB, chatID int64) ([]string, error) {
 		WelcomeSettings: &models.WelcomeSettings{
 			WelcomeText: db.DefaultWelcome,
 			WelcomeType: db.TEXT,
-			Button:      models.ButtonArray{},
-		},
-		GoodbyeSettings: &models.GoodbyeSettings{
-			GoodbyeText: db.DefaultGoodbye,
-			GoodbyeType: db.TEXT,
 			Button:      models.ButtonArray{},
 		},
 	}

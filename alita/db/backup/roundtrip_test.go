@@ -71,10 +71,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 			CleanWelcome: true, LastMsgId: 111, ShouldWelcome: true,
 			WelcomeText: "welcome", FileID: "welcome-file", WelcomeType: 2, Button: buttons,
 		},
-		GoodbyeSettings: &models.GoodbyeSettings{
-			CleanGoodbye: true, LastMsgId: 222, ShouldGoodbye: true,
-			GoodbyeText: "goodbye", FileID: "goodbye-file", GoodbyeType: 3, Button: buttons,
-		},
 	}).Error)
 	require.NoError(t, db.DB.Model(&models.GreetingSettings{}).
 		Where("chat_id = ?", srcChat).
@@ -195,14 +191,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	assert.Equal(t, "welcome-file", greetingsData.Settings.WelcomeSettings.FileID)
 	assert.Equal(t, 2, greetingsData.Settings.WelcomeSettings.WelcomeType)
 	assert.Equal(t, buttons, greetingsData.Settings.WelcomeSettings.Button)
-	require.NotNil(t, greetingsData.Settings.GoodbyeSettings)
-	assert.True(t, greetingsData.Settings.GoodbyeSettings.CleanGoodbye)
-	assert.Equal(t, int64(222), greetingsData.Settings.GoodbyeSettings.LastMsgId)
-	assert.True(t, greetingsData.Settings.GoodbyeSettings.ShouldGoodbye)
-	assert.Equal(t, "goodbye", greetingsData.Settings.GoodbyeSettings.GoodbyeText)
-	assert.Equal(t, "goodbye-file", greetingsData.Settings.GoodbyeSettings.FileID)
-	assert.Equal(t, 3, greetingsData.Settings.GoodbyeSettings.GoodbyeType)
-	assert.Equal(t, buttons, greetingsData.Settings.GoodbyeSettings.Button)
 
 	locksData, err := exportLocksData(dstChat)
 	require.NoError(t, err)
