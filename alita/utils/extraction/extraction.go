@@ -382,6 +382,52 @@ func ExtractTime(b *gotgbot.Bot, ctx *ext.Context, inputVal string) (banTime int
 	}
 }
 
+// ExtractOptionalTime parses an optional duration string from inputVal.
+// If inputVal is empty or does not start with a duration specifier (Nm, Nh, Nd, Nw),
+// it returns untilDate=0, timeStr="", reason=inputVal, err=nil (permanent action).
+// If inputVal starts with a valid duration specifier, it returns untilDate (unix timestamp),
+// timeStr (formatted duration, e.g. "2 hours"), reason (remaining text), err=nil.
+// If inputVal starts with a duration specifier that has an invalid amount or exceeds limit,
+// it sends the appropriate error message to the user and returns untilDate=-1, timeStr="", reason="", err.
+func ExtractOptionalTime(b *gotgbot.Bot, ctx *ext.Context, inputVal string) (untilDate int64, timeStr, reason string, err error) {
+	args := strings.Fields(inputVal)
+	if len(args) == 0 {
+		return 0, "", "", nil
+	}
+
+	firstToken := args[0]
+	lastChar := firstToken[len(firstToken)-1]
+	if lastChar != 'm' && lastChar != 'h' && lastChar != 'd' && lastChar != 'w' {
+		return 0, "", inputVal, nil
+	}
+
+	numPart := firstToken[:len(firstToken)-1]
+	if len(numPart) == 0 {
+		return 0, "", inputVal, nil
+	}
+
+	isNumeric := true
+	for i, r := range numPart {
+		if i == 0 && (r == '+' || r == '-') {
+			continue
+		}
+		if r < '0' || r > '9' {
+			isNumeric = false
+			break
+		}
+	}
+	if !isNumeric {
+		return 0, "", inputVal, nil
+	}
+
+	banTime, timeStr, reason := ExtractTime(b, ctx, inputVal)
+	if banTime == -1 {
+		return -1, "", "", fmt.Errorf("invalid duration")
+	}
+	return banTime, timeStr, reason, nil
+}
+
+
 func parseTemporaryDuration(inputVal string, now int64) (banTime int64, timeStr, reason string, err error) {
 	args := strings.Fields(inputVal)
 	if len(args) == 0 {

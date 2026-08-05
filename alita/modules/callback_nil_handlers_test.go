@@ -40,9 +40,6 @@ func TestCallbackHandlersIgnoreMissingCallbackQuery(t *testing.T) {
 		{name: "reactionsHelpHandler", want: ext.EndGroups, call: module.reactionsHelpHandler},
 		{name: "markResolvedButtonHandler", want: ext.EndGroups, call: module.markResolvedButtonHandler},
 		{name: "connectionButtons", want: ext.EndGroups, call: module.connectionButtons},
-		{name: "restrictButtonHandler", want: ext.EndGroups, call: module.restrictButtonHandler},
-		{name: "unrestrictButtonHandler", want: ext.EndGroups, call: module.unrestrictButtonHandler},
-		{name: "deleteButtonHandler", want: ext.EndGroups, call: module.deleteButtonHandler},
 		{name: "buttonHandler", want: ext.EndGroups, call: module.buttonHandler},
 		{name: "antiRaidCallbackHandler", want: ext.ContinueGroups, call: antiRaid.callbackHandler},
 	}
@@ -88,8 +85,6 @@ func TestCallbackHandlersRejectMissingCallbackMessage(t *testing.T) {
 		{name: "verifyAnonymousAdmin", call: verifyAnonymousAdmin},
 		{name: "markResolvedButtonHandler", call: module.markResolvedButtonHandler},
 		{name: "connectionButtons", call: module.connectionButtons},
-		{name: "restrictButtonHandler", call: module.restrictButtonHandler},
-		{name: "unrestrictButtonHandler", call: module.unrestrictButtonHandler},
 	}
 
 	for _, handler := range handlers {

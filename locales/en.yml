@@ -180,23 +180,9 @@ bans_help_msg:
 
   × /ban <userhandle>: bans a user. (via handle, or reply)
 
-  × /sban <userhandle>: bans a user silently, does not send message to group and also
-  deletes your command. (via handle, or reply)
-
-  × /dban <userhandle>: bans a user and delete the replied message. (via handle, or
-  reply)
-
-  × /tban <userhandle> x(m/h/d): bans a user for `x` time. (via handle, or reply).
-  m = minutes, h = hours, d = days.
-
   × /unban <userhandle>: unbans a user. (via handle, or reply)
 
-
-  *Restrict Commands:* (Admin only)
-
-  × /restrict: Shows an InlineKeyboard to choose options from kick, ban and mute
-
-  × /unrestrict: Shows an InlineKeyboard to choose options from unmute and unban."
+  × /kick <userhandle>: kicks a user. (via handle, or reply)"
 bans_kick_cannot_kick_admin:
   Why would I kick an admin? That sounds like a pretty
   dumb idea.
@@ -726,15 +712,6 @@ mutes_help_msg:
 
   × /mute <userhandle>: mutes a user, (via a handle, or reply)
 
-  × /smute <userhandle>: mutes a user silently, does not send a message to the group,
-  and also deletes your command. (via a handle, or reply)
-
-  × /dmute <userhandle>: mutes a user and deletes the replied message. (via a handle,
-  or reply)
-
-  × /tmute <userhandle> x(m/h/d): mutes a user for `x` time. (via a handle, or reply).
-  m = minutes, h = hours, d = days.
-
   × /unmute <userhandle>: unmutes a user. (via a handle, or reply)"
 notes_help_msg: 'Save data for future users with notes!
 
@@ -798,8 +775,6 @@ pins_help_msg:
 purges_help_msg: "*Admin only:*
 
   - /purge: deletes all messages between this and the replied-to message.
-
-  - /del: deletes the message you replied to.
 
 
   *Examples*:
