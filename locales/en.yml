@@ -289,31 +289,17 @@ connections_disconnect_need_pm:
   You need to send this in PM to me to disconnect from
   the chat!
 connections_help_msg:
-  "This module allows you to connect to a chat's database, and
-  add things to it without the chat knowing about it! For obvious reasons, you need
-  to be an admin to add things; but any member can view your data. (banned/kicked
-  users can't!)
-
+  "This module allows group administrators to connect to a chat's database from private messages.
 
   *Commands*:
 
-  × /connect `<chatid>`: Connect to the specified chat, allowing you to view/edit
-  contents.
+  × /connect `<chatid>`: Connect to the specified chat (admin only).
 
   × /disconnect: Disconnect from the current chat.
 
-  × /reconnect: Reconnect to the previously connect chat
-
   × /connection: See information about the currently connected chat.
 
-
-  *Admin Commands:*
-
-  × /allowconnect <yes/no>: Allow users to connect to chats or not.
-
-
-  You can retrieve the chat id by using the /id command in your chat. Don't be surprised
-  if the id is negative; all super groups have negative ids."
+  You can retrieve the chat id by using the /id command in your chat."
 connections_is_user_connected_bot_not_admin: I'm not an admin in this chat!
 connections_is_user_connected_need_group:
   This command is made to be used in group
@@ -738,39 +724,11 @@ purges_help_msg: "*Admin only:*
 
   -> `/purge`"
 reports_help_msg:
-  "We're all busy people who don't have time to monitor our groups
-  24/7. But how do you react if someone in your group is spamming?
+  "To report a user, simply reply to their message with /report.
 
+  You MUST reply to a message to report a user.
 
-  × /report `<reason>`: reply to a message to report it to admins.
-
-  - @admin: same as /report but not a command.
-
-
-  *Admins Only:*
-
-  × /reports `<on/off/yes/no>`: change report setting, or view current status.
-
-  - If done in PM, toggles your status.
-
-  - If in a group, toggles that group's status.
-
-  × /reports `block` (via reply only): Block a user from using /report or @admin.
-
-  × /reports `unblock` (via reply only): Unblock a user from using /report or @admin.
-
-  × /reports `showblocklist`: Check all the blocked users who cannot use /report or
-  @admin.
-
-
-  To report a user, simply reply to his message with @admin or /report; Alita will
-  then reply with a message stating that admins have been notified.
-
-  You MUST reply to a message to report a user; you can't just use @admin to tag
-  admins for no reason!
-
-
-  *NOTE:* Neither of these will get triggered if used by admins."
+  *NOTE:* Reports will not be triggered if used by admins."
 rules_help_msg:
   "Every chat works with different rules; this module will help make
   those rules clearer!

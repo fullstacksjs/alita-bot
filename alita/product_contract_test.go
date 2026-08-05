@@ -39,7 +39,7 @@ func TestProductContract(t *testing.T) {
 	want := productContract{
 		Commands: []string{
 			"about", "addblacklist", "adddev", "addfilter", "addnote", "addreaction", "addsudo",
-			"admincache", "allowconnect", "anonadmin", "antichannelpin", "antiraid", "approval",
+			"admincache", "anonadmin", "antichannelpin", "antiraid", "approval",
 			"approve", "approved", "autoantiraid", "ban", "blacklist",
 			"blacklistaction", "blacklists", "blaction", "chatinfo",
 			"chatlist", "cleangoodbye", "cleanlinked", "cleanservice", "cleanwelcome", "clear",
@@ -50,8 +50,8 @@ func TestProductContract(t *testing.T) {
 			"info", "invitelink", "kick", "kickme", "leavechat", "lock", "locks", "locktypes",
 			"markdownhelp", "mute", "notes", "permapin", "pin", "ping", "pinned",
 			"privaterules", "promote", "purge",
-			"raidactiontime", "raidtime", "reactions", "reconnect", "remallbl", "remdev",
-			"removebotkeyboard", "removereaction", "remsudo", "report", "reports",
+			"raidactiontime", "raidtime", "reactions", "remallbl", "remdev",
+			"removebotkeyboard", "removereaction", "remsudo", "report",
 			"reset", "resetallwarns", "resetgoodbye", "resetreactions", "resetrules", "resetrulesbtn",
 			"resetrulesbutton", "resetwarns", "resetwelcome", "rmallbl",
 			"rmblacklist", "rmfilter", "rmnote", "rmwarn", "rules", "rulesbtn", "rulesbutton",
@@ -64,7 +64,7 @@ func TestProductContract(t *testing.T) {
 		CallbackNamespaces: []string{
 			"about", "anon_admin", "antiraid", "backup",
 			"configuration", "connbtns", "filters_overwrite", "formatting", "helpq",
-			"notes.overwrite", "reactions_help", "report",
+			"notes.overwrite", "reactions_help",
 			"rmAllBlacklist", "rmAllChatWarns", "rmAllNotes", "rmWarn",
 			"unpinallbtn",
 		},
@@ -79,7 +79,7 @@ func TestProductContract(t *testing.T) {
 			{Group: 5, Kind: "message", Count: 1},
 			{Group: 6, Kind: "message", Count: 1},
 			{Group: 7, Kind: "message", Count: 1},
-			{Group: 8, Kind: "message", Count: 2},
+			{Group: 8, Kind: "message", Count: 1},
 			{Group: 9, Kind: "message", Count: 1},
 			{Group: 10, Kind: "message", Count: 1},
 		},
