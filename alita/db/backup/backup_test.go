@@ -832,7 +832,6 @@ func TestExportImportGreetingsRoundTrip(t *testing.T) {
 
 	require.NoError(t, greetings.SetWelcomeText(srcChat, "Hello {first}!", "", nil, db.TEXT))
 	require.NoError(t, greetings.SetWelcomeToggle(srcChat, true))
-	require.NoError(t, greetings.SetGoodbyeText(srcChat, "Bye {first}!", "", nil, db.TEXT))
 
 	exported, err := exportGreetingsData(srcChat)
 	require.NoError(t, err)
@@ -841,8 +840,6 @@ func TestExportImportGreetingsRoundTrip(t *testing.T) {
 	require.NotNil(t, exported.Settings.WelcomeSettings)
 	assert.Equal(t, "Hello {first}!", exported.Settings.WelcomeSettings.WelcomeText)
 	assert.True(t, exported.Settings.WelcomeSettings.ShouldWelcome)
-	require.NotNil(t, exported.Settings.GoodbyeSettings)
-	assert.Equal(t, "Bye {first}!", exported.Settings.GoodbyeSettings.GoodbyeText)
 
 	// Ensure greeting record exists in dst before import
 	_ = greetings.GetGreetingSettings(dstChat)
@@ -860,8 +857,6 @@ func TestExportImportGreetingsRoundTrip(t *testing.T) {
 	require.NotNil(t, settings.WelcomeSettings)
 	assert.Equal(t, "Hello {first}!", settings.WelcomeSettings.WelcomeText)
 	assert.True(t, settings.WelcomeSettings.ShouldWelcome)
-	require.NotNil(t, settings.GoodbyeSettings)
-	assert.Equal(t, "Bye {first}!", settings.GoodbyeSettings.GoodbyeText)
 }
 
 func TestExportImportPinsRoundTrip(t *testing.T) {

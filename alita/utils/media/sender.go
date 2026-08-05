@@ -352,7 +352,7 @@ func SendFilter(b *gotgbot.Bot, ctx *ext.Context, filter *db.ChatFilters, replyM
 	})
 }
 
-// SendGreeting is a convenience function for sending welcome/goodbye messages.
+// SendGreeting is a convenience function for sending welcome messages.
 func SendGreeting(b *gotgbot.Bot, chatID int64, text, fileID string, msgType int, keyboard *gotgbot.InlineKeyboardMarkup, threadID int64) (*gotgbot.Message, error) {
 	return Send(b, Content{
 		Text:    text,

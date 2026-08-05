@@ -27,7 +27,6 @@ type (
 	Warns                  = models.Warns
 	GreetingSettings       = models.GreetingSettings
 	WelcomeSettings        = models.WelcomeSettings
-	GoodbyeSettings        = models.GoodbyeSettings
 	ChatFilters            = models.ChatFilters
 	AdminSettings          = models.AdminSettings
 	BlacklistSettings      = models.BlacklistSettings
@@ -64,11 +63,8 @@ const (
 	VIDEO_NOTE int = 8
 )
 
-// Default greeting messages used when no custom greetings are configured.
-const (
-	DefaultWelcome = "Hey {first}, how are you?"
-	DefaultGoodbye = "Sad to see you leaving {first}"
-)
+// DefaultWelcome is used when no custom welcome is configured.
+const DefaultWelcome = "Hey {first}, how are you?"
 
 // getSpanAttributes returns common span attributes for database operations.
 func getSpanAttributes(model any) []attribute.KeyValue {
