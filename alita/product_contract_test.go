@@ -41,8 +41,7 @@ func TestProductContract(t *testing.T) {
 			"about", "addblacklist", "adddev", "addfilter", "addnote", "addreaction", "addsudo",
 			"admincache", "allowconnect", "anonadmin", "antichannelpin", "antiraid", "approval",
 			"approve", "approved", "autoantiraid", "autoapprove", "ban", "blacklist",
-			"blacklistaction", "blacklists", "blaction", "captcha", "captchaaction", "captchaclear",
-			"captchamaxattempts", "captchamode", "captchapending", "captchatime", "chatinfo",
+			"blacklistaction", "blacklists", "blaction", "chatinfo",
 			"chatlist", "cleangoodbye", "cleanlinked", "cleanservice", "cleanwelcome", "clear",
 			"clearadmincache", "clearall", "clearrules", "clearrulesbtn", "clearrulesbutton", "connect",
 			"connection", "delflood", "demote", "disable", "disableable", "disabled",
@@ -63,14 +62,13 @@ func TestProductContract(t *testing.T) {
 			"warnings", "warns", "welcome",
 		},
 		CallbackNamespaces: []string{
-			"about", "anon_admin", "antiraid", "backup", "captcha_refresh", "captcha_verify",
+			"about", "anon_admin", "antiraid", "backup",
 			"configuration", "connbtns", "filters_overwrite", "formatting", "helpq",
 			"notes.overwrite", "reactions_help", "report", "rmAllApprovals",
 			"rmAllBlacklist", "rmAllChatWarns", "rmAllFilters", "rmAllNotes", "rmWarn",
 			"unpinallbtn",
 		},
 		Watchers: []watcherContract{
-			{Group: -10, Kind: "message", Count: 1},
 			{Group: -5, Kind: "message", Count: 1},
 			{Group: -2, Kind: "message", Count: 1},
 			{Group: -1, Kind: "message", Count: 1},
@@ -88,7 +86,7 @@ func TestProductContract(t *testing.T) {
 		},
 		HelpModules: []string{
 			"Admin", "AntiRaid", "Antiflood", "Approvals", "Backup", "Bans", "Blacklists",
-			"Captcha", "Connections", "Disabling", "Filters", "Formatting", "Greetings", "Locks",
+			"Connections", "Disabling", "Filters", "Formatting", "Greetings", "Locks",
 			"Misc", "Mutes", "Notes", "Pins", "Purges", "Reactions", "Reports", "Rules", "Warns",
 		},
 	}

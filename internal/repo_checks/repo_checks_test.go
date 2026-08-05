@@ -103,23 +103,6 @@ func TestAntiSpamCleanupDefersUnlockAndRecovers(t *testing.T) {
 	}
 }
 
-func TestCaptchaBackgroundGoroutinesRecoverFromPanics(t *testing.T) {
-	t.Parallel()
-
-	source := readRepoFile(t, "alita", "modules", "captcha.go")
-	required := []string{
-		`error_handling.RecoverFromPanic("CaptchaCleanup"`,
-		`error_handling.RecoverFromPanic("CaptchaCleanupExpiredAttempts"`,
-		`error_handling.RecoverFromPanic("CaptchaUnmute"`,
-		`error_handling.RecoverFromPanic("captchaTimeout"`,
-	}
-
-	for _, want := range required {
-		if !strings.Contains(source, want) {
-			t.Fatalf("captcha.go missing background panic recovery %s", want)
-		}
-	}
-}
 
 func TestLoadModulesDelegatesToRegistryOnly(t *testing.T) {
 	t.Parallel()

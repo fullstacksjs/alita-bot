@@ -13,7 +13,6 @@ const (
 	CacheTTLWarnSettings    = 30 * time.Minute
 	CacheTTLAntiflood       = 30 * time.Minute
 	CacheTTLDisabledCmds    = 30 * time.Minute
-	CacheTTLCaptchaSettings = 30 * time.Minute
 	CacheTTLApprovals       = 30 * time.Minute
 	CacheTTLAntiRaid        = 30 * time.Minute
 	CacheTTLChannels        = 30 * time.Minute

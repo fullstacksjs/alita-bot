@@ -51,10 +51,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, db.DB.Create(&models.BlacklistSettings{
 		ChatId: srcChat, Word: "scam", Action: "tban", Reason: "custom reason",
 	}).Error)
-	require.NoError(t, db.DB.Create(&models.CaptchaSettings{
-		ChatID: srcChat, Enabled: true, CaptchaMode: "text", Timeout: 9,
-		FailureAction: "mute", MaxAttempts: 8,
-	}).Error)
 	require.NoError(t, db.DB.Create(&models.ConnectionChatSettings{
 		ChatId: srcChat, AllowConnect: true,
 	}).Error)
@@ -178,14 +174,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	assert.Equal(t, "tban", blacklistsData.Entries[0].Action)
 	assert.Equal(t, "custom reason", blacklistsData.Entries[0].Reason)
 
-	captchaData, err := exportCaptchaData(dstChat)
-	require.NoError(t, err)
-	require.NotNil(t, captchaData.Settings)
-	assert.True(t, captchaData.Settings.Enabled)
-	assert.Equal(t, "text", captchaData.Settings.CaptchaMode)
-	assert.Equal(t, 9, captchaData.Settings.Timeout)
-	assert.Equal(t, "mute", captchaData.Settings.FailureAction)
-	assert.Equal(t, 8, captchaData.Settings.MaxAttempts)
 
 	connectionsData, err := exportConnectionsData(dstChat)
 	require.NoError(t, err)
@@ -313,16 +301,11 @@ func TestImportChatDataRollsBackEarlierModules(t *testing.T) {
 		ChatId: chatID, Rules: "original",
 	}).Error)
 
-	backup := NewBackupFormat(chatID, "chat", 1, []string{BackupModuleRules, BackupModuleCaptcha})
+	backup := NewBackupFormat(chatID, "chat", 1, []string{BackupModuleRules, BackupModuleAntiflood})
 	backup.Data[BackupModuleRules] = map[string]interface{}{
 		"settings": map[string]interface{}{"rules": "replacement"},
 	}
-	backup.Data[BackupModuleCaptcha] = map[string]interface{}{
-		"settings": map[string]interface{}{
-			"enabled": true, "captcha_mode": "invalid", "timeout": 2,
-			"failure_action": "kick", "max_attempts": 3,
-		},
-	}
+	backup.Data[BackupModuleAntiflood] = "invalid_payload_type"
 
 	require.Error(t, ImportChatData(chatID, backup, nil))
 	settings, err := findChatSetting[models.RulesSettings](chatID)

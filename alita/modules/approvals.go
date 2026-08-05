@@ -16,13 +16,11 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/approvals"
-	dbcaptcha "github.com/divkix/Alita_Robot/alita/db/captcha"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
 	"github.com/divkix/Alita_Robot/alita/utils/extraction"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
-	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 )
 
 var approvalsModule = moduleStruct{
@@ -38,7 +36,7 @@ Connection - true, true
 Admin can approve a user in the chat
 */
 // approveUser handles the /approve command to add a user to the approved list.
-// Approved users are immune to anti-spam measures (antiflood, blacklists, locks, captcha, antispam).
+// Approved users are immune to anti-spam measures (antiflood, blacklists, locks, antispam).
 func (m moduleStruct) approveUser(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	// connection status
@@ -96,17 +94,6 @@ func (m moduleStruct) approveUser(b *gotgbot.Bot, ctx *ext.Context) error {
 		text, _ := tr.GetString(strings.ToLower(m.moduleName) + "_approve_error")
 		_, _ = msg.Reply(b, text, nil)
 		return ext.EndGroups
-	}
-	if attempt, err := dbcaptcha.GetCaptchaAttemptIncludingExpired(targetUserID, chat.Id); err != nil {
-		log.Errorf("[Approvals] Failed to load captcha attempt for approved user %d: %v", targetUserID, err)
-	} else if attempt != nil {
-		released, releaseErr := releaseIncompleteCaptchaAttempt(b, attempt)
-		if released && attempt.MessageID > 0 {
-			_ = helpers.DeleteMessageWithErrorHandling(b, chat.Id, attempt.MessageID)
-		}
-		if releaseErr != nil {
-			log.Errorf("[Approvals] Approved user %d but captcha release will retry: %v", targetUserID, releaseErr)
-		}
 	}
 
 	text, _ := tr.GetString(strings.ToLower(m.moduleName) + "_user_approved")

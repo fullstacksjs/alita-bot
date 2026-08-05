@@ -104,7 +104,6 @@ const (
 	BackupModuleAntiraid    = "antiraid"
 	BackupModuleApprovals   = "approvals"
 	BackupModuleBlacklists  = "blacklists"
-	BackupModuleCaptcha     = "captcha"
 	BackupModuleConnections = "connections"
 	BackupModuleDisabling   = "disabling"
 	BackupModuleFilters     = "filters"
@@ -126,7 +125,6 @@ func AllExportableModules() []string {
 		BackupModuleAntiraid,
 		BackupModuleApprovals,
 		BackupModuleBlacklists,
-		BackupModuleCaptcha,
 		BackupModuleConnections,
 		BackupModuleDisabling,
 		BackupModuleFilters,
@@ -169,7 +167,6 @@ type AdminBackup struct {
 	AdminSettings      *models.AdminSettings          `json:"admin_settings,omitempty"`
 	AntifloodSettings  *models.AntifloodSettings      `json:"antiflood_settings,omitempty"`
 	BlacklistMode      string                         `json:"blacklist_mode,omitempty"`
-	CaptchaSettings    *models.CaptchaSettings        `json:"captcha_settings,omitempty"`
 	ConnectionSettings *models.ConnectionChatSettings `json:"connection_settings,omitempty"`
 }
 
@@ -185,10 +182,6 @@ type BlacklistsBackup struct {
 	Entries       []models.BlacklistSettings `json:"entries,omitempty"`
 }
 
-// CaptchaBackup represents captcha settings backup data
-type CaptchaBackup struct {
-	Settings *models.CaptchaSettings `json:"settings,omitempty"`
-}
 
 // ConnectionsBackup represents connection settings backup data
 type ConnectionsBackup struct {

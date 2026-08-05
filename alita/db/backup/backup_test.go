@@ -14,7 +14,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/antiraid"
 	"github.com/divkix/Alita_Robot/alita/db/approvals"
 	"github.com/divkix/Alita_Robot/alita/db/blacklists"
-	"github.com/divkix/Alita_Robot/alita/db/captcha"
 	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/connections"
 	"github.com/divkix/Alita_Robot/alita/db/disabling"
@@ -326,9 +325,6 @@ func cleanupBackupChat(t *testing.T, chatID int64) {
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.BlacklistSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting BlacklistSettings: %v", err)
 	}
-	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.CaptchaSettings{}).Error; err != nil {
-		t.Errorf("cleanup failed deleting CaptchaSettings: %v", err)
-	}
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.ConnectionChatSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting ConnectionChatSettings: %v", err)
 	}
@@ -393,8 +389,6 @@ func TestExportAdminData(t *testing.T) {
 	require.NoError(t, admin.SetAnonAdminMode(chatID, true))
 	require.NoError(t, antiflood.SetFlood(chatID, 7))
 	require.NoError(t, antiflood.SetFloodMode(chatID, "ban"))
-	require.NoError(t, captcha.SetCaptchaEnabled(chatID, true))
-	require.NoError(t, captcha.SetCaptchaMode(chatID, "text"))
 
 	backup, err := exportAdminData(chatID)
 	require.NoError(t, err)
@@ -407,10 +401,6 @@ func TestExportAdminData(t *testing.T) {
 	require.NotNil(t, backup.AntifloodSettings)
 	assert.Equal(t, 7, backup.AntifloodSettings.Limit)
 	assert.Equal(t, "ban", backup.AntifloodSettings.Action)
-
-	require.NotNil(t, backup.CaptchaSettings)
-	assert.True(t, backup.CaptchaSettings.Enabled)
-	assert.Equal(t, "text", backup.CaptchaSettings.CaptchaMode)
 }
 
 func TestImportAdminData(t *testing.T) {
@@ -434,14 +424,6 @@ func TestImportAdminData(t *testing.T) {
 			"limit":   float64(10),
 			"action":  "kick",
 		},
-		"captcha_settings": map[string]interface{}{
-			"chat_id":        float64(chatID),
-			"enabled":        true,
-			"captcha_mode":   "math",
-			"timeout":        float64(5),
-			"max_attempts":   float64(3),
-			"failure_action": "ban",
-		},
 	}
 
 	require.NoError(t, ImportModuleData(chatID, BackupModuleAdmin, payload))
@@ -454,12 +436,6 @@ func TestImportAdminData(t *testing.T) {
 	require.NotNil(t, flood)
 	assert.Equal(t, 10, flood.Limit)
 	assert.Equal(t, "kick", flood.Action)
-
-	captchaSettings, err := captcha.GetCaptchaSettings(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, captchaSettings)
-	assert.True(t, captchaSettings.Enabled)
-	assert.Equal(t, "math", captchaSettings.CaptchaMode)
 }
 
 func TestImportAdminData_InvalidFormat(t *testing.T) {
@@ -811,53 +787,7 @@ func TestExportImportConnectionsRoundTrip(t *testing.T) {
 	assert.True(t, settings.AllowConnect)
 }
 
-func TestExportImportCaptchaRoundTrip(t *testing.T) {
-	skipIfNoDb(t)
 
-	srcChat := time.Now().UnixNano()
-	dstChat := srcChat + 1
-	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_captcha"))
-	require.NoError(t, chats.EnsureChatInDb(dstChat, "dst_captcha"))
-	t.Cleanup(func() {
-		cleanupBackupChat(t, srcChat)
-		cleanupBackupChat(t, dstChat)
-	})
-
-	require.NoError(t, captcha.SetCaptchaEnabled(srcChat, true))
-	require.NoError(t, captcha.SetCaptchaMode(srcChat, "text"))
-	require.NoError(t, captcha.SetCaptchaTimeout(srcChat, 7))
-	require.NoError(t, captcha.SetCaptchaMaxAttempts(srcChat, 5))
-
-	exported, err := exportCaptchaData(srcChat)
-	require.NoError(t, err)
-	require.NotNil(t, exported)
-	require.NotNil(t, exported.Settings)
-	assert.True(t, exported.Settings.Enabled)
-	assert.Equal(t, "text", exported.Settings.CaptchaMode)
-	assert.Equal(t, 7, exported.Settings.Timeout)
-	assert.Equal(t, 5, exported.Settings.MaxAttempts)
-
-	payload := map[string]interface{}{
-		"settings": map[string]interface{}{
-			"chat_id":        float64(dstChat),
-			"enabled":        true,
-			"captcha_mode":   "text",
-			"timeout":        float64(7),
-			"max_attempts":   float64(5),
-			"failure_action": "kick",
-		},
-	}
-
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleCaptcha, payload))
-
-	settings, err := captcha.GetCaptchaSettings(dstChat)
-	require.NoError(t, err)
-	require.NotNil(t, settings)
-	assert.True(t, settings.Enabled)
-	assert.Equal(t, "text", settings.CaptchaMode)
-	assert.Equal(t, 7, settings.Timeout)
-	assert.Equal(t, 5, settings.MaxAttempts)
-}
 
 func TestExportImportAntifloodRoundTrip(t *testing.T) {
 	skipIfNoDb(t)
@@ -1126,24 +1056,6 @@ func TestClearChatData_AllModules(t *testing.T) {
 	require.NoError(t, blacklists.AddBlacklist(chatID, "bad"))
 	require.NoError(t, antiflood.SetFlood(chatID, 5))
 	rules.SetChatRules(chatID, "rules text")
-	require.NoError(t, captcha.SetCaptchaEnabled(chatID, true))
-	_ = pins.GetPinData(chatID)
-	require.NoError(t, pins.SetAntiChannelPin(chatID, true))
-	_ = reports.GetChatReportSettings(chatID)
-	_ = admin.GetAdminSettings(chatID)
-
-	// Clear all (empty modules)
-	require.NoError(t, ClearChatData(chatID, nil))
-
-	assert.Empty(t, filters.GetFiltersList(chatID))
-	assert.Len(t, blacklists.GetBlacklistSettings(chatID), 0)
-	assert.Equal(t, 0, antiflood.GetFlood(chatID).Limit)
-	assert.Equal(t, "", rules.GetChatRulesInfo(chatID).Rules)
-
-	captchaSettings, _ := captcha.GetCaptchaSettings(chatID)
-	if captchaSettings != nil {
-		assert.False(t, captchaSettings.Enabled)
-	}
 
 	pin := pins.GetPinData(chatID)
 	if pin != nil {
@@ -1217,14 +1129,6 @@ func TestClearModuleData_IndividualModules(t *testing.T) {
 	require.NoError(t, ClearModuleData(chatID, BackupModuleReports))
 	assert.True(t, reports.GetChatReportSettings(chatID).Enabled)
 
-	// --- Captcha ---
-	_, _ = captcha.GetCaptchaSettings(chatID)
-	_ = captcha.SetCaptchaEnabled(chatID, true)
-	require.NoError(t, ClearModuleData(chatID, BackupModuleCaptcha))
-	captchaSettings, _ := captcha.GetCaptchaSettings(chatID)
-	if captchaSettings != nil {
-		assert.False(t, captchaSettings.Enabled)
-	}
 
 	// --- Antiflood ---
 	require.NoError(t, antiflood.SetFlood(chatID, 8))
@@ -1253,9 +1157,6 @@ func TestExportModuleData_EdgeCases(t *testing.T) {
 	require.NotNil(t, blacklistsData)
 	assert.Empty(t, blacklistsData.Entries)
 
-	captchaData, err := exportCaptchaData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, captchaData)
 
 	connectionsData, err := exportConnectionsData(chatID)
 	require.NoError(t, err)
@@ -1310,25 +1211,21 @@ func TestExportChatData_Full(t *testing.T) {
 	require.NoError(t, antiflood.SetFlood(chatID, 4))
 	require.NoError(t, filters.AddFilter(chatID, "hi", "hello", "", nil, db.TEXT))
 	rules.SetChatRules(chatID, "Be kind")
-	require.NoError(t, captcha.SetCaptchaEnabled(chatID, true))
-
 	backup, err := ExportChatData(chatID, "Test Chat", 1, []string{
 		BackupModuleAdmin,
 		BackupModuleFilters,
 		BackupModuleRules,
-		BackupModuleCaptcha,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, backup)
 	assert.Equal(t, chatID, backup.ChatID)
 	assert.Equal(t, "Test Chat", backup.ChatName)
-	assert.Len(t, backup.Modules, 4)
+	assert.Len(t, backup.Modules, 3)
 
 	// Verify data is present
 	assert.NotNil(t, backup.Data[BackupModuleAdmin])
 	assert.NotNil(t, backup.Data[BackupModuleFilters])
 	assert.NotNil(t, backup.Data[BackupModuleRules])
-	assert.NotNil(t, backup.Data[BackupModuleCaptcha])
 }
 
 func TestExportChatData_EmptyModulesExportsAll(t *testing.T) {

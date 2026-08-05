@@ -25,8 +25,6 @@ func ExportModuleData(chatID int64, module string) (interface{}, error) {
 		return exportApprovalsData(chatID)
 	case BackupModuleBlacklists:
 		return exportBlacklistsData(chatID)
-	case BackupModuleCaptcha:
-		return exportCaptchaData(chatID)
 	case BackupModuleConnections:
 		return exportConnectionsData(chatID)
 	case BackupModuleDisabling:
@@ -327,10 +325,6 @@ func exportAdminData(chatID int64) (*AdminBackup, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get antiflood settings: %w", err)
 	}
-	captchaSettings, err := findChatSetting[models.CaptchaSettings](chatID)
-	if err != nil {
-		return nil, fmt.Errorf("get captcha settings: %w", err)
-	}
 	connectionSettings, err := findChatSetting[models.ConnectionChatSettings](chatID)
 	if err != nil {
 		return nil, fmt.Errorf("get connection settings: %w", err)
@@ -343,7 +337,6 @@ func exportAdminData(chatID int64) (*AdminBackup, error) {
 	result := &AdminBackup{
 		AdminSettings:      adminSettings,
 		AntifloodSettings:  antifloodSettings,
-		CaptchaSettings:    captchaSettings,
 		ConnectionSettings: connectionSettings,
 	}
 	if len(blacklistEntries) > 0 {
@@ -379,10 +372,6 @@ func exportBlacklistsData(chatID int64) (*BlacklistsBackup, error) {
 	return result, nil
 }
 
-func exportCaptchaData(chatID int64) (*CaptchaBackup, error) {
-	settings, err := findChatSetting[models.CaptchaSettings](chatID)
-	return &CaptchaBackup{Settings: settings}, err
-}
 
 func exportConnectionsData(chatID int64) (*ConnectionsBackup, error) {
 	settings, err := findChatSetting[models.ConnectionChatSettings](chatID)
@@ -475,8 +464,6 @@ func importModuleData(tx *gorm.DB, chatID int64, module string, data interface{}
 		return importApprovals(tx, chatID, data)
 	case BackupModuleBlacklists:
 		return importBlacklists(tx, chatID, data)
-	case BackupModuleCaptcha:
-		return importCaptcha(tx, chatID, data)
 	case BackupModuleConnections:
 		return importConnections(tx, chatID, data)
 	case BackupModuleDisabling:
@@ -515,9 +502,6 @@ func importAdmin(tx *gorm.DB, chatID int64, payload interface{}) ([]string, erro
 	if data.AntifloodSettings != nil {
 		data.AntifloodSettings.ChatId = chatID
 	}
-	if data.CaptchaSettings != nil {
-		data.CaptchaSettings.ChatID = chatID
-	}
 	if data.ConnectionSettings != nil {
 		data.ConnectionSettings.ChatId = chatID
 	}
@@ -527,9 +511,6 @@ func importAdmin(tx *gorm.DB, chatID int64, payload interface{}) ([]string, erro
 	}
 	if err := replaceChatSetting(tx, chatID, data.AntifloodSettings); err != nil {
 		return nil, fmt.Errorf("restore antiflood settings: %w", err)
-	}
-	if err := replaceChatSetting(tx, chatID, data.CaptchaSettings); err != nil {
-		return nil, fmt.Errorf("restore captcha settings: %w", err)
 	}
 	if err := replaceChatSetting(tx, chatID, data.ConnectionSettings); err != nil {
 		return nil, fmt.Errorf("restore connection settings: %w", err)
@@ -543,7 +524,6 @@ func importAdmin(tx *gorm.DB, chatID int64, payload interface{}) ([]string, erro
 	}
 	return []string{
 		cacheKey("antiflood", chatID),
-		cacheKey("captcha_settings", chatID),
 		cacheKey("blacklist", chatID),
 	}, nil
 }
@@ -625,19 +605,6 @@ func importBlacklists(tx *gorm.DB, chatID int64, payload interface{}) ([]string,
 	return []string{cacheKey("blacklist", chatID)}, nil
 }
 
-func importCaptcha(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
-	var data CaptchaBackup
-	if err := decodeModuleData(payload, BackupModuleCaptcha, &data); err != nil {
-		return nil, err
-	}
-	if data.Settings != nil {
-		data.Settings.ChatID = chatID
-	}
-	if err := replaceChatSetting(tx, chatID, data.Settings); err != nil {
-		return nil, err
-	}
-	return []string{cacheKey("captcha_settings", chatID)}, nil
-}
 
 func importConnections(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
 	var data ConnectionsBackup
@@ -887,8 +854,6 @@ func clearModuleData(tx *gorm.DB, chatID int64, module string) ([]string, error)
 		return clearApprovals(tx, chatID)
 	case BackupModuleBlacklists:
 		return clearBlacklists(tx, chatID)
-	case BackupModuleCaptcha:
-		return clearCaptcha(tx, chatID)
 	case BackupModuleConnections:
 		return clearConnections(tx, chatID)
 	case BackupModuleDisabling:
@@ -930,9 +895,6 @@ func clearAdmin(tx *gorm.DB, chatID int64) ([]string, error) {
 	if _, err := clearAntiflood(tx, chatID); err != nil {
 		return nil, err
 	}
-	if _, err := clearCaptcha(tx, chatID); err != nil {
-		return nil, err
-	}
 	if _, err := clearConnections(tx, chatID); err != nil {
 		return nil, err
 	}
@@ -943,7 +905,6 @@ func clearAdmin(tx *gorm.DB, chatID int64) ([]string, error) {
 	}
 	return []string{
 		cacheKey("antiflood", chatID),
-		cacheKey("captcha_settings", chatID),
 		cacheKey("blacklist", chatID),
 	}, nil
 }
@@ -971,16 +932,6 @@ func clearBlacklists(tx *gorm.DB, chatID int64) ([]string, error) {
 	return []string{cacheKey("blacklist", chatID)}, replaceChatRows[models.BlacklistSettings](tx, chatID, nil)
 }
 
-func clearCaptcha(tx *gorm.DB, chatID int64) ([]string, error) {
-	settings := &models.CaptchaSettings{
-		ChatID:        chatID,
-		CaptchaMode:   "math",
-		Timeout:       2,
-		FailureAction: "kick",
-		MaxAttempts:   3,
-	}
-	return []string{cacheKey("captcha_settings", chatID)}, replaceChatSetting(tx, chatID, settings)
-}
 
 func clearConnections(tx *gorm.DB, chatID int64) ([]string, error) {
 	return nil, replaceChatSetting(tx, chatID, &models.ConnectionChatSettings{ChatId: chatID})

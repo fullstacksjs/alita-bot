@@ -90,7 +90,7 @@ func TestLoadModulesLoadsRegistryAndHelp(t *testing.T) {
 	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{MaxRoutines: -1})
 	LoadModules(dispatcher)
 
-	for _, moduleName := range []string{"Admin", "Captcha", "Filters", "Greetings", "Warns"} {
+	for _, moduleName := range []string{"Admin", "Filters", "Greetings", "Warns"} {
 		if !modules.DefaultHelpRegistry().AbleMap[moduleName] {
 			t.Fatalf("%s was not enabled after LoadModules", moduleName)
 		}

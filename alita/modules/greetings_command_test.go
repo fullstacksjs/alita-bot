@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/db/approvals"
-	"github.com/divkix/Alita_Robot/alita/db/captcha"
 	"github.com/divkix/Alita_Robot/alita/db/greetings"
 )
 
@@ -494,18 +491,18 @@ func TestCleanServiceProcessesMultipleNewMembersWithoutCaptcha(t *testing.T) {
 	}
 }
 
-func TestProcessSingleNewMemberSkipsDuplicatesAndFallsBackWhenCaptchaMuteFails(t *testing.T) {
+func TestProcessSingleNewMemberSkipsDuplicates(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	member := gotgbot.User{Id: 4545, FirstName: "CaptchaUser"}
+	member := gotgbot.User{Id: 4545, FirstName: "MemberUser"}
 	if err := greetings.SetWelcomeText(chat.Id, "Welcome {first}", "", nil, db.TEXT); err != nil {
 		t.Fatalf("SetWelcomeText setup error = %v", err)
 	}
 
 	ctx := newServiceJoinContext(bot, chat, admin, []gotgbot.User{member})
-	processSingleNewMember(bot, ctx, gotgbot.User{Id: bot.Id, FirstName: "Alita", IsBot: true}, false)
+	processSingleNewMember(bot, ctx, gotgbot.User{Id: bot.Id, FirstName: "Alita", IsBot: true})
 	if calls := client.callsFor("sendMessage"); len(calls) != 0 {
 		t.Fatalf("sendMessage calls = %d, want none for bot join", len(calls))
 	}
@@ -514,197 +511,13 @@ func TestProcessSingleNewMemberSkipsDuplicatesAndFallsBackWhenCaptchaMuteFails(t
 	if !claimRecentJoinProcessing(chat.Id, member.Id) {
 		t.Fatal("claimRecentJoinProcessing setup returned false")
 	}
-	processSingleNewMember(bot, ctx, member, false)
+	processSingleNewMember(bot, ctx, member)
 	if calls := client.callsFor("sendMessage"); len(calls) != 0 {
 		t.Fatalf("sendMessage calls = %d, want none for duplicate join", len(calls))
 	}
-
-	clearRecentJoinProcessing(chat.Id, member.Id)
-	if err := captcha.SetCaptchaEnabled(chat.Id, true); err != nil {
-		t.Fatalf("SetCaptchaEnabled setup error = %v", err)
-	}
-	client.errors["restrictChatMember"] = errors.New("telegram: bot lacks restrict permission")
-	processSingleNewMember(bot, ctx, member, true)
-	if calls := client.callsFor("restrictChatMember"); len(calls) != 1 {
-		t.Fatalf("restrictChatMember calls = %d, want mute attempt", len(calls))
-	}
-	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
-		t.Fatalf("sendMessage calls = %d, want welcome fallback", len(calls))
-	}
 }
 
-func TestProcessSingleNewMemberCaptchaSuccessSkipsWelcome(t *testing.T) {
-	client := newModuleBotClient()
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	member := gotgbot.User{Id: 4646, FirstName: "CaptchaPass"}
-	if err := captcha.SetCaptchaEnabled(chat.Id, true); err != nil {
-		t.Fatalf("SetCaptchaEnabled setup error = %v", err)
-	}
-	if err := greetings.SetWelcomeText(chat.Id, "Welcome {first}", "", nil, db.TEXT); err != nil {
-		t.Fatalf("SetWelcomeText setup error = %v", err)
-	}
-
-	ctx := newServiceJoinContext(bot, chat, admin, []gotgbot.User{member})
-	clearRecentJoinProcessing(chat.Id, member.Id)
-	processSingleNewMember(bot, ctx, member, true)
-
-	if calls := client.callsFor("restrictChatMember"); len(calls) != 1 {
-		t.Fatalf("restrictChatMember calls = %d, want initial mute", len(calls))
-	}
-	if calls := client.callsFor("sendPhoto"); len(calls) != 1 {
-		t.Fatalf("sendPhoto calls = %d, want captcha image", len(calls))
-	}
-	if calls := client.callsFor("sendMessage"); len(calls) != 0 {
-		t.Fatalf("sendMessage calls = %d, want no welcome before verification", len(calls))
-	}
-	attempt, err := captcha.GetCaptchaAttempt(member.Id, chat.Id)
-	if err != nil {
-		t.Fatalf("GetCaptchaAttempt error = %v", err)
-	}
-	if attempt == nil {
-		t.Fatal("captcha attempt was not created")
-	}
-	if attempt.MessageID == 0 {
-		t.Fatal("captcha attempt message ID was not stored")
-	}
-}
-
-func TestProcessSingleNewMemberSkipsCaptchaForApprovedUser(t *testing.T) {
-	client := newModuleBotClient()
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-	member := gotgbot.User{Id: 4696, FirstName: "Approved"}
-	if err := captcha.SetCaptchaEnabled(chat.Id, true); err != nil {
-		t.Fatalf("SetCaptchaEnabled setup error = %v", err)
-	}
-	if err := approvals.AddApprovedUser(chat.Id, member.Id, 777000, "trusted"); err != nil {
-		t.Fatalf("AddApprovedUser setup error = %v", err)
-	}
-	t.Cleanup(func() {
-		_ = approvals.RemoveApprovedUser(chat.Id, member.Id)
-	})
-	if err := greetings.SetWelcomeText(chat.Id, "Welcome {first}", "", nil, db.TEXT); err != nil {
-		t.Fatalf("SetWelcomeText setup error = %v", err)
-	}
-
-	ctx := newServiceJoinContext(bot, chat, gotgbot.User{Id: 777000, FirstName: "Telegram"}, []gotgbot.User{member})
-	clearRecentJoinProcessing(chat.Id, member.Id)
-	if err := processSingleNewMember(bot, ctx, member, true); err != nil {
-		t.Fatalf("processSingleNewMember() error = %v", err)
-	}
-
-	if calls := client.callsFor("restrictChatMember"); len(calls) != 0 {
-		t.Fatalf("restrictChatMember calls = %d, want approved user untouched", len(calls))
-	}
-	if calls := client.callsFor("sendPhoto"); len(calls) != 0 {
-		t.Fatalf("sendPhoto calls = %d, want no captcha", len(calls))
-	}
-	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
-		t.Fatalf("sendMessage calls = %d, want normal welcome", len(calls))
-	}
-}
-
-func TestProcessSingleNewMemberCaptchaSendFailureUnmutesAndWelcomes(t *testing.T) {
-	client := newModuleBotClient()
-	client.errors["sendPhoto"] = errors.New("telegram send photo failed")
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	member := gotgbot.User{Id: 4747, FirstName: "CaptchaFallback"}
-	if err := captcha.SetCaptchaEnabled(chat.Id, true); err != nil {
-		t.Fatalf("SetCaptchaEnabled setup error = %v", err)
-	}
-	if err := greetings.SetWelcomeText(chat.Id, "Welcome {first}", "", nil, db.TEXT); err != nil {
-		t.Fatalf("SetWelcomeText setup error = %v", err)
-	}
-
-	ctx := newServiceJoinContext(bot, chat, admin, []gotgbot.User{member})
-	clearRecentJoinProcessing(chat.Id, member.Id)
-	processSingleNewMember(bot, ctx, member, true)
-
-	if calls := client.callsFor("restrictChatMember"); len(calls) != 2 {
-		t.Fatalf("restrictChatMember calls = %d, want mute then unmute", len(calls))
-	}
-	if calls := client.callsFor("sendPhoto"); len(calls) != 1 {
-		t.Fatalf("sendPhoto calls = %d, want captcha send attempt", len(calls))
-	}
-	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
-		t.Fatalf("sendMessage calls = %d, want welcome fallback", len(calls))
-	}
-	attempt, err := captcha.GetCaptchaAttempt(member.Id, chat.Id)
-	if err != nil {
-		t.Fatalf("GetCaptchaAttempt error = %v", err)
-	}
-	if attempt != nil {
-		t.Fatal("captcha attempt remained after send failure")
-	}
-}
-
-func TestNewMemberCaptchaSuccessAndSendFailurePaths(t *testing.T) {
-	for _, tt := range []struct {
-		name         string
-		sendPhotoErr bool
-		wantRestrict int
-		wantPhoto    int
-		wantWelcome  int
-	}{
-		{
-			name:         "captcha sent",
-			wantRestrict: 1,
-			wantPhoto:    1,
-		},
-		{
-			name:         "captcha send fails",
-			sendPhotoErr: true,
-			wantRestrict: 2,
-			wantPhoto:    1,
-			wantWelcome:  1,
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			client := newModuleBotClient()
-			if tt.sendPhotoErr {
-				client.errors["sendPhoto"] = errors.New("telegram send photo failed")
-			}
-			bot := newModuleTestBot(client)
-			chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-			admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-			member := gotgbot.User{Id: uniqueModuleChatID(), FirstName: "NewCaptcha"}
-			if err := captcha.SetCaptchaEnabled(chat.Id, true); err != nil {
-				t.Fatalf("SetCaptchaEnabled setup error = %v", err)
-			}
-			if err := greetings.SetWelcomeText(chat.Id, "Welcome {first}", "", nil, db.TEXT); err != nil {
-				t.Fatalf("SetWelcomeText setup error = %v", err)
-			}
-
-			ctx := newChatMemberContext(
-				bot,
-				chat,
-				admin,
-				gotgbot.ChatMemberLeft{User: member},
-				gotgbot.ChatMemberMember{User: member},
-			)
-			clearRecentJoinProcessing(chat.Id, member.Id)
-			if err := greetingsModule.newMember(bot, ctx); err != ext.EndGroups {
-				t.Fatalf("newMember error = %v, want EndGroups", err)
-			}
-
-			if calls := client.callsFor("restrictChatMember"); len(calls) != tt.wantRestrict {
-				t.Fatalf("restrictChatMember calls = %d, want %d", len(calls), tt.wantRestrict)
-			}
-			if calls := client.callsFor("sendPhoto"); len(calls) != tt.wantPhoto {
-				t.Fatalf("sendPhoto calls = %d, want %d", len(calls), tt.wantPhoto)
-			}
-			if calls := client.callsFor("sendMessage"); len(calls) != tt.wantWelcome {
-				t.Fatalf("sendMessage calls = %d, want %d", len(calls), tt.wantWelcome)
-			}
-		})
-	}
-}
-
-func TestLeftMemberDeletesPendingCaptchaAttemptAndCleanGoodbye(t *testing.T) {
+func TestLeftMemberDeletesCleanGoodbye(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
@@ -722,16 +535,6 @@ func TestLeftMemberDeletesPendingCaptchaAttemptAndCleanGoodbye(t *testing.T) {
 	if err := greetings.SetCleanGoodbyeMsgId(chat.Id, 1234); err != nil {
 		t.Fatalf("SetCleanGoodbyeMsgId setup error = %v", err)
 	}
-	attempt := &db.CaptchaAttempts{
-		UserID:    member.Id,
-		ChatID:    chat.Id,
-		Answer:    "42",
-		MessageID: 4321,
-		ExpiresAt: time.Now().Add(time.Minute),
-	}
-	if err := db.DB.Create(attempt).Error; err != nil {
-		t.Fatalf("captcha attempt setup error = %v", err)
-	}
 
 	ctx := newChatMemberContext(
 		bot,
@@ -744,18 +547,11 @@ func TestLeftMemberDeletesPendingCaptchaAttemptAndCleanGoodbye(t *testing.T) {
 		t.Fatalf("leftMember error = %v, want EndGroups", err)
 	}
 
-	if calls := client.callsFor("deleteMessage"); len(calls) != 2 {
-		t.Fatalf("deleteMessage calls = %d, want captcha cleanup and old goodbye cleanup", len(calls))
+	if calls := client.callsFor("deleteMessage"); len(calls) != 1 {
+		t.Fatalf("deleteMessage calls = %d, want old goodbye cleanup", len(calls))
 	}
 	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
 		t.Fatalf("sendMessage calls = %d, want goodbye message", len(calls))
-	}
-	got, err := captcha.GetCaptchaAttempt(member.Id, chat.Id)
-	if err != nil {
-		t.Fatalf("GetCaptchaAttempt error = %v", err)
-	}
-	if got != nil {
-		t.Fatal("captcha attempt was not deleted for leaving member")
 	}
 	if lastID := greetings.GetGreetingSettings(chat.Id).GoodbyeSettings.LastMsgId; lastID == 1234 {
 		t.Fatal("clean goodbye message ID was not updated")
