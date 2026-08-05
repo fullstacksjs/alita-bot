@@ -720,8 +720,6 @@ misc_help_msg:
 
   × /ping: Ping the Telegram Server!
 
-  × /tr <lang code> <msg/reply to message>: Translate the message.
-
   × /removebotkeyboard: Removes the stuck bot keyboard from your chat.
 
   × /stat: Gets the count of the total number of messages in the chat."
@@ -1082,7 +1080,6 @@ rules_need_text: "You need to give me rules to set!\nEither reply to a message t
 notes_invalid: Invalid Note!
 
 # Misc module strings
-misc_translation_error: Error making a translation request!
 
 # Devs module strings
 devs_specify_user: You must specify a user to get info on
@@ -1307,10 +1304,6 @@ misc_sticker_id: "<b>Sticker ID:</b> <code>%s</code>"
 misc_user_id_is: "%s's ID is <code>%d</code>"
 misc_your_id_private: "Your ID is <code>%d</code>"
 misc_your_id_group: "Your ID is <code>%d</code>\nThis group's ID is <code>%d</code>"
-misc_need_text_and_lang: I need some text and a language code to translate.
-misc_no_text_to_translate: The replied message does not contain any text to translate.
-misc_provide_text_translate: Please provide some text to translate.
-misc_detected_translation: "<b>Detected Language:</b> <code>%s</code>\n<b>Translation:</b> <code>%s</code>"
 misc_removing_keyboard: Removing the stuck bot keyboard...
 misc_total_messages: "Total Messages in %s are: %d"
 misc_channel_info_header: "<b>Channel Info:</b>\n\nID: <code>%d</code>\n\nChannel Name: %s"
@@ -1319,8 +1312,6 @@ misc_channel_link: "Channel link: @%s"
 misc_user_info_header: "<b>User Info:</b>\n\nID: <code>%d</code>\n\nName: %s"
 misc_owner_info: He is my owner!
 misc_dev_info: He is one of my dev users!
-misc_translate_read_error: Reading Error
-misc_translate_result: "<b>Detected Language:</b> <code>%s</code>\n\n<b>Translation:</b> <code>%s</code>"
 
 # Devs module strings
 devs_chat_info: "<b>Name:</b> %s\n<b>Chat ID</b>: %d\n<b>Users Count:</b> %d\n<b>Link:</b> %s"
@@ -1673,7 +1664,6 @@ reports_user_kicked: "User kicked!"
 reports_user_banned: "User banned!"
 reports_message_deleted: "Message Deleted!"
 
-# Language module additional strings
 # Bot updates module additional strings
 bot_updates_need_supergroup: "Sorry, but to use my all my features, you need to convert this group to supergroup."
 bot_updates_thanks_for_adding: "Thanks for adding me in your group!"
@@ -1828,7 +1818,6 @@ antispam_help_msg: |
   • <b>Per-User Tracking:</b> Busy groups with many legitimate users won't trigger false positives
 
 # Issue #628 remediation keys
-misc_translate_parse_error: "Failed to parse translation response. Please try again."
 blacklists_set_bl_action_update_failed: "Failed to update blacklist action. Please try again."
 filters_overwrite_token_failed: "Failed to create overwrite confirmation. Please try again."
 notes_overwrite_token_failed: "Failed to create overwrite confirmation. Please try again."

@@ -1,12 +1,8 @@
 package modules
 
 import (
-	"encoding/json"
 	"fmt"
 	"html"
-	"io"
-	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -28,43 +24,7 @@ import (
 	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 )
 
-var (
-	miscModule = moduleStruct{moduleName: "Misc"}
-	// HTTP client with timeout and connection pooling for external requests
-	httpClient = &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:       10,
-			IdleConnTimeout:    90 * time.Second,
-			DisableCompression: true,
-		},
-	}
-)
-
-func parseTranslateResponse(body []byte) (detectedLang, translatedText string, err error) {
-	var payload []json.RawMessage
-	if err = json.Unmarshal(body, &payload); err != nil {
-		return "", "", err
-	}
-
-	if len(payload) == 0 {
-		return "", "", fmt.Errorf("empty translate response")
-	}
-
-	var firstEntry []json.RawMessage
-	if err = json.Unmarshal(payload[0], &firstEntry); err != nil || len(firstEntry) < 2 {
-		return "", "", fmt.Errorf("unexpected translate response shape")
-	}
-
-	if err = json.Unmarshal(firstEntry[0], &translatedText); err != nil || translatedText == "" {
-		return "", "", fmt.Errorf("missing translated text")
-	}
-	if err = json.Unmarshal(firstEntry[1], &detectedLang); err != nil || detectedLang == "" {
-		return "", "", fmt.Errorf("missing detected language")
-	}
-
-	return detectedLang, translatedText, nil
-}
+var miscModule = moduleStruct{moduleName: "Misc"}
 
 // echomsg handles the /tell command to make the bot echo a message
 // as a reply to another message, requiring admin permissions.
@@ -369,100 +329,6 @@ func (moduleStruct) info(b *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.EndGroups
 }
 
-// translate handles the /tr command to translate text using
-// Google Translate API with automatic language detection.
-func (moduleStruct) translate(b *gotgbot.Bot, ctx *ext.Context) error {
-	msg := ctx.EffectiveMessage
-	args := ctx.Args()[1:]
-
-	// if command is disabled, return
-	if chat_status.CheckDisabledCmd(b, msg, "tr") {
-		return ext.EndGroups
-	}
-
-	var (
-		origText string
-		toLang   string
-	)
-
-	if len(args) == 0 && msg.ReplyToMessage == nil {
-		tr := i18n.English()
-		text, _ := tr.GetString("misc_need_text_and_lang")
-		_, err := msg.Reply(b, text, formatting.Shtml())
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		return ext.EndGroups
-	}
-
-	if reply := msg.ReplyToMessage; reply != nil {
-		if reply.Text != "" {
-			origText = reply.Text
-		} else if reply.Caption != "" {
-			origText = reply.Caption
-		} else {
-			tr := i18n.English()
-			text, _ := tr.GetString("misc_no_text_to_translate")
-			_, _ = msg.Reply(b, text, formatting.Shtml())
-			return ext.EndGroups
-		}
-		if len(args) == 0 {
-			toLang = "en"
-		} else {
-			toLang = args[0]
-		}
-	} else {
-		// args[1:] leaves the language code and takes rest of the text
-		if len(args[1:]) < 1 {
-			tr := i18n.English()
-			text, _ := tr.GetString("misc_provide_text_translate")
-			_, _ = msg.Reply(b, text, formatting.Shtml())
-			return ext.EndGroups
-		}
-		// args[0] is the language code
-		toLang = args[0]
-		origText = strings.Join(args[1:], " ")
-	}
-	req, err := httpClient.Get(fmt.Sprintf("https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=%s&q=%s", toLang, url.QueryEscape(strings.TrimSpace(origText))))
-	if err != nil {
-		tr := i18n.English()
-		text, _ := tr.GetString("misc_translation_error")
-		_, _ = msg.Reply(b, text, nil)
-		return ext.EndGroups
-	}
-	defer func(Body io.ReadCloser) {
-		err = Body.Close()
-		if err != nil {
-			log.Error(err)
-		}
-	}(req.Body)
-	// Limit response size to 1MB to prevent memory exhaustion from malicious responses
-	all, err := io.ReadAll(io.LimitReader(req.Body, 1*1024*1024))
-	if err != nil {
-		tr := i18n.English()
-		text, _ := tr.GetString("misc_translate_read_error")
-		_, _ = msg.Reply(b, text+": "+err.Error(), nil)
-		return ext.EndGroups
-	}
-	tr := i18n.English()
-	detectedLang, translatedText, parseErr := parseTranslateResponse(all)
-	if parseErr != nil {
-		log.WithFields(log.Fields{
-			"error":       parseErr,
-			"target_lang": toLang,
-			"response":    string(all),
-		}).Warn("[Misc] Failed to parse translation response")
-		text, _ := tr.GetString("misc_translate_parse_error")
-		_, _ = msg.Reply(b, text, formatting.Shtml())
-		return ext.EndGroups
-	}
-	textTemplate, _ := tr.GetString("misc_translate_result")
-	text := fmt.Sprintf(textTemplate, detectedLang, translatedText)
-	_, _ = msg.Reply(b, text, formatting.Shtml())
-	return ext.EndGroups
-}
-
 // removeBotKeyboard handles the /removebotkeyboard command to
 // remove stuck bot keyboards from the chat interface.
 func (moduleStruct) removeBotKeyboard(b *gotgbot.Bot, ctx *ext.Context) error {
@@ -527,8 +393,6 @@ func LoadMisc(dispatcher *ext.Dispatcher) {
 	helpers.AddCmdToDisableable("ping")
 	dispatcher.AddHandler(handlers.NewCommand("info", miscModule.info))
 	helpers.AddCmdToDisableable("info")
-	dispatcher.AddHandler(handlers.NewCommand("tr", miscModule.translate))
-	helpers.AddCmdToDisableable("tr")
 	dispatcher.AddHandler(handlers.NewCommand("removebotkeyboard", miscModule.removeBotKeyboard))
 }
 
