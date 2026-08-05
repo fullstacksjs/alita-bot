@@ -31,7 +31,6 @@ type GreetingSettings struct {
 	ShouldCleanService bool             `gorm:"column:clean_service_settings;default:false" json:"clean_service_settings" default:"false"`
 	WelcomeSettings    *WelcomeSettings `gorm:"embedded;embeddedPrefix:welcome_" json:"welcome_settings" default:"false"`
 	GoodbyeSettings    *GoodbyeSettings `gorm:"embedded;embeddedPrefix:goodbye_" json:"goodbye_settings" default:"false"`
-	ShouldAutoApprove  bool             `gorm:"column:auto_approve;default:false" json:"auto_approve" default:"false"`
 	CreatedAt          time.Time        `gorm:"column:created_at" json:"created_at,omitempty"`
 	UpdatedAt          time.Time        `gorm:"column:updated_at" json:"updated_at,omitempty"`
 }

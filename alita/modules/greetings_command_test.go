@@ -2,7 +2,6 @@ package modules
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -210,13 +209,6 @@ func TestGreetingCleanupCommandsPersistForNewChat(t *testing.T) {
 		t.Fatal("clean service did not enable for new chat")
 	}
 
-	autoApproveCtx := newGreetingMessageContext(bot, chat, admin, "/autoapprove on")
-	if err := greetingsModule.autoApprove(bot, autoApproveCtx); err != ext.EndGroups {
-		t.Fatalf("autoApprove error = %v, want EndGroups", err)
-	}
-	if !greetings.GetGreetingSettings(chat.Id).ShouldAutoApprove {
-		t.Fatal("auto approve did not enable for new chat")
-	}
 }
 
 func TestGreetingCleanupCommandsHandleStatusOffAndInvalidOptions(t *testing.T) {
@@ -248,14 +240,6 @@ func TestGreetingCleanupCommandsHandleStatusOffAndInvalidOptions(t *testing.T) {
 			run:     greetingsModule.delJoined,
 			verify: func(chatID int64) bool {
 				return !greetings.GetGreetingSettings(chatID).ShouldCleanService
-			},
-		},
-		{
-			name:    "auto approve off",
-			command: "/autoapprove no",
-			run:     greetingsModule.autoApprove,
-			verify: func(chatID int64) bool {
-				return !greetings.GetGreetingSettings(chatID).ShouldAutoApprove
 			},
 		},
 	}
@@ -295,8 +279,6 @@ func TestGreetingCleanupCommandsHandleStatusOffAndInvalidOptions(t *testing.T) {
 			{command: "/cleangoodbye maybe", run: greetingsModule.cleanGoodbye},
 			{command: "/cleanservice", run: greetingsModule.delJoined},
 			{command: "/cleanservice maybe", run: greetingsModule.delJoined},
-			{command: "/autoapprove", run: greetingsModule.autoApprove},
-			{command: "/autoapprove maybe", run: greetingsModule.autoApprove},
 		} {
 			ctx := newGreetingMessageContext(bot, chat, admin, step.command)
 			if err := step.run(bot, ctx); err != ext.EndGroups {
@@ -304,7 +286,7 @@ func TestGreetingCleanupCommandsHandleStatusOffAndInvalidOptions(t *testing.T) {
 			}
 		}
 
-		if calls := client.callsFor("sendMessage"); len(calls) != 8 {
+		if calls := client.callsFor("sendMessage"); len(calls) != 6 {
 			t.Fatalf("sendMessage calls = %d, want one reply per status/invalid command", len(calls))
 		}
 	})
@@ -368,19 +350,6 @@ func newServiceJoinContext(
 		MessageThreadId: 7,
 	}
 	return ext.NewContext(bot, &gotgbot.Update{UpdateId: 4, Message: msg}, nil)
-}
-
-func newJoinRequestContext(bot *gotgbot.Bot, chat gotgbot.Chat, user gotgbot.User) *ext.Context {
-	update := &gotgbot.Update{
-		UpdateId: 5,
-		ChatJoinRequest: &gotgbot.ChatJoinRequest{
-			Chat:       chat,
-			From:       user,
-			UserChatId: user.Id,
-			Date:       1,
-		},
-	}
-	return ext.NewContext(bot, update, nil)
 }
 
 func TestMemberJoinAndLeaveSendConfiguredGreetings(t *testing.T) {
@@ -558,45 +527,6 @@ func TestLeftMemberDeletesCleanGoodbye(t *testing.T) {
 	}
 }
 
-func TestPendingJoinRequestSendsNoAdminNotice(t *testing.T) {
-	client := newModuleBotClient()
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-	applicant := gotgbot.User{Id: 5151, FirstName: "Applicant"}
-
-	ctx := newJoinRequestContext(bot, chat, applicant)
-	if err := greetingsModule.pendingJoins(bot, ctx); err != ext.ContinueGroups {
-		t.Fatalf("pendingJoins error = %v, want ContinueGroups", err)
-	}
-	if calls := client.callsFor("sendMessage"); len(calls) != 0 {
-		t.Fatalf("sendMessage calls = %d, want no join request notice", len(calls))
-	}
-	if calls := client.callsFor("approveChatJoinRequest"); len(calls) != 0 {
-		t.Fatalf("approveChatJoinRequest calls = %d, want none without auto approve", len(calls))
-	}
-}
-
-func TestAutoApproveJoinRequestApprovesWithoutNotice(t *testing.T) {
-	client := newModuleBotClient()
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-	applicant := gotgbot.User{Id: 6161, FirstName: "Applicant"}
-	if err := greetings.SetShouldAutoApprove(chat.Id, true); err != nil {
-		t.Fatalf("SetShouldAutoApprove setup error = %v", err)
-	}
-
-	ctx := newJoinRequestContext(bot, chat, applicant)
-	if err := greetingsModule.pendingJoins(bot, ctx); err != ext.ContinueGroups {
-		t.Fatalf("pendingJoins auto approve error = %v, want ContinueGroups", err)
-	}
-	if calls := client.callsFor("approveChatJoinRequest"); len(calls) != 1 {
-		t.Fatalf("approveChatJoinRequest calls = %d, want auto approve", len(calls))
-	}
-	if calls := client.callsFor("sendMessage"); len(calls) != 0 {
-		t.Fatalf("sendMessage calls = %d, want no admin notice", len(calls))
-	}
-}
-
 func TestGreetingCommandsPropagateGotgbotRequestErrors(t *testing.T) {
 	requestErr := errors.New("telegram request failed")
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
@@ -617,7 +547,6 @@ func TestGreetingCommandsPropagateGotgbotRequestErrors(t *testing.T) {
 		{name: "clean welcome", text: "/cleanwelcome", run: greetingsModule.cleanWelcome},
 		{name: "clean goodbye", text: "/cleangoodbye", run: greetingsModule.cleanGoodbye},
 		{name: "clean service", text: "/cleanservice", run: greetingsModule.delJoined},
-		{name: "auto approve", text: "/autoapprove", run: greetingsModule.autoApprove},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			client := newModuleBotClient()
@@ -631,61 +560,5 @@ func TestGreetingCommandsPropagateGotgbotRequestErrors(t *testing.T) {
 				t.Fatalf("%s returned error %v, want request error", tt.text, err)
 			}
 		})
-	}
-}
-
-func TestJoinRequestFlowPropagatesGotgbotRequestErrors(t *testing.T) {
-	requestErr := errors.New("telegram request failed")
-	applicant := gotgbot.User{Id: 5151, FirstName: "Applicant"}
-
-	for _, tt := range []struct {
-		name    string
-		method  string
-		build   func(*gotgbot.Bot, gotgbot.Chat) *ext.Context
-		run     func(*gotgbot.Bot, *ext.Context) error
-		wantErr bool
-	}{
-		{
-			name:   "auto approve join request",
-			method: "approveChatJoinRequest",
-			build: func(bot *gotgbot.Bot, chat gotgbot.Chat) *ext.Context {
-				if err := greetings.SetShouldAutoApprove(chat.Id, true); err != nil {
-					t.Fatalf("SetShouldAutoApprove() error = %v", err)
-				}
-				return newJoinRequestContext(bot, chat, applicant)
-			},
-			run: greetingsModule.pendingJoins,
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			client := newModuleBotClient()
-			client.responses["getChat"] = []byte(`{"id":5151,"type":"private","first_name":"Applicant"}`)
-			bot := newModuleTestBot(client)
-			client.errors[tt.method] = requestErr
-			chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-
-			err := tt.run(bot, tt.build(bot, chat))
-			if !errors.Is(err, requestErr) {
-				t.Fatalf("%s returned error %v, want request error", tt.name, err)
-			}
-		})
-	}
-}
-
-func TestPendingJoinsAcceptsExpectedTelegramErrors(t *testing.T) {
-	expectedErr := fmt.Errorf("Forbidden: bot is not a member of the supergroup chat")
-	applicant := gotgbot.User{Id: 5151, FirstName: "Applicant"}
-
-	client := newModuleBotClient()
-	bot := newModuleTestBot(client)
-	client.errors["approveChatJoinRequest"] = expectedErr
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Greeting Chat"}
-	if err := greetings.SetShouldAutoApprove(chat.Id, true); err != nil {
-		t.Fatalf("SetShouldAutoApprove() error = %v", err)
-	}
-
-	ctx := newJoinRequestContext(bot, chat, applicant)
-	if err := greetingsModule.pendingJoins(bot, ctx); err != ext.ContinueGroups {
-		t.Fatalf("pendingJoins error = %v, want ContinueGroups", err)
 	}
 }

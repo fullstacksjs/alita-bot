@@ -73,7 +73,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, db.DB.Create(&models.GreetingSettings{
 		ChatID:             srcChat,
 		ShouldCleanService: true,
-		ShouldAutoApprove:  true,
 		WelcomeSettings: &models.WelcomeSettings{
 			CleanWelcome: true, LastMsgId: 111, ShouldWelcome: true,
 			WelcomeText: "welcome", FileID: "welcome-file", WelcomeType: 2, Button: buttons,
@@ -114,7 +113,7 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 		ChatId: srcChat, Rules: "be kind", RulesBtn: "Read", Private: true,
 	}).Error)
 	require.NoError(t, db.DB.Create(&models.WarnSettings{
-		ChatId: srcChat, WarnLimit: 7, WarnMode: "tmute",
+		ChatId: srcChat, WarnLimit: 7,
 	}).Error)
 	require.NoError(t, db.DB.Create(&models.Warns{
 		UserId: warnUserID, ChatId: srcChat, NumWarns: 2, Reasons: models.StringArray{"one", "two"},
@@ -174,7 +173,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	assert.Equal(t, "tban", blacklistsData.Entries[0].Action)
 	assert.Equal(t, "custom reason", blacklistsData.Entries[0].Reason)
 
-
 	connectionsData, err := exportConnectionsData(dstChat)
 	require.NoError(t, err)
 	require.NotNil(t, connectionsData.Settings)
@@ -202,7 +200,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, greetingsData.Settings)
 	assert.True(t, greetingsData.Settings.ShouldCleanService)
-	assert.True(t, greetingsData.Settings.ShouldAutoApprove)
 	require.NotNil(t, greetingsData.Settings.WelcomeSettings)
 	assert.True(t, greetingsData.Settings.WelcomeSettings.CleanWelcome)
 	assert.Equal(t, int64(111), greetingsData.Settings.WelcomeSettings.LastMsgId)
@@ -275,7 +272,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, warnsData.WarnSettings)
 	assert.Equal(t, 7, warnsData.WarnSettings.WarnLimit)
-	assert.Equal(t, "tmute", warnsData.WarnSettings.WarnMode)
 	require.Len(t, warnsData.Warns, 1)
 	assert.Equal(t, warnUserID, warnsData.Warns[0].UserId)
 	assert.Equal(t, 2, warnsData.Warns[0].NumWarns)
@@ -326,7 +322,7 @@ func TestImportWarnsCreatesMissingParents(t *testing.T) {
 
 	bkp := NewBackupFormat(chatID, "fresh", 1, []string{BackupModuleWarns})
 	bkp.Data[BackupModuleWarns] = map[string]interface{}{
-		"warn_settings": map[string]interface{}{"warn_limit": 3, "warn_mode": "mute"},
+		"warn_settings": map[string]interface{}{"warn_limit": 3},
 		"warns": []interface{}{
 			map[string]interface{}{"user_id": userID, "num_warns": 1, "warns": []interface{}{"reason"}},
 		},
@@ -354,7 +350,7 @@ func TestLegacyBackupPreservesFieldsThatVersionDidNotExport(t *testing.T) {
 		ChatId: chatID, NoteName: "old", NoteContent: "old",
 	}).Error)
 	require.NoError(t, db.DB.Create(&models.WarnSettings{
-		ChatId: chatID, WarnLimit: 3, WarnMode: "mute",
+		ChatId: chatID, WarnLimit: 3,
 	}).Error)
 	require.NoError(t, db.DB.Create(&models.Warns{
 		ChatId: chatID, UserId: warnUserID, NumWarns: 2, Reasons: models.StringArray{"one", "two"},
@@ -367,7 +363,7 @@ func TestLegacyBackupPreservesFieldsThatVersionDidNotExport(t *testing.T) {
 		"modules":["notes","warns"],
 		"data":{
 			"notes":{"notes":[{"note_name":"new","note_content":"new"}]},
-			"warns":{"warn_settings":{"warn_limit":7,"warn_mode":"kick"}}
+			"warns":{"warn_settings":{"warn_limit":7}}
 		}
 	}`, chatID)
 	legacy, err := BackupFormatFromJSON([]byte(raw))

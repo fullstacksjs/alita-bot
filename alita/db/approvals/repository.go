@@ -66,15 +66,3 @@ func RemoveApprovedUser(chatID, userID int64) error {
 	cache.DeleteCache(cache.CacheKey("approvals", chatID))
 	return nil
 }
-
-// RemoveAllApprovedUsers removes all approved users for a chat.
-func RemoveAllApprovedUsers(chatID int64) error {
-	err := db.DB.Where("chat_id = ?", chatID).Delete(&models.ApprovedUsers{}).Error
-	if err != nil {
-		log.Errorf("[Database] RemoveAllApprovedUsers: %v - chat:%d", err, chatID)
-		return err
-	}
-
-	cache.DeleteCache(cache.CacheKey("approvals", chatID))
-	return nil
-}

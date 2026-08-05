@@ -14,13 +14,19 @@ func skipIfNoDb(t *testing.T) {
 	}
 }
 
+func clearApprovalsForTest(chatID int64) {
+	for _, approved := range GetApprovedUsers(chatID) {
+		_ = RemoveApprovedUser(chatID, approved.UserID)
+	}
+}
+
 func TestIsUserApproved(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := int64(-999999999999999)
 
 	t.Cleanup(func() {
-		_ = RemoveAllApprovedUsers(chatID)
+		clearApprovalsForTest(chatID)
 	})
 
 	// User should not be approved initially
@@ -53,7 +59,7 @@ func TestAddApprovedUser(t *testing.T) {
 	chatID := int64(-999999999999999)
 
 	t.Cleanup(func() {
-		_ = RemoveAllApprovedUsers(chatID)
+		clearApprovalsForTest(chatID)
 	})
 
 	if err := AddApprovedUser(chatID, 11111, 99999, "test reason"); err != nil {
@@ -81,7 +87,7 @@ func TestRemoveApprovedUser(t *testing.T) {
 	chatID := int64(-999999999999999)
 
 	t.Cleanup(func() {
-		_ = RemoveAllApprovedUsers(chatID)
+		clearApprovalsForTest(chatID)
 	})
 
 	// Add two users, remove one
@@ -110,7 +116,7 @@ func TestGetApprovedUsers(t *testing.T) {
 	chatID := int64(-999999999999999)
 
 	t.Cleanup(func() {
-		_ = RemoveAllApprovedUsers(chatID)
+		clearApprovalsForTest(chatID)
 	})
 
 	// Empty chat returns empty slice, not nil
@@ -136,38 +142,13 @@ func TestGetApprovedUsers(t *testing.T) {
 	}
 }
 
-func TestRemoveAllApprovedUsers(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := int64(-999999999999999)
-
-	t.Cleanup(func() {
-		_ = RemoveAllApprovedUsers(chatID)
-	})
-
-	for i := range 3 {
-		if err := AddApprovedUser(chatID, int64(100+i), 1, ""); err != nil {
-			t.Fatalf("AddApprovedUser() error = %v", err)
-		}
-	}
-
-	if err := RemoveAllApprovedUsers(chatID); err != nil {
-		t.Fatalf("RemoveAllApprovedUsers() error = %v", err)
-	}
-
-	users := GetApprovedUsers(chatID)
-	if len(users) != 0 {
-		t.Fatalf("expected 0 users after RemoveAllApprovedUsers, got %d", len(users))
-	}
-}
-
 func TestCacheInvalidationOnWrite(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := int64(-999999999999998)
 
 	t.Cleanup(func() {
-		_ = RemoveAllApprovedUsers(chatID)
+		clearApprovalsForTest(chatID)
 	})
 
 	// Add initial user
@@ -201,15 +182,6 @@ func TestCacheInvalidationOnWrite(t *testing.T) {
 		t.Fatalf("cache not invalidated: expected 1 user after remove, got %d", len(users3))
 	}
 
-	// RemoveAll and verify cache invalidated
-	if err := RemoveAllApprovedUsers(chatID); err != nil {
-		t.Fatalf("RemoveAllApprovedUsers() error = %v", err)
-	}
-
-	users4 := GetApprovedUsers(chatID)
-	if len(users4) != 0 {
-		t.Fatalf("cache not invalidated: expected 0 users after clear, got %d", len(users4))
-	}
 }
 
 func TestDuplicateApprovalIsError(t *testing.T) {
@@ -218,7 +190,7 @@ func TestDuplicateApprovalIsError(t *testing.T) {
 	chatID := int64(-999999999999997)
 
 	t.Cleanup(func() {
-		_ = RemoveAllApprovedUsers(chatID)
+		clearApprovalsForTest(chatID)
 	})
 
 	if err := AddApprovedUser(chatID, 7777, 1, ""); err != nil {
