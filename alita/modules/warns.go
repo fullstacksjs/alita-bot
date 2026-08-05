@@ -5,6 +5,7 @@ import (
 	"html"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
@@ -24,81 +25,9 @@ import (
 
 var warnsModule = moduleStruct{moduleName: "Warns"}
 
-// setWarnMode handles the /setwarnmode command to configure the action
-// taken when users reach the warning limit (ban, kick, or mute).
-func (moduleStruct) setWarnMode(b *gotgbot.Bot, ctx *ext.Context) error {
-	msg := ctx.EffectiveMessage
-	// connection status
-	connectedChat := chat_status.IsUserConnected(b, ctx, true, true)
-	if connectedChat == nil {
-		return ext.EndGroups
-	}
-	ctx.EffectiveChat = connectedChat
-	chat := ctx.EffectiveChat
-	args := ctx.Args()[1:]
-	user := chat_status.RequireUser(b, ctx)
-	if user == nil {
-		return ext.EndGroups
-	}
-	tr := i18n.English()
-
-	// permissions check
-	if !chat_status.RequireBotAdmin(b, ctx, nil) {
-		chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_bot_not_admin", "", chat_status.WithReply())
-		return ext.EndGroups
-	}
-	if !chat_status.RequireUserAdmin(b, ctx, nil, user.Id) {
-		chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_user_admin_cmd_error", "chat_status_user_admin_button_error", chat_status.WithReplyFallback())
-		return ext.EndGroups
-	}
-
-	var replyText string
-
-	if len(args) > 0 {
-		switch strings.ToLower(args[0]) {
-		case "ban":
-			if err := warns.SetWarnMode(chat.Id, "ban"); err != nil {
-				log.Errorf("[Warns] SetWarnMode failed for chat %d: %v", chat.Id, err)
-				errText, _ := tr.GetString("common_settings_save_failed")
-				_, _ = msg.Reply(b, errText, formatting.Shtml())
-				return ext.EndGroups
-			}
-			replyText, _ = tr.GetString("warns_mode_updated_ban")
-		case "kick":
-			if err := warns.SetWarnMode(chat.Id, "kick"); err != nil {
-				log.Errorf("[Warns] SetWarnMode failed for chat %d: %v", chat.Id, err)
-				errText, _ := tr.GetString("common_settings_save_failed")
-				_, _ = msg.Reply(b, errText, formatting.Shtml())
-				return ext.EndGroups
-			}
-			replyText, _ = tr.GetString("warns_mode_updated_kick")
-		case "mute":
-			if err := warns.SetWarnMode(chat.Id, "mute"); err != nil {
-				log.Errorf("[Warns] SetWarnMode failed for chat %d: %v", chat.Id, err)
-				errText, _ := tr.GetString("common_settings_save_failed")
-				_, _ = msg.Reply(b, errText, formatting.Shtml())
-				return ext.EndGroups
-			}
-			replyText, _ = tr.GetString("warns_mode_updated_mute")
-		default:
-			temp, _ := tr.GetString("warns_mode_unknown")
-			replyText = fmt.Sprintf(temp, args[0])
-		}
-	} else {
-		replyText, _ = tr.GetString("warns_specify_action")
-	}
-
-	_, err := msg.Reply(b, replyText, formatting.Shtml())
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	return ext.EndGroups
-}
-
 // warnThisUser is a helper function that performs the actual warning process,
-// including limit checking and enforcement of warn mode actions.
-func (moduleStruct) warnThisUser(b *gotgbot.Bot, ctx *ext.Context, userId int64, reason, warnType string) (err error) {
+// including limit checking and enforcement of the fixed three-day ban.
+func (moduleStruct) warnThisUser(b *gotgbot.Bot, ctx *ext.Context, userId int64, reason string) (err error) {
 	var (
 		reply    string
 		keyboard gotgbot.InlineKeyboardMarkup
@@ -137,58 +66,17 @@ func (moduleStruct) warnThisUser(b *gotgbot.Bot, ctx *ext.Context, userId int64,
 		return ext.EndGroups
 	}
 
-	switch warnType {
-	case "dwarn":
-		if msg.ReplyToMessage != nil {
-			if _, deleteErr := msg.ReplyToMessage.Delete(b, nil); deleteErr != nil {
-				log.Errorf("[Warns] Failed to delete message: %v", deleteErr)
-			}
-		}
-	case "swarn":
-		_ = helpers.DeleteMessageWithErrorHandling(b, chat.Id, msg.MessageId)
-	}
-
 	if numWarns >= warnrc.WarnLimit {
-		punished := false
-		switch warnrc.WarnMode {
-		case "kick":
-			err = kickMember(b, chat.Id, userId)
-			temp, _ := tr.GetString("warns_limit_kicked")
-			reply = fmt.Sprintf(temp, numWarns, warnrc.WarnLimit, formatting.MentionHtml(u.Id, u.FirstName))
-			if err != nil {
-				log.Errorf("[warn] warnlimit: kick (%d) - %s", userId, err)
-				return err
-			}
-			punished = true
-		case "mute":
-			_, err = chat.RestrictMember(b, userId,
-				MutedPermissions,
-				nil,
-			)
-			temp, _ := tr.GetString("warns_limit_muted")
-			reply = fmt.Sprintf(temp, numWarns, warnrc.WarnLimit, formatting.MentionHtml(u.Id, u.FirstName))
-			if err != nil {
-				log.Errorf("[warn] warnlimit: mute (%d) - %s", userId, err)
-				return err
-			}
-			punished = true
-		case "ban":
-			_, err = chat.BanMember(b, userId, nil)
-			temp, _ := tr.GetString("warns_limit_banned")
-			reply = fmt.Sprintf(temp, numWarns, warnrc.WarnLimit, formatting.MentionHtml(u.Id, u.FirstName))
-			if err != nil {
-				log.Errorf("[warn] warnlimit: ban (%d) - %s", userId, err)
-				return err
-			}
-			punished = true
-		default:
-			log.Warnf("[Warns] Unknown warn mode: %s", warnrc.WarnMode)
+		untilDate := time.Now().Add(72 * time.Hour).Unix()
+		_, err = chat.BanMember(b, userId, &gotgbot.BanChatMemberOpts{UntilDate: untilDate})
+		temp, _ := tr.GetString("warns_limit_banned")
+		reply = fmt.Sprintf(temp, numWarns, warnrc.WarnLimit, formatting.MentionHtml(u.Id, u.FirstName))
+		if err != nil {
+			log.Errorf("[warn] warnlimit: three-day ban (%d) - %s", userId, err)
+			return err
 		}
-
-		if punished {
-			if _, resetErr := warns.ResetUserWarns(userId, chat.Id); resetErr != nil {
-				return resetErr
-			}
+		if _, resetErr := warns.ResetUserWarns(userId, chat.Id); resetErr != nil {
+			return resetErr
 		}
 		var sb strings.Builder
 		for _, warnReason := range reasons {
@@ -254,10 +142,9 @@ func (moduleStruct) warnThisUser(b *gotgbot.Bot, ctx *ext.Context, userId int64,
 	return ext.EndGroups
 }
 
-// dispatchWarn runs the standard moderation gate check then dispatches a warn
-// action of the given warnType ("warn", "swarn", or "dwarn").
-// Extracted from the three formerly-identical warnUser/sWarnUser/dWarnUser bodies.
-func (m moduleStruct) dispatchWarn(b *gotgbot.Bot, ctx *ext.Context, warnType string) error {
+// warnUser handles the /warn command to issue warnings to users
+// with optional reasons, requiring admin permissions.
+func (m moduleStruct) warnUser(b *gotgbot.Bot, ctx *ext.Context) error {
 	mc, err := buildModerationCtx(&warnsModule, b, ctx)
 	if err != nil {
 		return ext.EndGroups
@@ -301,29 +188,11 @@ func (m moduleStruct) dispatchWarn(b *gotgbot.Bot, ctx *ext.Context, warnType st
 		warnusr = userId
 	}
 
-	return m.warnThisUser(b, ctx, warnusr, reason, warnType)
-}
-
-// warnUser handles the /warn command to issue warnings to users
-// with optional reasons, requiring admin permissions.
-func (m moduleStruct) warnUser(b *gotgbot.Bot, ctx *ext.Context) error {
-	return m.dispatchWarn(b, ctx, "warn")
-}
-
-// sWarnUser handles the /swarn command to silently warn users
-// by deleting the command message, requiring admin permissions.
-func (m moduleStruct) sWarnUser(b *gotgbot.Bot, ctx *ext.Context) error {
-	return m.dispatchWarn(b, ctx, "swarn")
-}
-
-// dWarnUser handles the /dwarn command to warn users and delete
-// the message they replied to, requiring admin permissions.
-func (m moduleStruct) dWarnUser(b *gotgbot.Bot, ctx *ext.Context) error {
-	return m.dispatchWarn(b, ctx, "dwarn")
+	return m.warnThisUser(b, ctx, warnusr, reason)
 }
 
 // warnings handles the /warnings command to display current
-// warning settings including limit and enforcement mode.
+// warning settings including the configurable limit and fixed enforcement policy.
 func (moduleStruct) warnings(b *gotgbot.Bot, ctx *ext.Context) error {
 	chat := ctx.EffectiveChat
 	msg := ctx.EffectiveMessage
@@ -349,7 +218,7 @@ func (moduleStruct) warnings(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	warnrc := warns.GetWarnSetting(chat.Id)
 	temp, _ := tr.GetString("warns_settings_display")
-	text := fmt.Sprintf(temp, warnrc.WarnLimit, warnrc.WarnMode)
+	text := fmt.Sprintf(temp, warnrc.WarnLimit)
 	_, err := msg.Reply(b, text, formatting.Shtml())
 	if err != nil {
 		log.Error(err)
@@ -787,7 +656,7 @@ func (moduleStruct) warnsButtonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.EndGroups
 }
 
-// removeWarn handles /rmwarn and /unwarn commands to remove the latest warning
+// removeWarn handles /rmwarn to remove the latest warning
 // from a specific user. Requires bot and user admin permissions.
 func (moduleStruct) removeWarn(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
@@ -858,18 +727,11 @@ func LoadWarns(dispatcher *ext.Dispatcher) {
 	DefaultHelpRegistry().AbleMap[warnsModule.moduleName] = true
 
 	dispatcher.AddHandler(handlers.NewCommand("warn", warnsModule.warnUser))
-	dispatcher.AddHandler(handlers.NewCommand("swarn", warnsModule.sWarnUser))
-	dispatcher.AddHandler(handlers.NewCommand("dwarn", warnsModule.dWarnUser))
-	// Aliases for reset warnings (docs mention /resetwarn as well)
 	dispatcher.AddHandler(handlers.NewCommand("resetwarns", warnsModule.resetWarns))
-	dispatcher.AddHandler(handlers.NewCommand("resetwarn", warnsModule.resetWarns))
-	// Add commands to remove latest warn for a user
 	dispatcher.AddHandler(handlers.NewCommand("rmwarn", warnsModule.removeWarn))
-	dispatcher.AddHandler(handlers.NewCommand("unwarn", warnsModule.removeWarn))
 	dispatcher.AddHandler(handlers.NewCommand("warns", warnsModule.warns))
 	helpers.AddCmdToDisableable("warns")
 	dispatcher.AddHandler(handlers.NewCommand("setwarnlimit", warnsModule.setWarnLimit))
-	dispatcher.AddHandler(handlers.NewCommand("setwarnmode", warnsModule.setWarnMode))
 	dispatcher.AddHandler(handlers.NewCommand("resetallwarns", warnsModule.resetAllWarns))
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("rmAllChatWarns"), warnsModule.warnsButtonHandler))
 	dispatcher.AddHandler(handlers.NewCommand("warnings", warnsModule.warnings))
@@ -879,6 +741,4 @@ func LoadWarns(dispatcher *ext.Dispatcher) {
 func init() {
 	RegisterLegacyModule("Warns", 200, LoadWarns)
 	RegisterAnonymousAdminHandler("warn", warnsModule.warnUser)
-	RegisterAnonymousAdminHandler("swarn", warnsModule.sWarnUser)
-	RegisterAnonymousAdminHandler("dwarn", warnsModule.dWarnUser)
 }

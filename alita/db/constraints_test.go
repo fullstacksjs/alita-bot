@@ -358,43 +358,6 @@ func TestBlacklistConstraint_ValidActions(t *testing.T) {
 	assert.Error(t, err, "Creating blacklist settings with invalid action should fail due to CHECK constraint")
 }
 
-// TestWarnModeConstraint_ValidModes tests warn_mode constraint
-func TestWarnModeConstraint_ValidModes(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := time.Now().UnixNano()
-	t.Cleanup(func() {
-		_ = DB.Where("chat_id = ?", chatID).Delete(&WarnSettings{}).Error
-	})
-
-	// Test NULL warn_mode (should be valid)
-	settings1 := &WarnSettings{
-		ChatId:   chatID,
-		WarnMode: "",
-	}
-	err := CreateRecord(settings1)
-	assert.NoError(t, err, "Creating warn settings with NULL/empty warn_mode should succeed")
-
-	// Test valid modes
-	validModes := []string{"ban", "kick", "mute", "tban", "tmute"}
-	for _, mode := range validModes {
-		settings := &WarnSettings{
-			ChatId:   chatID + int64(hashCode(mode)),
-			WarnMode: mode,
-		}
-		err := CreateRecord(settings)
-		assert.NoError(t, err, "Creating warn settings with warn_mode '%s' should succeed", mode)
-	}
-
-	// Test invalid mode
-	invalidSettings := &WarnSettings{
-		ChatId:   chatID + 99999,
-		WarnMode: "invalid_mode",
-	}
-	err = CreateRecord(invalidSettings)
-	assert.Error(t, err, "Creating warn settings with invalid warn_mode should fail due to CHECK constraint")
-}
-
 // TestAntifloodActionConstraint_ValidActions tests antiflood action constraint
 func TestAntifloodActionConstraint_ValidActions(t *testing.T) {
 	skipIfNoDb(t)

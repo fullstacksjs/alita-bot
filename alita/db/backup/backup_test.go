@@ -653,20 +653,17 @@ func TestExportImportWarnsRoundTrip(t *testing.T) {
 	})
 
 	require.NoError(t, warns.SetWarnLimit(srcChat, 5))
-	require.NoError(t, warns.SetWarnMode(srcChat, "ban"))
 
 	exported, err := exportWarnsData(srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
 	require.NotNil(t, exported.WarnSettings)
 	assert.Equal(t, 5, exported.WarnSettings.WarnLimit)
-	assert.Equal(t, "ban", exported.WarnSettings.WarnMode)
 
 	payload := map[string]interface{}{
 		"warn_settings": map[string]interface{}{
 			"chat_id":    float64(dstChat),
 			"warn_limit": float64(5),
-			"warn_mode":  "ban",
 		},
 	}
 
@@ -675,7 +672,6 @@ func TestExportImportWarnsRoundTrip(t *testing.T) {
 	settings := warns.GetWarnSetting(dstChat)
 	require.NotNil(t, settings)
 	assert.Equal(t, 5, settings.WarnLimit)
-	assert.Equal(t, "ban", settings.WarnMode)
 }
 
 func TestExportImportBlacklistsRoundTrip(t *testing.T) {
@@ -786,8 +782,6 @@ func TestExportImportConnectionsRoundTrip(t *testing.T) {
 	settings := connections.GetChatConnectionSetting(dstChat)
 	assert.True(t, settings.AllowConnect)
 }
-
-
 
 func TestExportImportAntifloodRoundTrip(t *testing.T) {
 	skipIfNoDb(t)
@@ -986,7 +980,6 @@ func TestImportChatData_SingleModule(t *testing.T) {
 		"warn_settings": map[string]interface{}{
 			"chat_id":    float64(chatID),
 			"warn_limit": float64(7),
-			"warn_mode":  "kick",
 		},
 	}
 
@@ -995,7 +988,6 @@ func TestImportChatData_SingleModule(t *testing.T) {
 	settings := warns.GetWarnSetting(chatID)
 	require.NotNil(t, settings)
 	assert.Equal(t, 7, settings.WarnLimit)
-	assert.Equal(t, "kick", settings.WarnMode)
 }
 
 func TestImportChatData_AllModulesFromBackup(t *testing.T) {
@@ -1099,10 +1091,8 @@ func TestClearModuleData_IndividualModules(t *testing.T) {
 
 	// --- Warns ---
 	require.NoError(t, warns.SetWarnLimit(chatID, 10))
-	require.NoError(t, warns.SetWarnMode(chatID, "ban"))
 	require.NoError(t, ClearModuleData(chatID, BackupModuleWarns))
 	assert.Equal(t, 3, warns.GetWarnSetting(chatID).WarnLimit)
-	assert.Equal(t, "", warns.GetWarnSetting(chatID).WarnMode)
 
 	// --- Locks ---
 	require.NoError(t, locks.UpdateLock(chatID, " stickers", true))
@@ -1128,7 +1118,6 @@ func TestClearModuleData_IndividualModules(t *testing.T) {
 	require.NoError(t, reports.SetChatReportStatus(chatID, false))
 	require.NoError(t, ClearModuleData(chatID, BackupModuleReports))
 	assert.True(t, reports.GetChatReportSettings(chatID).Enabled)
-
 
 	// --- Antiflood ---
 	require.NoError(t, antiflood.SetFlood(chatID, 8))
@@ -1156,7 +1145,6 @@ func TestExportModuleData_EdgeCases(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, blacklistsData)
 	assert.Empty(t, blacklistsData.Entries)
-
 
 	connectionsData, err := exportConnectionsData(chatID)
 	require.NoError(t, err)

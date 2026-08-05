@@ -22,7 +22,6 @@ func TestCallbackHandlersIgnoreMissingCallbackQuery(t *testing.T) {
 	}
 
 	handlers := []callbackHandler{
-		{name: "unapproveAllCallback", want: ext.EndGroups, call: module.unapproveAllCallback},
 		{name: "helpButtonHandler", want: ext.EndGroups, call: module.helpButtonHandler},
 		{name: "botConfig", want: ext.EndGroups, call: module.botConfig},
 		{name: "formattingHandler", want: ext.EndGroups, call: module.formattingHandler},

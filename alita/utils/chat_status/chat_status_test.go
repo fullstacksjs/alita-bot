@@ -24,7 +24,7 @@ func TestIsApproved(t *testing.T) {
 	chatID := int64(-999999999900000)
 
 	t.Cleanup(func() {
-		_ = approvals.RemoveAllApprovedUsers(chatID)
+		_ = approvals.RemoveApprovedUser(chatID, 1001)
 	})
 
 	// Mock bot pointer - IsApproved doesn't actually use it, just needs non-nil

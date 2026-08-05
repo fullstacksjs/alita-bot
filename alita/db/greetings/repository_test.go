@@ -229,39 +229,6 @@ func TestSetShouldCleanService(t *testing.T) {
 }
 
 //nolint:dupl // Test functions intentionally similar for clarity
-func TestSetShouldAutoApprove(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := time.Now().UnixNano()
-	if err := chats.EnsureChatInDb(chatID, "test_greetings"); err != nil {
-		t.Fatalf("EnsureChatInDb() error = %v", err)
-	}
-	t.Cleanup(func() {
-		db.DB.Where("chat_id = ?", chatID).Delete(&models.GreetingSettings{})
-		db.DB.Where("chat_id = ?", chatID).Delete(&models.Chat{})
-	})
-
-	// Ensure initial record exists
-	_ = GetGreetingSettings(chatID)
-
-	if err := SetShouldAutoApprove(chatID, true); err != nil {
-		t.Fatalf("SetShouldAutoApprove(true) failed: %v", err)
-	}
-	settings := GetGreetingSettings(chatID)
-	if !settings.ShouldAutoApprove {
-		t.Fatalf("expected ShouldAutoApprove=true, got false")
-	}
-
-	if err := SetShouldAutoApprove(chatID, false); err != nil {
-		t.Fatalf("SetShouldAutoApprove(false) failed: %v", err)
-	}
-	settings = GetGreetingSettings(chatID)
-	if settings.ShouldAutoApprove {
-		t.Fatalf("expected ShouldAutoApprove=false after reset")
-	}
-}
-
-//nolint:dupl // Test functions intentionally similar for clarity
 func TestSetCleanWelcomeSetting(t *testing.T) {
 	skipIfNoDb(t)
 

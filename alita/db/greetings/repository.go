@@ -169,7 +169,6 @@ func defaultGreetingSettingsAttrs(chatID int64) map[string]any {
 		"goodbye_text":           db.DefaultGoodbye,
 		"goodbye_type":           db.TEXT,
 		"goodbye_btns":           models.ButtonArray{},
-		"auto_approve":           false,
 	}
 }
 
@@ -290,24 +289,6 @@ func SetShouldCleanService(chatID int64, pref bool) error {
 	}
 
 	// Invalidate cache after updating clean service setting
-	cache.DeleteCache(cache.CacheKey("greetings", chatID))
-	return nil
-}
-
-// SetShouldAutoApprove sets whether new members should be automatically approved in the chat.
-// Creates default greeting settings if they don't exist.
-func SetShouldAutoApprove(chatID int64, pref bool) error {
-	updates := map[string]any{
-		"auto_approve": pref,
-	}
-
-	err := upsertGreetingSettings(chatID, updates)
-	if err != nil {
-		log.Errorf("[Database][SetShouldAutoApprove]: %v", err)
-		return err
-	}
-
-	// Invalidate cache after updating auto approve setting
 	cache.DeleteCache(cache.CacheKey("greetings", chatID))
 	return nil
 }

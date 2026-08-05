@@ -16,9 +16,9 @@ import (
 )
 
 // checkWarnSettings retrieves or creates default warn settings for a chat.
-// Returns default settings with warn limit 3 and mute mode if the chat doesn't exist.
+// Returns default settings with warn limit 3 if the chat doesn't exist.
 func checkWarnSettings(chatID int64) (warnrc *models.WarnSettings) {
-	defaultWarnSettings := &models.WarnSettings{ChatId: chatID, WarnLimit: 3, WarnMode: "mute"}
+	defaultWarnSettings := &models.WarnSettings{ChatId: chatID, WarnLimit: 3}
 	warnrc = &models.WarnSettings{}
 	err := db.DB.Where("chat_id = ?", chatID).First(warnrc).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -100,7 +100,7 @@ func WarnUser(userId, chatId int64, reason string) (int, []string, error) {
 			Where("chat_id = ?", chatId).
 			First(warnSettings).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				warnSettings = &models.WarnSettings{ChatId: chatId, WarnLimit: 3, WarnMode: "mute"}
+				warnSettings = &models.WarnSettings{ChatId: chatId, WarnLimit: 3}
 				if err := tx.Create(warnSettings).Error; err != nil {
 					return err
 				}
@@ -255,28 +255,13 @@ func GetWarns(userId, chatId int64) (int, []string) {
 }
 
 // SetWarnLimit updates the warning limit for a specific chat.
-// When users reach this limit, the configured warn mode action is applied.
+// When users reach this limit, the fixed three-day ban is applied.
 func SetWarnLimit(chatId int64, warnLimit int) error {
 	warnrc := checkWarnSettings(chatId)
 	warnrc.WarnLimit = warnLimit
 	err := db.DB.Save(warnrc).Error
 	if err != nil {
 		log.Errorf("[Database] SetWarnLimit: %v", err)
-		return err
-	}
-	// Invalidate cache after successful update
-	cache.DeleteCache(cache.CacheKey("warn_settings", chatId))
-	return nil
-}
-
-// SetWarnMode updates the action to take when users reach the warning limit.
-// Common modes include "mute", "kick", "ban".
-func SetWarnMode(chatId int64, warnMode string) error {
-	warnrc := checkWarnSettings(chatId)
-	warnrc.WarnMode = warnMode
-	err := db.DB.Save(warnrc).Error
-	if err != nil {
-		log.Errorf("[Database] SetWarnMode: %v", err)
 		return err
 	}
 	// Invalidate cache after successful update

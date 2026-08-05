@@ -642,7 +642,7 @@ func (m moduleStruct) blacklistWatcher(b *gotgbot.Bot, ctx *ext.Context) error {
 			return ext.ContinueGroups
 		}
 
-		err = warnsModule.warnThisUser(b, ctx, user.Id(), fmt.Sprintf(blSettings.Reason(), i), "warn")
+		err = warnsModule.warnThisUser(b, ctx, user.Id(), fmt.Sprintf(blSettings.Reason(), i))
 		if err != nil {
 			log.Error(err)
 			return err

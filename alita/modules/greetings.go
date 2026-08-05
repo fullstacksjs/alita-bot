@@ -10,7 +10,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
-	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/chatjoinrequest"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 
@@ -20,7 +19,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/content"
-	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 	"github.com/divkix/Alita_Robot/alita/utils/keyboard"
@@ -462,9 +460,8 @@ func (m moduleStruct) resetGoodbye(bot *gotgbot.Bot, ctx *ext.Context) error {
 	return m.resetGreeting(bot, ctx, false)
 }
 
-// greetingToggleConfig captures the per-command differences between the four
-// near-identical on/off/show greeting toggle handlers (cleanWelcome, cleanGoodbye,
-// delJoined, autoApprove), so they can share a single skeleton in greetingToggle.
+// greetingToggleConfig captures the per-command differences between the three
+// near-identical on/off/show greeting toggle handlers.
 type greetingToggleConfig struct {
 	// getPref returns the current setting; for clean* it also emits the
 	// "settings nil" warn log and returns false in that case.
@@ -482,7 +479,7 @@ type greetingToggleConfig struct {
 	setDisabled  string
 	invalid      string
 	// useMarkdownOnEnabled renders the enabled "show" branch with Smarkdown
-	// instead of Shtml (delJoined/autoApprove quirk); disabled show + all other
+	// instead of Shtml (the delJoined quirk); disabled show + all other
 	// branches always use Shtml.
 	useMarkdownOnEnabled bool
 }
@@ -539,21 +536,6 @@ var delJoinedToggleConfig = greetingToggleConfig{
 	setEnabled:           "greetings_clean_service_enable",
 	setDisabled:          "greetings_clean_service_disable",
 	invalid:              "greetings_clean_service_invalid_option",
-	useMarkdownOnEnabled: true,
-}
-
-var autoApproveToggleConfig = greetingToggleConfig{
-	getPref: func(chatID int64) bool {
-		return greetings.GetGreetingSettings(chatID).ShouldAutoApprove
-	},
-	setPref:              greetings.SetShouldAutoApprove,
-	saveErrLog:           "SetShouldAutoApprove",
-	connectBotAdmin:      true,
-	showEnabled:          "greetings_auto_approve_enabled",
-	showDisabled:         "greetings_auto_approve_disabled",
-	setEnabled:           "greetings_auto_approve_enable",
-	setDisabled:          "greetings_auto_approve_disable",
-	invalid:              "greetings_auto_approve_invalid_option",
 	useMarkdownOnEnabled: true,
 }
 
@@ -834,37 +816,8 @@ func (moduleStruct) cleanService(bot *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.EndGroups
 }
 
-// pendingJoins handles chat join requests.
-// Auto-approves join requests if auto-approve is enabled for the chat.
-func (moduleStruct) pendingJoins(bot *gotgbot.Bot, ctx *ext.Context) error {
-	defer error_handling.RecoverFromPanic("Greetings", "pendingJoins")
-
-	chat := ctx.ChatJoinRequest.Chat
-	user := ctx.ChatJoinRequest.From
-
-	// auto approve join requests if enabled
-	if greetings.GetGreetingSettings(chat.Id).ShouldAutoApprove {
-		if _, err := bot.ApproveChatJoinRequest(chat.Id, user.Id, nil); err != nil {
-			if helpers.IsExpectedTelegramError(err) {
-				log.Debugf("[Greetings] Expected error auto-approving join for user %d in chat %d: %v", user.Id, chat.Id, err)
-			} else {
-				log.Error(err)
-				return err
-			}
-		}
-	}
-
-	return ext.ContinueGroups
-}
-
-// autoApprove toggles automatic approval of chat join requests.
-// Admins can enable/disable auto-approval or check current setting for new join requests.
-func (m moduleStruct) autoApprove(bot *gotgbot.Bot, ctx *ext.Context) error {
-	return m.greetingToggle(bot, ctx, autoApproveToggleConfig)
-}
-
 // LoadGreetings registers all greeting-related handlers with the dispatcher.
-// Sets up welcome/goodbye messages, join requests, and service message cleanup.
+// Sets up welcome/goodbye messages and service message cleanup.
 func LoadGreetings(dispatcher *ext.Dispatcher) {
 	DefaultHelpRegistry().AbleMap[greetingsModule.moduleName] = true
 
@@ -877,13 +830,6 @@ func LoadGreetings(dispatcher *ext.Dispatcher) {
 			},
 		},
 	}
-
-	// this is used when user join, and creates a join request
-	dispatcher.AddHandler(
-		handlers.NewChatJoinRequest(
-			chatjoinrequest.All, greetingsModule.pendingJoins,
-		),
-	)
 
 	// this is for chat member joined the chat
 	dispatcher.AddHandler(
@@ -926,7 +872,6 @@ func LoadGreetings(dispatcher *ext.Dispatcher) {
 	dispatcher.AddHandler(handlers.NewCommand("cleanwelcome", greetingsModule.cleanWelcome))
 	dispatcher.AddHandler(handlers.NewCommand("cleangoodbye", greetingsModule.cleanGoodbye))
 	dispatcher.AddHandler(handlers.NewCommand("cleanservice", greetingsModule.delJoined))
-	dispatcher.AddHandler(handlers.NewCommand("autoapprove", greetingsModule.autoApprove))
 }
 
 func init() {

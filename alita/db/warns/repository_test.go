@@ -134,9 +134,6 @@ func TestCheckWarnSettings_Defaults(t *testing.T) {
 	if settings.WarnLimit != 3 {
 		t.Fatalf("expected default WarnLimit=3, got %d", settings.WarnLimit)
 	}
-	if settings.WarnMode != "mute" {
-		t.Fatalf("expected default WarnMode='mute', got %q", settings.WarnMode)
-	}
 }
 
 func TestWarnUser(t *testing.T) {
@@ -343,30 +340,6 @@ func TestSetWarnLimit(t *testing.T) {
 	}
 }
 
-//nolint:dupl // Test functions intentionally similar for clarity
-func TestSetWarnMode(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := time.Now().UnixNano()
-
-	if err := chats.EnsureChatInDb(chatID, "test-set-warn-mode"); err != nil {
-		t.Fatalf("EnsureChatInDb() error = %v", err)
-	}
-	t.Cleanup(func() {
-		_ = db.DB.Where("chat_id = ?", chatID).Delete(&models.WarnSettings{}).Error
-		_ = db.DB.Where("chat_id = ?", chatID).Delete(&models.Chat{}).Error
-	})
-
-	if err := SetWarnMode(chatID, "ban"); err != nil {
-		t.Fatalf("SetWarnMode failed: %v", err)
-	}
-
-	settings := GetWarnSetting(chatID)
-	if settings.WarnMode != "ban" {
-		t.Fatalf("expected WarnMode='ban', got %q", settings.WarnMode)
-	}
-}
-
 func TestWarnWithEmptyReason(t *testing.T) {
 	skipIfNoDb(t)
 
@@ -559,9 +532,6 @@ func TestWarnUserCreatesSettingsWithDefaultMode(t *testing.T) {
 	var settings models.WarnSettings
 	if err := db.DB.Where("chat_id = ?", chatID).First(&settings).Error; err != nil {
 		t.Fatalf("WarnSettings row not found after WarnUser: %v", err)
-	}
-	if settings.WarnMode != "mute" {
-		t.Fatalf("expected WarnMode='mute' when WarnUser creates the settings row, got %q", settings.WarnMode)
 	}
 }
 
