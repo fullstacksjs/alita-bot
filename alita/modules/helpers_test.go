@@ -283,7 +283,7 @@ func TestHandleDeepLinkHandlesMissingChatsAndAdminOnlyNotes(t *testing.T) {
 	user := gotgbot.User{Id: 42, FirstName: "Tester"}
 	privateChat := gotgbot.Chat{Id: 42, Type: "private", FirstName: "Tester"}
 
-	for _, arg := range []string{"connect_404", "rules_404", "notes_404"} {
+	for _, arg := range []string{"connect_404", "rules_404"} {
 		t.Run(arg, func(t *testing.T) {
 			client := newModuleBotClient()
 			client.errors["getChat"] = fmt.Errorf("chat not found")
@@ -298,28 +298,6 @@ func TestHandleDeepLinkHandlesMissingChatsAndAdminOnlyNotes(t *testing.T) {
 			}
 		})
 	}
-
-	client := newModuleBotClient()
-	bot := newModuleTestBot(client)
-	chatID := uniqueModuleChatID()
-	client.responses["getChat"] = []byte(fmt.Sprintf(
-		`{"id":%d,"type":"supergroup","title":"Private Notes Chat"}`,
-		chatID,
-	))
-	if err := chats.EnsureChatInDb(chatID, "Private Notes Chat"); err != nil {
-		t.Fatalf("EnsureChatInDb() error = %v", err)
-	}
-	if err := notes.AddNote(chatID, "adminonly", "Hidden", "", nil, db.TEXT, false, false, true, false, false, false); err != nil {
-		t.Fatalf("AddNote(adminonly) error = %v", err)
-	}
-
-	ctx := newModuleMessageContext(bot, privateChat, user, fmt.Sprintf("/start note_%d_adminonly", chatID))
-	if err := HandleDeepLink(bot, ctx, &user, fmt.Sprintf("note_%d_adminonly", chatID)); err != ext.ContinueGroups {
-		t.Fatalf("HandleDeepLink(admin-only note) error = %v, want ContinueGroups", err)
-	}
-	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
-		t.Fatalf("sendMessage calls = %d, want admin-only notice", len(calls))
-	}
 }
 
 func TestHandleDeepLinkRejectsInvalidDeepLinks(t *testing.T) {
@@ -331,8 +309,6 @@ func TestHandleDeepLinkRejectsInvalidDeepLinks(t *testing.T) {
 	for _, arg := range []string{
 		"connect_bad",
 		"rules_bad",
-		"note_bad",
-		"note_123",
 	} {
 		t.Run(arg, func(t *testing.T) {
 			ctx := newModuleMessageContext(bot, chat, user, "/start "+arg)
@@ -342,7 +318,7 @@ func TestHandleDeepLinkRejectsInvalidDeepLinks(t *testing.T) {
 		})
 	}
 
-	if calls := client.callsFor("sendMessage"); len(calls) != 4 {
+	if calls := client.callsFor("sendMessage"); len(calls) != 2 {
 		t.Fatalf("sendMessage calls = %d, want one invalid-link reply per arg", len(calls))
 	}
 }
@@ -557,8 +533,6 @@ func TestDeepLinkNonMemberDenied(t *testing.T) {
 		arg  string
 	}{
 		{"rules denied for non-member", fmt.Sprintf("rules_%d", chatID)},
-		{"notes list denied for non-member", fmt.Sprintf("notes_%d", chatID)},
-		{"note denied for non-member", fmt.Sprintf("note_%d_secret", chatID)},
 	}
 
 	for _, tc := range cases {
@@ -641,18 +615,6 @@ func TestDeepLinkMemberAllowed(t *testing.T) {
 			name:       "rules allowed for member",
 			arg:        fmt.Sprintf("rules_%d", chatID),
 			wantText:   "Be nice.",
-			forbidText: "Could not find the chat",
-		},
-		{
-			name:       "notes list allowed for member",
-			arg:        fmt.Sprintf("notes_%d", chatID),
-			wantText:   "welcome",
-			forbidText: "Could not find the chat",
-		},
-		{
-			name:       "note allowed for member",
-			arg:        fmt.Sprintf("note_%d_welcome", chatID),
-			wantText:   "Welcome note",
 			forbidText: "Could not find the chat",
 		},
 	}

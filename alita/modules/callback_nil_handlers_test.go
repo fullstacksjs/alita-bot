@@ -30,7 +30,6 @@ func TestCallbackHandlersIgnoreMissingCallbackQuery(t *testing.T) {
 		{name: "verifyAnonymousAdmin", want: ext.EndGroups, call: verifyAnonymousAdmin},
 		{name: "noteOverWriteHandler", want: ext.EndGroups, call: module.noteOverWriteHandler},
 		{name: "notesButtonHandler", want: ext.EndGroups, call: module.notesButtonHandler},
-		{name: "filtersButtonHandler", want: ext.EndGroups, call: module.filtersButtonHandler},
 		{name: "filterOverWriteHandler", want: ext.EndGroups, call: module.filterOverWriteHandler},
 		{name: "rmWarnButton", want: ext.EndGroups, call: module.rmWarnButton},
 		{name: "warnsButtonHandler", want: ext.EndGroups, call: module.warnsButtonHandler},

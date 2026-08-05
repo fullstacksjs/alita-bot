@@ -371,145 +371,6 @@ func (moduleStruct) filtersList(b *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.EndGroups
 }
 
-/*
-	Used to remove all filters from the current chat
-
-Only owner can remove all filters from the chat
-*/
-// rmAllFilters removes all filters from the current chat with confirmation.
-// Only chat owners can use this command. Shows confirmation buttons before deletion.
-//nolint:dupl // rmAllFilters shares confirmation pattern with notes module by design
-func (moduleStruct) rmAllFilters(b *gotgbot.Bot, ctx *ext.Context) error {
-	chat := ctx.EffectiveChat
-	user := chat_status.RequireUser(b, ctx)
-	if user == nil {
-		return ext.EndGroups
-	}
-	msg := ctx.EffectiveMessage
-	filterKeys := db_filters.GetFiltersList(chat.Id)
-
-	if len(filterKeys) == 0 {
-		tr := i18n.English()
-		text, _ := tr.GetString("filters_none_in_chat")
-		_, err := msg.Reply(b, text, formatting.Shtml())
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-
-		return ext.EndGroups
-	}
-
-	if chat_status.RequireUserOwner(b, ctx, chat, user.Id) {
-		tr := i18n.English()
-		confirmText, _ := tr.GetString("filters_clear_all_confirm")
-		yesText, _ := tr.GetString("common_yes")
-		noText, _ := tr.GetString("common_no")
-		_, err := msg.Reply(b, confirmText,
-			&gotgbot.SendMessageOpts{
-				ReplyMarkup: gotgbot.InlineKeyboardMarkup{
-					InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
-						{
-							{
-								Text:         yesText,
-								CallbackData: encodeCallbackData("rmAllFilters", map[string]string{"a": "yes"}),
-							},
-							{
-								Text:         noText,
-								CallbackData: encodeCallbackData("rmAllFilters", map[string]string{"a": "no"}),
-							},
-						},
-					},
-				},
-			},
-		)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-	}
-
-	return ext.EndGroups
-}
-
-// CallbackQuery handler for rmAllFilters
-// filtersButtonHandler handles callback queries for filter-related button interactions.
-// Processes confirmation dialogs for removing all filters from a chat.
-func (moduleStruct) filtersButtonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
-	query, ok := callbackQueryFromContext(ctx)
-	if !ok {
-		return ext.EndGroups
-	}
-	user := query.From
-	chat := ctx.EffectiveChat
-	if chat == nil {
-		return ext.EndGroups
-	}
-
-	// permission checks
-	if !chat_status.RequireUserOwner(b, ctx, nil, user.Id) {
-		chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_owner_cmd_error", "chat_status_owner_button_error", chat_status.WithReply())
-		return ext.EndGroups
-	}
-
-	tr := i18n.English()
-	response := ""
-	if decoded, ok := decodeCallbackData(query.Data, "rmAllFilters"); ok {
-		response, _ = decoded.Field("a")
-	}
-	if response == "" {
-		log.Warnf("[Filters] Invalid callback data format: %s", query.Data)
-		tr := i18n.English()
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-	var helpText string
-
-	switch response {
-	case "yes":
-		if err := db_filters.RemoveAllFilters(chat.Id); err != nil {
-			helpText, _ = tr.GetString("filters_clear_all_failed")
-			if helpText == "" {
-				helpText = "Failed to remove all Filters from this Chat ❌"
-			}
-		} else {
-			helpText, _ = tr.GetString("filters_clear_all_success")
-		}
-	case "no":
-		helpText, _ = tr.GetString("filters_clear_all_cancelled")
-	default:
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-
-	if query.Message == nil {
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: helpText})
-		return ext.EndGroups
-	}
-
-	_, _, err := query.Message.EditText(b,
-		helpText,
-		nil,
-	)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	_, err = query.Answer(b,
-		&gotgbot.AnswerCallbackQueryOpts{
-			Text: helpText,
-		},
-	)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	return ext.EndGroups
-}
 
 // CallbackQuery handler for filters_overwite. query
 // filterOverWriteHandler handles callback queries for filter overwrite confirmations.
@@ -774,15 +635,10 @@ func LoadFilters(dispatcher *ext.Dispatcher) {
 			},
 		},
 	} // Adds Formatting kb button to Filters Menu
-	dispatcher.AddHandler(handlers.NewCommand("filter", filtersModule.addFilter))
 	dispatcher.AddHandler(handlers.NewCommand("addfilter", filtersModule.addFilter))
-	dispatcher.AddHandler(handlers.NewCommand("stop", filtersModule.rmFilter))
 	dispatcher.AddHandler(handlers.NewCommand("rmfilter", filtersModule.rmFilter))
-	dispatcher.AddHandler(handlers.NewCommand("removefilter", filtersModule.rmFilter))
 	dispatcher.AddHandler(handlers.NewCommand("filters", filtersModule.filtersList))
 	helpers.AddCmdToDisableable("filters")
-	dispatcher.AddHandler(handlers.NewCommand("stopall", filtersModule.rmAllFilters))
-	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("rmAllFilters"), filtersModule.filtersButtonHandler))
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("filters_overwrite"), filtersModule.filterOverWriteHandler))
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(func(msg *gotgbot.Message) bool {
 		return msg.Text != "" || msg.Caption != ""
