@@ -221,11 +221,6 @@ func main() {
 		modules.StopAntiRaidExpiryPoller()
 		return nil
 	})
-	shutdownManager.RegisterHandler(func() error {
-		log.Info("[Shutdown] Stopping captcha lifecycle...")
-		modules.StopCaptchaLifecycle()
-		return nil
-	})
 
 	// Create unified HTTP server for health, metrics, and webhook endpoints
 	httpServer := httpserver.New(config.AppConfig.HTTPPort, appStartTime)
@@ -439,13 +434,9 @@ func dispatcherErrorHandler(_ *gotgbot.Bot, ctx *ext.Context, err error) ext.Dis
 }
 
 // postInit runs shared initialization before either update transport starts.
-// It loads modules, restores captcha state, sets bot commands, and sends the
-// startup notification.
+// It loads modules, sets bot commands, and sends the startup notification.
 func postInit(b *gotgbot.Bot, d *ext.Dispatcher, username string, mode string) {
 	alita.LoadModules(d)
-	if err := modules.StartCaptchaLifecycle(b); err != nil {
-		log.Fatalf("[Captcha] Failed to start lifecycle: %v", err)
-	}
 	log.Infof("[Modules] Loaded modules: %s", alita.ListModules())
 
 	config.AppConfig.WorkingMode = mode

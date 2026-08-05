@@ -906,7 +906,6 @@ func TestModuleNames(t *testing.T) {
 			backup.BackupModuleAntiraid,
 			backup.BackupModuleApprovals,
 			backup.BackupModuleBlacklists,
-			backup.BackupModuleCaptcha,
 			backup.BackupModuleConnections,
 			backup.BackupModuleDisabling,
 			backup.BackupModuleFilters,

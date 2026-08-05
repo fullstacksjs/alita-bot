@@ -18,7 +18,6 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/modules"
 	alitaerrors "github.com/divkix/Alita_Robot/alita/utils/errors"
 )
 
@@ -194,14 +193,10 @@ func TestPostInitSetsCommandsAndStartupMessage(t *testing.T) {
 	previousDB := db.DB
 	testDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
-		t.Fatalf("open captcha lifecycle test database: %v", err)
-	}
-	if err := testDB.AutoMigrate(&db.CaptchaAttempts{}); err != nil {
-		t.Fatalf("migrate captcha lifecycle test database: %v", err)
+		t.Fatalf("open test database: %v", err)
 	}
 	db.DB = testDB
 	t.Cleanup(func() {
-		modules.StopCaptchaLifecycle()
 		db.DB = previousDB
 	})
 

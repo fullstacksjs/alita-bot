@@ -15,7 +15,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/db/captcha"
 	"github.com/divkix/Alita_Robot/alita/db/greetings"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
@@ -702,18 +701,10 @@ func SendWelcomeMessage(bot *gotgbot.Bot, ctx *ext.Context, userID int64, firstN
 	return nil
 }
 
-// newMember handles welcome messages when new members join the chat.
-// Automatically sends welcome message and manages cleanup based on chat settings.
 func (moduleStruct) newMember(bot *gotgbot.Bot, ctx *ext.Context) error {
-	chat := ctx.EffectiveChat
 	newMember := ctx.ChatMember.NewChatMember.MergeChatMember().User
 
-	captchaSettings, err := captcha.GetCaptchaSettings(chat.Id)
-	if err != nil {
-		log.Errorf("[Greetings][newMember] Failed to get captcha settings for chat %d: %v", chat.Id, err)
-		captchaSettings = &db.CaptchaSettings{Enabled: false}
-	}
-	if err := processSingleNewMember(bot, ctx, newMember, captchaSettings != nil && captchaSettings.Enabled); err != nil {
+	if err := processSingleNewMember(bot, ctx, newMember); err != nil {
 		return err
 	}
 	return ext.EndGroups
@@ -732,25 +723,6 @@ func (moduleStruct) leftMember(bot *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	clearRecentJoinProcessing(chat.Id, leftMember.Id)
-
-	// Clean up any pending captcha for the leaving user
-	captchaAttempt, err := captcha.GetCaptchaAttemptIncludingExpired(leftMember.Id, chat.Id)
-	if err != nil {
-		log.Errorf("Failed to get captcha attempt for leaving user %d: %v", leftMember.Id, err)
-	} else if captchaAttempt != nil {
-		// Delete the captcha message if it exists
-		if captchaAttempt.MessageID > 0 {
-			if delErr := helpers.DeleteMessageWithErrorHandling(bot, chat.Id, captchaAttempt.MessageID); delErr != nil {
-				log.Debugf("Failed to delete captcha message for leaving user %d: %v", leftMember.Id, delErr)
-			}
-		}
-		if _, delErr := captcha.DeleteCaptchaAttemptByIDAtomic(captchaAttempt.ID, leftMember.Id, chat.Id); delErr != nil {
-			log.Errorf("Failed to delete captcha attempt for leaving user %d: %v", leftMember.Id, delErr)
-		}
-	}
-	if err := captcha.DeleteMutedUser(leftMember.Id, chat.Id); err != nil {
-		log.Errorf("Failed to delete scheduled captcha unmute for leaving user %d: %v", leftMember.Id, err)
-	}
 
 	// Nil check for GoodbyeSettings
 	if greetPrefs.GoodbyeSettings == nil {
@@ -782,8 +754,8 @@ func (moduleStruct) leftMember(bot *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.EndGroups
 }
 
-// processSingleNewMember handles a single new member joining (mute, captcha, welcome).
-func processSingleNewMember(bot *gotgbot.Bot, ctx *ext.Context, newMember gotgbot.User, captchaEnabled bool) error {
+// processSingleNewMember handles a single new member joining (welcome message).
+func processSingleNewMember(bot *gotgbot.Bot, ctx *ext.Context, newMember gotgbot.User) error {
 	chat := ctx.EffectiveChat
 
 	if newMember.Id == bot.Id {
@@ -795,15 +767,6 @@ func processSingleNewMember(bot *gotgbot.Bot, ctx *ext.Context, newMember gotgbo
 		return nil
 	}
 
-	if captchaEnabled && !chat_status.IsApproved(bot, chat.Id, newMember.Id) {
-		if err := SendCaptcha(bot, ctx, newMember.Id, newMember.FirstName); err != nil {
-			if !errors.Is(err, errCaptchaDisabled) {
-				log.Errorf("Failed to send captcha to user %d: %v", newMember.Id, err)
-			}
-		} else {
-			return nil
-		}
-	}
 	return SendWelcomeMessage(bot, ctx, newMember.Id, newMember.FirstName)
 }
 
@@ -824,14 +787,6 @@ func (moduleStruct) cleanService(bot *gotgbot.Bot, ctx *ext.Context) error {
 
 	// Handle new members joining via invite links or being added
 	if msg.NewChatMembers != nil {
-		captchaSettings, err := captcha.GetCaptchaSettings(chat.Id)
-		if err != nil {
-			log.Errorf("[Greetings][cleanService] Failed to get captcha settings for chat %d: %v", chat.Id, err)
-			// Default to disabled captcha on error
-			captchaSettings = &db.CaptchaSettings{Enabled: false}
-		}
-		captchaEnabled := captchaSettings != nil && captchaSettings.Enabled
-
 		// Process multiple members concurrently for better performance
 		numMembers := len(msg.NewChatMembers)
 		if numMembers > 1 {
@@ -852,7 +807,7 @@ func (moduleStruct) cleanService(bot *gotgbot.Bot, ctx *ext.Context) error {
 					defer wg.Done()
 					defer func() { <-sem }() // Release semaphore
 
-					if err := processSingleNewMember(bot, ctx, member, captchaEnabled); err != nil {
+					if err := processSingleNewMember(bot, ctx, member); err != nil {
 						log.Error(err)
 					}
 				}(newMember)
@@ -861,7 +816,7 @@ func (moduleStruct) cleanService(bot *gotgbot.Bot, ctx *ext.Context) error {
 			wg.Wait()
 		} else if numMembers == 1 {
 			// For single member, process directly without goroutine
-			if err := processSingleNewMember(bot, ctx, msg.NewChatMembers[0], captchaEnabled); err != nil {
+			if err := processSingleNewMember(bot, ctx, msg.NewChatMembers[0]); err != nil {
 				log.Error(err)
 			}
 		}

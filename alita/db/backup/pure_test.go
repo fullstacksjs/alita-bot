@@ -357,7 +357,6 @@ func TestAllExportableModules(t *testing.T) {
 		BackupModuleAntiraid,
 		BackupModuleApprovals,
 		BackupModuleBlacklists,
-		BackupModuleCaptcha,
 		BackupModuleConnections,
 		BackupModuleDisabling,
 		BackupModuleFilters,

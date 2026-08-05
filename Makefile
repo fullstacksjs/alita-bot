@@ -35,8 +35,8 @@ test:
 
 test-postgres-integrity:
 	$(GO_CMD) test -tags testtools -v -race -p 1 -count=1 -timeout 10m \
-		-run '^(TestAllModulesRoundTripEveryMeaningfulField|TestImportChatDataRollsBackEarlierModules|TestImportWarnsCreatesMissingParents|TestLegacyBackupPreservesFieldsThatVersionDidNotExport|TestDeleteCaptchaAttemptByIDAtomicSingleClaim|TestCreateMutedUserUpdatesExistingSchedule|TestCreateMutedUserConcurrentUpsert|TestCreateCaptchaAttemptReplacesExistingChallenge|TestCreateCaptchaAttemptIfEnabledRejectsDisabledChat|TestCaptchaAttemptClaimsSchedulePermissionRestore|TestDeleteMutedUserIfUnchangedPreservesNewerSchedule|TestIncrementCaptchaAttemptsRejectsRefreshedChallenge|TestUpdateChannelClearsAndReassignsNormalizedUsername|TestConcurrentConnectKeepsOneRowPerUser|TestAddFilterConcurrentInsert|TestAddNoteConcurrentInsert|TestGetUserReportSettings_Defaults|TestConcurrentReportBlockListUpdates|TestWarnUserCreatesMissingParentRows|TestConcurrentWarnAndRemovePreserveCount)$$' \
-		./alita/db/backup ./alita/db/captcha ./alita/db/channels ./alita/db/connections \
+		-run '^(TestAllModulesRoundTripEveryMeaningfulField|TestImportChatDataRollsBackEarlierModules|TestImportWarnsCreatesMissingParents|TestLegacyBackupPreservesFieldsThatVersionDidNotExport|TestUpdateChannelClearsAndReassignsNormalizedUsername|TestConcurrentConnectKeepsOneRowPerUser|TestAddFilterConcurrentInsert|TestAddNoteConcurrentInsert|TestGetUserReportSettings_Defaults|TestConcurrentReportBlockListUpdates|TestWarnUserCreatesMissingParentRows|TestConcurrentWarnAndRemovePreserveCount)$$' \
+		./alita/db/backup ./alita/db/channels ./alita/db/connections \
 		./alita/db/filters ./alita/db/notes ./alita/db/reports ./alita/db/warns
 
 check-translations:

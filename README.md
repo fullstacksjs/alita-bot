@@ -8,7 +8,7 @@
 </p>
 
 Alita is a Telegram group-management bot written in Go. It provides moderation,
-filters, notes, greetings, anti-spam, captcha, and backups.
+filters, notes, greetings, anti-spam, and backups.
 
 ## Quick Start
 

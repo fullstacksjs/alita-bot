@@ -74,7 +74,7 @@ approvals_help_msg: |
   × /approved: List all approved users
   × /unapproveall: Remove all approvals (creator only)
 
-  Approved users are exempt from: antiflood, blacklists, locks, CAPTCHA, and antispam.
+  Approved users are exempt from: antiflood, blacklists, locks, and antispam.
 approvals_user_approved: "Approved %s by %s.%s"
 approvals_already_approved: "%s is already approved in this chat."
 approvals_not_approved: "%s is not in the approved list."
@@ -253,38 +253,7 @@ blacklists_unblacklist_no_removed_bl:
 blacklists_unblacklist_removed_bl:
   Successfully removed '%s' from the blacklisted
   words!
-captcha_help_msg:
-  "Protect your group from bots and spammers with CAPTCHA verification!
 
-
-  Force new members to prove they're human by solving a simple challenge before they
-  can send messages.
-
-
-  *Captcha Types:*
-
-  × Math: Solve simple arithmetic problems
-
-  × Text: Identify text shown in an image
-
-
-  *Admin Commands:*
-
-  × /captcha `<on/off>`: Enable or disable captcha verification
-
-  × /captchamode `<math/text>`: Set captcha type (math problems or text recognition)
-
-  × /captchatime `<1-10>`: Set timeout in minutes (default: 2)
-
-  × /captchaaction `<kick/ban/mute>`: Set action for failed verification (default:
-  kick)
-
-  × /captchaattempts `<1-10>`: Set maximum verification attempts (default: 3)
-
-
-  When enabled, new members are automatically muted until they complete the captcha.
-
-  If they fail or timeout, the configured action is taken."
 commonstrings_admin_cache_cache_reloaded: Successfully reloaded admin cache.
 commonstrings_admin_cache_not_found:
   Admincache not found. Ask an admin to use /admincache
@@ -961,56 +930,6 @@ users_help_msg:
 
   Other modules, such as /info, depend on data collected by this module."
 
-# Captcha module strings
-captcha_enable_failed: Failed to enable captcha. Please try again.
-captcha_disable_failed: Failed to disable captcha. Please try again.
-captcha_usage: Please use <code>/captcha on</code> or <code>/captcha off</code>
-captcha_mode_specify: "Please specify a mode: <code>math</code> or <code>text</code>"
-captcha_mode_invalid: Invalid mode. Use <code>math</code> or <code>text</code>
-captcha_mode_failed: Failed to set captcha mode. Please try again.
-captcha_timeout_specify: Please specify timeout in minutes (1-10)
-captcha_timeout_invalid: Invalid timeout. Please use a number between 1 and 10.
-captcha_timeout_failed: Failed to set timeout. Please try again.
-captcha_action_specify: "Please specify an action: <code>kick</code>, <code>ban</code>, or <code>mute</code>"
-captcha_action_invalid: Invalid action. Use <code>kick</code>, <code>ban</code>, or <code>mute</code>
-captcha_action_failed: Failed to set failure action. Please try again.
-captcha_welcome_math_image: |
-  👋 Welcome %s!
-
-  Please solve the problem shown in the image and select the correct answer:
-
-  ⏱ You have <b>%d minutes</b> to answer.
-captcha_welcome_text_image: |
-  👋 Welcome %s!
-
-  Please select the text shown in the image to verify you're human:
-
-  ⏱ You have <b>%d minutes</b> to answer.
-captcha_welcome_math_text: |
-  👋 Welcome %s!
-
-  Please solve this math problem to verify you're human:
-
-  <b>%s = ?</b>
-
-  ⏱ You have <b>%d minutes</b> to answer.
-captcha_failed_verify: Failed to verify. Please contact an admin.
-captcha_wait_refresh: Please wait a few seconds before requesting a new image.
-captcha_failed_generate: Failed to generate new image, try again.
-captcha_failed_send: Failed to send new captcha image.
-captcha_invalid_data: Invalid captcha data
-captcha_invalid_attempt: Invalid attempt ID
-captcha_invalid_user: Invalid user ID
-captcha_error_processing: Error processing answer
-captcha_invalid_refresh: Invalid refresh data
-
-# Captcha max attempts
-captcha_max_attempts_current: "Current maximum verification attempts: <b>%d</b>"
-captcha_max_attempts_invalid: "Invalid value. Please specify a number between 1 and 10."
-captcha_max_attempts_set: "Maximum verification attempts set to <b>%d</b>"
-
-# Captcha auto-unmute
-captcha_user_auto_unmute: "User %s will be automatically unmuted in 24 hours."
 
 # Help module strings
 help_pm_questions: "Hey :) PM me if you have any questions on how to use me!"
@@ -1341,50 +1260,12 @@ greetings_clean_service_enabled: "I should be deleting `user` joined the chat me
 greetings_clean_service_disabled: "I'm currently not deleting joined messages."
 greetings_clean_service_disable: "I won't delete joined messages."
 greetings_clean_service_enable: "I'll try to delete joined messages!"
-greetings_clean_service_invalid_option: "I understand 'on/yes' or 'off/no' only!"
-greetings_captcha_verified_success: "✅ %s has been verified and can now chat!"
 greetings_auto_approve_enabled: "I'm auto-approving new chat join requests now."
 greetings_auto_approve_disabled: "I'm not auto-approving new chat join requests now.."
 greetings_auto_approve_disable: "I won't auto-approve new join requests!"
 greetings_auto_approve_enable: "I'll try to auto-approve new join requests!"
 greetings_auto_approve_invalid_option: "I understand 'on/yes' or 'off/no' only!"
 
-# Captcha module strings (additional)
-captcha_enabled_success: "✅ Captcha verification has been <b>enabled</b>. New members will need to complete a captcha to join."
-captcha_disabled_success: "❌ Captcha verification has been <b>disabled</b>."
-captcha_mode_set_success: "✅ Captcha mode set to <b>%s</b> (%s)"
-captcha_timeout_set_success: "✅ Captcha timeout set to <b>%d minutes</b>"
-captcha_action_set_success: "✅ Captcha failure action set to <b>%s</b>"
-captcha_refresh_button: "🔄 New Image"
-captcha_verified_success_msg: "✅ Verified successfully!"
-captcha_wrong_answer_final: "❌ Wrong answer! You have been %s."
-captcha_wrong_answer_remaining: "❌ Wrong answer! %d attempts remaining."
-captcha_action_kicked: "kicked"
-captcha_action_banned: "banned"
-captcha_action_muted: "muted permanently"
-captcha_refresh_success: "🔄 New captcha sent!"
-captcha_timeout_failure_kicked: "❌ %s failed to complete captcha verification and has been kicked."
-captcha_timeout_failure_banned: "❌ %s failed to complete captcha verification and has been banned."
-captcha_timeout_failure_muted: "❌ %s failed to complete captcha verification and has been muted."
-captcha_timeout_with_messages: "❌ %s failed to complete captcha verification and has been %s.\n\n📝 %d message(s) were attempted but deleted due to incomplete verification."
-captcha_stored_messages_summary: "📝 %s tried to send %d message(s) (%s) before verification"
-captcha_pending_usage: "Usage: <code>/captchapending @user</code> or <code>/captchapending user_id</code>"
-captcha_no_pending_messages: "No pending messages found for this user."
-captcha_clear_usage: "Usage: <code>/captchaclear @user</code> or <code>/captchaclear user_id</code>"
-captcha_clear_failed: "Failed to clear stored messages. Please try again."
-captcha_clear_success: "✅ Cleared all stored messages for user %d"
-captcha_refresh_time_remaining: |
-  👋 Welcome %s!
-
-  Please select the text shown in the image to verify you're human:
-
-  ⏱ You have <b>%d minutes</b> to answer.
-captcha_math_time_remaining: |
-  👋 Welcome %s!
-
-  Please solve the problem shown in the image and select the correct answer:
-
-  ⏱ You have <b>%d minutes</b> to answer.
 
 # Notes module strings
 notes_save_success: "Saved Note <b>%s</b>!\nGet it with <code>#%s</code> or <code>/get %s</code>."
