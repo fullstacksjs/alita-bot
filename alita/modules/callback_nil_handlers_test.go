@@ -23,16 +23,13 @@ func TestCallbackHandlersIgnoreMissingCallbackQuery(t *testing.T) {
 
 	handlers := []callbackHandler{
 		{name: "helpButtonHandler", want: ext.EndGroups, call: module.helpButtonHandler},
-		{name: "botConfig", want: ext.EndGroups, call: module.botConfig},
 		{name: "formattingHandler", want: ext.EndGroups, call: module.formattingHandler},
 		{name: "backupCallbackHandler", want: ext.EndGroups, call: module.backupCallbackHandler},
-		{name: "verifyAnonymousAdmin", want: ext.EndGroups, call: verifyAnonymousAdmin},
 		{name: "noteOverWriteHandler", want: ext.EndGroups, call: module.noteOverWriteHandler},
 		{name: "notesButtonHandler", want: ext.EndGroups, call: module.notesButtonHandler},
 		{name: "filterOverWriteHandler", want: ext.EndGroups, call: module.filterOverWriteHandler},
 		{name: "rmWarnButton", want: ext.EndGroups, call: module.rmWarnButton},
 		{name: "warnsButtonHandler", want: ext.EndGroups, call: module.warnsButtonHandler},
-		{name: "unpinallCallback", want: ext.EndGroups, call: module.unpinallCallback},
 		{name: "connectionButtons", want: ext.EndGroups, call: module.connectionButtons},
 		{name: "buttonHandler", want: ext.EndGroups, call: module.buttonHandler},
 		{name: "antiRaidCallbackHandler", want: ext.ContinueGroups, call: antiRaid.callbackHandler},
@@ -76,7 +73,6 @@ func TestCallbackHandlersRejectMissingCallbackMessage(t *testing.T) {
 		name string
 		call func(*gotgbot.Bot, *ext.Context) error
 	}{
-		{name: "verifyAnonymousAdmin", call: verifyAnonymousAdmin},
 		{name: "connectionButtons", call: module.connectionButtons},
 	}
 

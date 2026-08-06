@@ -8,7 +8,6 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
-	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 
 	log "github.com/sirupsen/logrus"
@@ -20,7 +19,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 
 	"github.com/divkix/Alita_Robot/alita/utils/extraction"
-	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 )
 
 var miscModule = moduleStruct{moduleName: "Misc"}
@@ -87,11 +85,6 @@ func (moduleStruct) getId(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	var builder strings.Builder
 	builder.Grow(512) // Pre-allocate capacity for better performance
-
-	// if command is disabled, return
-	if chat_status.CheckDisabledCmd(b, msg, "id") {
-		return ext.EndGroups
-	}
 
 	if userId != 0 {
 		if msg.ReplyToMessage != nil {
@@ -192,11 +185,6 @@ func (moduleStruct) getId(b *gotgbot.Bot, ctx *ext.Context) error {
 func (moduleStruct) ping(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 
-	// Check if command is disabled
-	if chat_status.CheckDisabledCmd(b, msg, "ping") {
-		return ext.EndGroups
-	}
-
 	tr := i18n.English()
 
 	// Step 1: Measure sendMessage RTT (includes Telegram message processing)
@@ -267,11 +255,6 @@ func (moduleStruct) info(b *gotgbot.Bot, ctx *ext.Context) error {
 		userId = sender.Id()
 	}
 
-	// if command is disabled, return
-	if chat_status.CheckDisabledCmd(b, msg, "info") {
-		return ext.EndGroups
-	}
-
 	username, name, found := extraction.GetUserInfo(userId)
 	var text string
 
@@ -324,33 +307,6 @@ func (moduleStruct) info(b *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.EndGroups
 }
 
-// removeBotKeyboard handles the /removebotkeyboard command to
-// remove stuck bot keyboards from the chat interface.
-func (moduleStruct) removeBotKeyboard(b *gotgbot.Bot, ctx *ext.Context) error {
-	msg := ctx.EffectiveMessage
-	tr := i18n.English()
-	text, _ := tr.GetString("misc_removing_keyboard")
-	rMsg, err := msg.Reply(b,
-		text,
-		&gotgbot.SendMessageOpts{
-			ReplyMarkup: &gotgbot.ReplyKeyboardRemove{
-				RemoveKeyboard: true,
-			},
-		},
-	)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	time.AfterFunc(1*time.Second, func() {
-		defer error_handling.RecoverFromPanic("removeBotKeyboard", "misc")
-		_ = helpers.DeleteMessageWithErrorHandling(b, rMsg.Chat.Id, rMsg.MessageId)
-	})
-
-	return ext.EndGroups
-}
-
 // stat handles the /stat command to display the total number
 // of messages in the current group chat.
 func (moduleStruct) stat(b *gotgbot.Bot, ctx *ext.Context) error {
@@ -358,10 +314,6 @@ func (moduleStruct) stat(b *gotgbot.Bot, ctx *ext.Context) error {
 	chat := ctx.EffectiveChat
 	if !chat_status.RequireGroup(b, ctx, chat) {
 		chat_status.NewPermissionResponder(b).Respond(ctx, "chat_status_group_only_error", "", chat_status.WithReply())
-		return ext.EndGroups
-	}
-	// if command is disabled, return
-	if chat_status.CheckDisabledCmd(b, msg, "stat") {
 		return ext.EndGroups
 	}
 	tr := i18n.English()
@@ -380,15 +332,10 @@ func LoadMisc(dispatcher *ext.Dispatcher) {
 	DefaultHelpRegistry().AbleMap[miscModule.moduleName] = true
 
 	dispatcher.AddHandler(handlers.NewCommand("stat", miscModule.stat))
-	helpers.AddCmdToDisableable("stat")
 	dispatcher.AddHandler(handlers.NewCommand("id", miscModule.getId))
-	helpers.AddCmdToDisableable("id")
 	dispatcher.AddHandler(handlers.NewCommand("tell", miscModule.echomsg))
 	dispatcher.AddHandler(handlers.NewCommand("ping", miscModule.ping))
-	helpers.AddCmdToDisableable("ping")
 	dispatcher.AddHandler(handlers.NewCommand("info", miscModule.info))
-	helpers.AddCmdToDisableable("info")
-	dispatcher.AddHandler(handlers.NewCommand("removebotkeyboard", miscModule.removeBotKeyboard))
 }
 
 func init() {

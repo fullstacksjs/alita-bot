@@ -20,7 +20,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/utils/content"
 	"github.com/divkix/Alita_Robot/alita/utils/extraction"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
-	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 	"github.com/divkix/Alita_Robot/alita/utils/media"
 )
 
@@ -290,10 +289,6 @@ func (moduleStruct) rmNote(b *gotgbot.Bot, ctx *ext.Context) error {
 // notes in the chat with appropriate access controls.
 func (moduleStruct) notesList(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
-	// if command is disabled, return
-	if chat_status.CheckDisabledCmd(b, msg, "notes") {
-		return ext.EndGroups
-	}
 	// connection status
 	connectedChat := chat_status.IsUserConnected(b, ctx, false, true)
 	if connectedChat == nil {
@@ -765,7 +760,6 @@ func LoadNotes(dispatcher *ext.Dispatcher) {
 	dispatcher.AddHandler(handlers.NewCommand("clear", notesModule.rmNote))
 	dispatcher.AddHandler(handlers.NewCommand("rmnote", notesModule.rmNote))
 	dispatcher.AddHandler(handlers.NewCommand("notes", notesModule.notesList))
-	helpers.AddCmdToDisableable("notes")
 	dispatcher.AddHandler(handlers.NewCommand("clearall", notesModule.rmAllNotes))
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("rmAllNotes"), notesModule.notesButtonHandler))
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("notes.overwrite"), notesModule.noteOverWriteHandler))

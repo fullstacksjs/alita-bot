@@ -51,29 +51,6 @@ func TestStatRepliesWithGroupMessageCount(t *testing.T) {
 	}
 }
 
-func TestRemoveBotKeyboardSendsKeyboardRemoval(t *testing.T) {
-	client := newModuleBotClient()
-	bot := newModuleTestBot(client)
-	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Misc Chat"}
-	user := gotgbot.User{Id: 42, FirstName: "Member"}
-	ctx := newModuleMessageContext(bot, chat, user, "/removebotkeyboard")
-
-	if err := miscModule.removeBotKeyboard(bot, ctx); err != ext.EndGroups {
-		t.Fatalf("removeBotKeyboard() error = %v, want EndGroups", err)
-	}
-	calls := client.callsFor("sendMessage")
-	if len(calls) != 1 {
-		t.Fatalf("sendMessage calls = %d, want 1", len(calls))
-	}
-	if _, ok := calls[0].Params["reply_markup"].(*gotgbot.ReplyKeyboardRemove); !ok {
-		t.Fatalf("reply_markup = %#v, want ReplyKeyboardRemove", calls[0].Params["reply_markup"])
-	}
-
-	waitForModuleCondition(t, func() bool {
-		return len(client.callsFor("deleteMessage")) == 1
-	})
-}
-
 func TestEchoMessageRequiresReplyAndContent(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)

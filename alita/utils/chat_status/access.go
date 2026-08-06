@@ -6,7 +6,7 @@ import (
 )
 
 // hasUserPermission checks whether the specified user in a chat satisfies a
-// permission predicate. It handles anonymous admin bypass and member lookup.
+// permission predicate using Telegram membership data.
 func hasUserPermission(
 	b *gotgbot.Bot,
 	ctx *ext.Context,
@@ -20,13 +20,6 @@ func hasUserPermission(
 	chat = extractChatFromContext(ctx, chat)
 	if chat == nil {
 		return false
-	}
-
-	msg := ctx.EffectiveMessage
-	sender := ctx.EffectiveSender
-
-	if isAdmin, shouldReturn := checkAnonAdmin(b, chat, msg, sender); shouldReturn {
-		return isAdmin
 	}
 
 	userMember, ok := getUserMemberWithCache(b, chat, userId, "hasUserPermission")

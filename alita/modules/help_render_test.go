@@ -37,20 +37,10 @@ func helpTestTranslator(t *testing.T) *i18n.Translator {
 	t.Helper()
 
 	tr, err := i18n.NewTestTranslator(`
-help_info_about_header: "About Alita"
-help_bot_intro: "Intro. "
-help_news_channel_text: "News."
+help_bot_intro: "Intro."
 help_pm_intro: "Hi %s. "
 help_all_commands_usage: "Use commands."
-help_button_about_me: "About me"
-help_button_news_channel: "News"
-help_button_support_group: "Support"
-help_button_configuration: "Config"
-common_back_arrow_alt: "Back"
-help_button_about: "About"
-help_button_add_to_chat: "Add"
 help_button_commands_help: "Commands"
-help_button_language: "Language"
 `)
 	if err != nil {
 		t.Fatalf("NewTestTranslator() error = %v", err)
@@ -62,10 +52,7 @@ func TestHelpTextRendering(t *testing.T) {
 	t.Parallel()
 
 	tr := helpTestTranslator(t)
-	if got := getAboutText(tr); got != "About Alita" {
-		t.Fatalf("getAboutText() = %q", got)
-	}
-	if got := getStartHelp(tr); got != "Intro. News." {
+	if got := getStartHelp(tr); got != "Intro." {
 		t.Fatalf("getStartHelp() = %q", got)
 	}
 	if got := getMainHelp(tr, "Div"); got != "Hi Div. Use commands." {
@@ -77,26 +64,12 @@ func TestHelpKeyboardsUseCallbackCodecAndBotUsername(t *testing.T) {
 	t.Parallel()
 
 	tr := helpTestTranslator(t)
-	aboutKb := getAboutKb(tr)
-	if len(aboutKb.InlineKeyboard) != 4 {
-		t.Fatalf("getAboutKb() rows = %d, want 4", len(aboutKb.InlineKeyboard))
-	}
-	if aboutKb.InlineKeyboard[0][0].Text != "About me" {
-		t.Fatalf("about button text = %q", aboutKb.InlineKeyboard[0][0].Text)
-	}
-	if !strings.HasPrefix(aboutKb.InlineKeyboard[0][0].CallbackData, "about|v1|") {
-		t.Fatalf("about callback = %q, want encoded about callback", aboutKb.InlineKeyboard[0][0].CallbackData)
-	}
-
 	startKb := getStartMarkup(tr, "AlitaRobot")
-	if len(startKb.InlineKeyboard) != 3 {
-		t.Fatalf("getStartMarkup() rows = %d, want 3", len(startKb.InlineKeyboard))
+	if len(startKb.InlineKeyboard) != 1 {
+		t.Fatalf("getStartMarkup() rows = %d, want 1", len(startKb.InlineKeyboard))
 	}
-	if got := startKb.InlineKeyboard[1][0].Url; got != "https://t.me/AlitaRobot?startgroup=botstart" {
-		t.Fatalf("add-to-chat URL = %q", got)
-	}
-	if !strings.HasPrefix(startKb.InlineKeyboard[2][0].CallbackData, "helpq|v1|") {
-		t.Fatalf("commands callback = %q, want encoded help callback", startKb.InlineKeyboard[2][0].CallbackData)
+	if !strings.HasPrefix(startKb.InlineKeyboard[0][0].CallbackData, "helpq|v1|") {
+		t.Fatalf("commands callback = %q, want encoded help callback", startKb.InlineKeyboard[0][0].CallbackData)
 	}
 }
 

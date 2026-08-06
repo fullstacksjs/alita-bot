@@ -25,7 +25,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
-	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 	"github.com/divkix/Alita_Robot/alita/utils/ratelimit"
 )
 
@@ -910,10 +909,6 @@ func LoadBackup(dispatcher *ext.Dispatcher) {
 		callbackquery.Prefix("backup"),
 		backupModule.backupCallbackHandler,
 	))
-
-	// Add disableable commands
-	helpers.AddCmdToDisableable("export")
-	helpers.AddCmdToDisableable("import")
 
 	log.Info("[Backup] Module loaded successfully")
 }

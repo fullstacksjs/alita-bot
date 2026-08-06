@@ -8,7 +8,6 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
-	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/divkix/Alita_Robot/alita/i18n"
@@ -17,9 +16,9 @@ import (
 
 var formattingModule = moduleStruct{moduleName: "Formatting"}
 
-// markdownHelp provides markdown formatting help and examples to users.
+// formattingHelp provides formatting help and examples to users.
 // Shows formatting options in private messages or sends a button to open help in PM.
-func (m moduleStruct) markdownHelp(b *gotgbot.Bot, ctx *ext.Context) error {
+func (m moduleStruct) formattingHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	tr := i18n.English()
 
@@ -170,7 +169,7 @@ func (m moduleStruct) formattingHandler(b *gotgbot.Bot, ctx *ext.Context) error 
 
 	backText, _ := tr.GetString("common_back")
 
-	// Edit the help as per sub-module selected in markdownhelp
+	// Edit the help for the selected formatting topic.
 	opts := &gotgbot.EditMessageTextOpts{
 		MessageId: msg.GetMessageId(),
 		ReplyMarkup: gotgbot.InlineKeyboardMarkup{
@@ -199,12 +198,11 @@ func (m moduleStruct) formattingHandler(b *gotgbot.Bot, ctx *ext.Context) error 
 	return ext.EndGroups
 }
 
-// LoadMkdCmd registers markdown and formatting command handlers with the dispatcher.
-// Sets up help commands and callback handlers for formatting assistance.
+// LoadMkdCmd registers the formatting command and callback handlers.
 func LoadMkdCmd(dispatcher *ext.Dispatcher) {
 	DefaultHelpRegistry().AbleMap[formattingModule.moduleName] = true
 	DefaultHelpRegistry().helpableKb[formattingModule.moduleName] = formattingModule.genFormattingKb()
-	helpers.MultiCommand(dispatcher, []string{"markdownhelp", "formatting"}, formattingModule.markdownHelp)
+	dispatcher.AddHandler(handlers.NewCommand("formatting", formattingModule.formattingHelp))
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("formatting"), formattingModule.formattingHandler))
 }
 

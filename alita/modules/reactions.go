@@ -43,11 +43,7 @@ func LoadReactions(dispatcher *ext.Dispatcher) {
 	// Message watcher for reactions (positive handler group for monitoring)
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(message.All, reactionsModule.checkReactions), reactionsModule.handlerGroup)
 
-	// Register module as disableable
 	DefaultHelpRegistry().AbleMap[reactionsModule.moduleName] = true
-
-	// Add help text
-	DefaultHelpRegistry().AltHelpOptions["Reactions"] = []string{"reaction"}
 	log.Info("[Modules] Reactions module loaded")
 }
 

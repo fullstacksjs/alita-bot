@@ -58,7 +58,6 @@ type CommandDescriptor struct {
 	Aliases        []string
 	Group          int
 	RequiredChecks []CheckFunc
-	Disableable    bool
 }
 
 // WrapCommand registers a command with the dispatcher, running all declared
@@ -126,9 +125,6 @@ func register(dispatcher *ext.Dispatcher, desc CommandDescriptor, h handlers.Res
 		} else {
 			dispatcher.AddHandler(handlers.NewCommand(c, h))
 		}
-		if desc.Disableable {
-			AddCmdToDisableable(c)
-		}
 	}
 }
 
@@ -136,17 +132,6 @@ func register(dispatcher *ext.Dispatcher, desc CommandDescriptor, h handlers.Res
 // All wrappers call pure permission checks and explicitly invoke
 // PermissionResponder when checks fail. This absorbs the messaging
 // responsibility so module handlers using the pipeline need no changes.
-
-// CheckDisabled returns a CheckFunc that blocks the command when
-// chat_status.CheckDisabledCmd reports it disabled in the current chat.
-func CheckDisabled(cmdName string) CheckFunc {
-	return func(c *CommandContext) bool {
-		if c.Msg == nil || c.Bot == nil {
-			return false
-		}
-		return !chat_status.CheckDisabledCmd(c.Bot, c.Msg, cmdName)
-	}
-}
 
 // RequireGroup returns a CheckFunc that ensures the chat is a group
 // (not private). If the check fails, an error message is sent automatically.
