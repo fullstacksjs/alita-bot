@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 type MigrationRunner struct {
 	db             *gorm.DB
 	migrationsPath string
+	fsys           fs.FS
 }
 
 // SchemaMigration represents a migration record in the database
@@ -42,6 +44,15 @@ func NewMigrationRunner(db *gorm.DB) *MigrationRunner {
 	return &MigrationRunner{
 		db:             db,
 		migrationsPath: config.AppConfig.MigrationsPath,
+	}
+}
+
+// NewSQLiteMigrationRunner creates a runner for embedded SQLite baseline migrations
+func NewSQLiteMigrationRunner(db *gorm.DB) *MigrationRunner {
+	return &MigrationRunner{
+		db:             db,
+		migrationsPath: "sqlite",
+		fsys:           SQLiteMigrationsFS,
 	}
 }
 
@@ -77,7 +88,7 @@ func (m *MigrationRunner) RunMigrations() error {
 
 		// Read the raw file content once so we can checksum it regardless of
 		// whether the migration is pending or already applied.
-		content, err := os.ReadFile(file) // #nosec G304 - path comes from getMigrationFiles which validates the directory
+		content, err := m.readMigrationFile(file)
 		if err != nil {
 			return fmt.Errorf("failed to read migration file %s: %w", version, err)
 		}
@@ -126,6 +137,14 @@ func (m *MigrationRunner) RunMigrations() error {
 	return nil
 }
 
+// readMigrationFile reads migration content from fsys if set, or from os disk.
+func (m *MigrationRunner) readMigrationFile(filepath string) ([]byte, error) {
+	if m.fsys != nil {
+		return fs.ReadFile(m.fsys, filepath)
+	}
+	return os.ReadFile(filepath) // #nosec G304 - path comes from getMigrationFiles
+}
+
 // ensureMigrationsTable creates the schema_migrations table if it doesn't exist,
 // and idempotently adds the checksum column so existing deployments are upgraded
 // without re-running migrations.
@@ -133,13 +152,20 @@ func (m *MigrationRunner) ensureMigrationsTable() error {
 	createSQL := `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version VARCHAR(255) PRIMARY KEY,
-			executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			checksum VARCHAR(64)
 		)
 	`
 	if err := m.db.Exec(createSQL).Error; err != nil {
 		return err
 	}
-	// Add the checksum column to existing tables.  IF NOT EXISTS prevents
+	if m.db.Dialector != nil && m.db.Dialector.Name() == "sqlite" {
+		if !m.db.Migrator().HasColumn(&SchemaMigration{}, "checksum") {
+			return m.db.Exec("ALTER TABLE schema_migrations ADD COLUMN checksum VARCHAR(64)").Error
+		}
+		return nil
+	}
+	// Add the checksum column to existing tables. IF NOT EXISTS prevents
 	// errors on fresh tables that were just created above.
 	alterSQL := `ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum VARCHAR(64)`
 	return m.db.Exec(alterSQL).Error
@@ -147,6 +173,21 @@ func (m *MigrationRunner) ensureMigrationsTable() error {
 
 // getMigrationFiles returns a sorted list of migration SQL files
 func (m *MigrationRunner) getMigrationFiles() ([]string, error) {
+	if m.fsys != nil {
+		entries, err := fs.ReadDir(m.fsys, m.migrationsPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read embedded migrations dir: %w", err)
+		}
+		var files []string
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") && !strings.HasSuffix(entry.Name(), ".rollback.sql") {
+				files = append(files, path.Join(m.migrationsPath, entry.Name()))
+			}
+		}
+		slices.Sort(files)
+		return files, nil
+	}
+
 	// Check if migrations path exists
 	if _, err := os.Stat(m.migrationsPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("migrations path does not exist: %s", m.migrationsPath)
@@ -418,19 +459,25 @@ func isTransactionControlStatement(stmt string) bool {
 
 // applyMigration reads, cleans, and applies a single migration file
 func (m *MigrationRunner) applyMigration(filepath, version string) error {
-	// Validate that the file path is within the migrations directory to prevent path traversal
-	if !strings.HasPrefix(filepath, m.migrationsPath) {
-		return fmt.Errorf("invalid migration file path: %s", filepath)
-	}
+	if m.fsys != nil {
+		if !strings.HasPrefix(filepath, m.migrationsPath) {
+			return fmt.Errorf("invalid embedded migration file path: %s", filepath)
+		}
+	} else {
+		// Validate that the file path is within the migrations directory to prevent path traversal
+		if !strings.HasPrefix(filepath, m.migrationsPath) {
+			return fmt.Errorf("invalid migration file path: %s", filepath)
+		}
 
-	// Additional validation: ensure the path doesn't contain suspicious patterns
-	cleanPath := path.Clean(filepath)
-	if cleanPath != filepath || strings.Contains(filepath, "..") {
-		return fmt.Errorf("potentially unsafe migration file path: %s", filepath)
+		// Additional validation: ensure the path doesn't contain suspicious patterns
+		cleanPath := path.Clean(filepath)
+		if cleanPath != filepath || strings.Contains(filepath, "..") {
+			return fmt.Errorf("potentially unsafe migration file path: %s", filepath)
+		}
 	}
 
 	// Read migration file
-	content, err := os.ReadFile(filepath) // #nosec G304 - path validation performed above
+	content, err := m.readMigrationFile(filepath)
 	if err != nil {
 		return fmt.Errorf("failed to read migration file: %w", err)
 	}

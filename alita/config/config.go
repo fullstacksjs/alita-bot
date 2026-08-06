@@ -114,6 +114,7 @@ type Config struct {
 
 	// Database configuration
 	DatabaseURL string `validate:"required"`
+	SQLitePath  string
 
 	// Database connection pool configuration
 	DBMaxIdleConns       int `validate:"min=1,max=100"`
@@ -188,7 +189,7 @@ func ValidateConfig(cfg *Config) error {
 	if cfg.MessageDump == 0 {
 		return fmt.Errorf("MESSAGE_DUMP is required and must be greater than 0")
 	}
-	if cfg.DatabaseURL == "" {
+	if cfg.DatabaseURL == "" && cfg.SQLitePath == "" {
 		return fmt.Errorf("DATABASE_URL is required")
 	}
 	if cfg.RedisAddress == "" {
@@ -253,6 +254,7 @@ func LoadConfig() (*Config, error) {
 
 		// Database configuration
 		DatabaseURL: os.Getenv("DATABASE_URL"),
+		SQLitePath:  os.Getenv("SQLITE_PATH"),
 
 		// Database connection pool configuration
 		DBMaxIdleConns:       typeConvertor{str: os.Getenv("DB_MAX_IDLE_CONNS")}.Int(),
@@ -408,8 +410,9 @@ func (cfg *Config) setDefaults() {
 		}
 	}
 
-	// DATABASE_URL is required - no default for security
-	// This ensures production systems explicitly configure their database connection
+	if cfg.DatabaseURL == "" && cfg.SQLitePath != "" {
+		cfg.DatabaseURL = cfg.SQLitePath
+	}
 
 	// Set performance optimization defaults (enabled by default for better performance)
 	if cfg.HTTPMaxIdleConns == 0 {
