@@ -7,7 +7,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/divkix/Alita_Robot/alita/db/admin"
-	"github.com/divkix/Alita_Robot/alita/db/devs"
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 	"github.com/divkix/Alita_Robot/alita/utils/helpers"
@@ -248,10 +247,8 @@ func buildPromoteOpts(botMember, promoterMember gotgbot.ChatMember, user *gotgbo
 	bMem := botMember.MergeChatMember()
 	pMem := promoterMember.MergeChatMember()
 
-	teamMem := devs.GetTeamMemInfo(user.Id)
-	teamMemInfo := teamMem.Sudo || teamMem.IsDev
-	isPromoterOwner := chat_status.RequireUserOwner(c.Bot, c.Ctx, nil, user.Id)
-	checkCommonPerms := isPromoterOwner || teamMemInfo
+	// Promotion is group-scoped, so the bypass relies only on Telegram chat ownership.
+	checkCommonPerms := chat_status.RequireUserOwner(c.Bot, c.Ctx, nil, user.Id)
 
 	return &gotgbot.PromoteChatMemberOpts{
 		CanPostMessages:     canGrantPerm(bMem.CanPostMessages, pMem.CanPostMessages, checkCommonPerms),

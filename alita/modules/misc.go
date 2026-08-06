@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/divkix/Alita_Robot/alita/db/devs"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
@@ -312,10 +311,6 @@ func (moduleStruct) info(b *gotgbot.Bot, ctx *ext.Context) error {
 			if user.Id == config.AppConfig.OwnerId {
 				ownerText, _ := tr.GetString("misc_owner_info")
 				text += "\n" + ownerText
-			}
-			if devs.GetTeamMemInfo(user.Id).IsDev {
-				devText, _ := tr.GetString("misc_dev_info")
-				text += "\n" + devText
 			}
 		}
 	}

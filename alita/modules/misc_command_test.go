@@ -11,7 +11,6 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db/channels"
-	"github.com/divkix/Alita_Robot/alita/db/devs"
 	"github.com/divkix/Alita_Robot/alita/db/user"
 )
 
@@ -193,7 +192,7 @@ func TestInfoRepliesForUnknownNumericUser(t *testing.T) {
 	}
 }
 
-func TestInfoRepliesForKnownUserWithRoles(t *testing.T) {
+func TestInfoRepliesForKnownOwner(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Misc Chat"}
@@ -203,14 +202,10 @@ func TestInfoRepliesForKnownUserWithRoles(t *testing.T) {
 	if err := user.EnsureUserInDb(requireUserID, "knownuser", "Known User"); err != nil {
 		t.Fatalf("EnsureUserInDb() error = %v", err)
 	}
-	if err := devs.AddDev(requireUserID); err != nil {
-		t.Fatalf("AddDev() error = %v", err)
-	}
 	previousOwnerID := config.AppConfig.OwnerId
 	config.AppConfig.OwnerId = requireUserID
 	t.Cleanup(func() {
 		config.AppConfig.OwnerId = previousOwnerID
-		_ = devs.RemDev(requireUserID)
 	})
 
 	ctx := newModuleMessageContext(bot, chat, u, "/info "+strconv.FormatInt(requireUserID, 10))
