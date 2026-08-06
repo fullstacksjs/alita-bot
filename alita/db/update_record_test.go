@@ -15,9 +15,9 @@ func TestUpdateRecordReturnsErrorOnNoMatch(t *testing.T) {
 	nonExistentChatID := time.Now().UnixNano()
 
 	err := UpdateRecord(
-		&LockSettings{},
-		LockSettings{ChatId: nonExistentChatID, LockType: "sticker"},
-		map[string]any{"locked": true},
+		&AntifloodSettings{},
+		AntifloodSettings{ChatId: nonExistentChatID},
+		map[string]any{"flood_limit": 5},
 	)
 	if err == nil {
 		t.Fatalf("expected error for non-existent record, got nil")
@@ -33,9 +33,9 @@ func TestUpdateRecordWithZeroValuesReturnsErrorOnNoMatch(t *testing.T) {
 	nonExistentChatID := time.Now().UnixNano()
 
 	err := UpdateRecordWithZeroValues(
-		&LockSettings{},
-		LockSettings{ChatId: nonExistentChatID, LockType: "url"},
-		map[string]any{"locked": false},
+		&AntifloodSettings{},
+		AntifloodSettings{ChatId: nonExistentChatID},
+		map[string]any{"flood_limit": 0},
 	)
 	if err == nil {
 		t.Fatalf("expected error for non-existent record, got nil")
@@ -49,33 +49,32 @@ func TestUpdateRecordWithZeroValuesUpdatesZeroValues(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
-	perm := "photo"
 
 	t.Cleanup(func() {
-		_ = DB.Where("chat_id = ? AND lock_type = ?", chatID, perm).Delete(&LockSettings{}).Error
+		_ = DB.Where("chat_id = ?", chatID).Delete(&AntifloodSettings{}).Error
 	})
 
-	// Create a record with Locked=true
-	if err := DB.Create(&LockSettings{ChatId: chatID, LockType: perm, Locked: true}).Error; err != nil {
+	// Create a record with Limit=5
+	if err := DB.Create(&AntifloodSettings{ChatId: chatID, Limit: 5, Action: "ban"}).Error; err != nil {
 		t.Fatalf("failed to create test record: %v", err)
 	}
 
-	// Update to Locked=false using UpdateRecordWithZeroValues
+	// Update to Limit=0 using UpdateRecordWithZeroValues
 	err := UpdateRecordWithZeroValues(
-		&LockSettings{},
-		LockSettings{ChatId: chatID, LockType: perm},
-		map[string]any{"locked": false},
+		&AntifloodSettings{},
+		AntifloodSettings{ChatId: chatID},
+		map[string]any{"flood_limit": 0},
 	)
 	if err != nil {
 		t.Fatalf("UpdateRecordWithZeroValues() error = %v", err)
 	}
 
-	var lock LockSettings
-	if err := DB.Where("chat_id = ? AND lock_type = ?", chatID, perm).First(&lock).Error; err != nil {
+	var flood AntifloodSettings
+	if err := DB.Where("chat_id = ?", chatID).First(&flood).Error; err != nil {
 		t.Fatalf("query error: %v", err)
 	}
-	if lock.Locked {
-		t.Fatalf("expected Locked=false after zero-value update, got true")
+	if flood.Limit != 0 {
+		t.Fatalf("expected Limit=0 after zero-value update, got %d", flood.Limit)
 	}
 }
 
@@ -83,32 +82,31 @@ func TestUpdateRecordSucceedsWhenRowsAffected(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
-	perm := "forward"
 
 	t.Cleanup(func() {
-		_ = DB.Where("chat_id = ? AND lock_type = ?", chatID, perm).Delete(&LockSettings{}).Error
+		_ = DB.Where("chat_id = ?", chatID).Delete(&AntifloodSettings{}).Error
 	})
 
 	// Create a record
-	if err := DB.Create(&LockSettings{ChatId: chatID, LockType: perm, Locked: false}).Error; err != nil {
+	if err := DB.Create(&AntifloodSettings{ChatId: chatID, Limit: 0, Action: "mute"}).Error; err != nil {
 		t.Fatalf("failed to create test record: %v", err)
 	}
 
 	// Update it — should succeed (rows affected > 0)
 	err := UpdateRecord(
-		&LockSettings{},
-		LockSettings{ChatId: chatID, LockType: perm},
-		map[string]any{"locked": true},
+		&AntifloodSettings{},
+		AntifloodSettings{ChatId: chatID},
+		map[string]any{"flood_limit": 10},
 	)
 	if err != nil {
 		t.Fatalf("UpdateRecord() error = %v, expected nil", err)
 	}
 
-	var lock LockSettings
-	if err := DB.Where("chat_id = ? AND lock_type = ?", chatID, perm).First(&lock).Error; err != nil {
+	var flood AntifloodSettings
+	if err := DB.Where("chat_id = ?", chatID).First(&flood).Error; err != nil {
 		t.Fatalf("query error: %v", err)
 	}
-	if !lock.Locked {
-		t.Fatalf("expected Locked=true after update, got false")
+	if flood.Limit != 10 {
+		t.Fatalf("expected Limit=10 after update, got %d", flood.Limit)
 	}
 }

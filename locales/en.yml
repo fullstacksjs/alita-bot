@@ -574,28 +574,6 @@ help_help_msg:
   × /about: Show bot information, version, and useful links.
 
   × /donate: Show donation information for supporting the project."
-locks_help_msg: "*Admin only*:
-
-  × /lock `<permission>`: Lock Chat permission..
-
-  × /unlock `<permission>`: Unlock Chat permission.
-
-  × /locks: View Chat permission.
-
-  × /locktypes: Check available lock types!
-
-
-  Locks can be used to restrict a group's users.
-
-  Locking URLs will auto-delete all messages with URLs, locking stickers will delete
-  all stickers, etc.
-
-  Locking bots will stop non-admins from adding bots to the chat.
-
-
-  **Example:**
-
-  `/lock media`: this locks all the media messages in the chat."
 misc_help_msg:
   "× /info: Get your user info, which can be used as a reply or by passing
   a User Id or Username.
@@ -946,23 +924,6 @@ warns_reset_all_confirm: Are you sure you want to remove all the warns of all th
 warns_reset_all_success: Removed all warns of all the users in this chat !
 warns_reset_all_cancelled: Cancelled the removal of all the warns of all the users in this chat !
 warns_reset_all_final: Removed all warns of all users in this chat.
-
-# Locks module strings
-locks_locktypes_header: "Locks:
-  - "
-locks_what_to_lock: What do you want to lock? Check /locktypes for available options.
-locks_invalid_lock_type: "`%s` is not a correct lock type, check /locktypes."
-locks_locked_successfully: "Locked the following in this group:
-  - %s"
-locks_unlocked_successfully: "Un-Locked the following in this group:
-  - %s"
-locks_lock_failed: "Failed to lock: %s. Please try again later."
-locks_unlock_failed: "Failed to unlock: %s. Please try again later."
-locks_what_to_unlock: What do you want to unlock? Check /locktypes for available options.
-locks_current_locks_header: "These are the locks in this chat:"
-locks_bot_lock_no_permission: I see a bot, and I've been told to stop them joining... but I'm not admin!
-locks_bot_lock_no_ban_permission: I see a bot, and I've been told to stop them joining... but I don't have permission to ban them!
-locks_bot_only_admins: Only admins are allowed to add bots to this chat!
 
 # Pins module strings
 pins_unpin_not_pinned: Replied message is not a pinned message.
@@ -1456,19 +1417,6 @@ db_type_assertion_failed: "type assertion to []byte failed"
 # Default button texts
 button_rules_default: "Rules"
 
-# Antispam module strings (no commands - automatic background protection)
-antispam_help_msg: |
-  The antispam module provides automatic, behind-the-scenes spam protection for your groups.
-
-  Unlike other modules, it operates automatically without requiring any user commands.
-
-  <b>How It Works:</b>
-  Per-user-per-chat rate limiting prevents spam automatically.
-  • <b>Rate Limit:</b> 18 messages per second per user per chat
-  • <b>Automatic:</b> No configuration required - works out of the box
-  • <b>Transparent:</b> Silently drops excessive messages without disrupting normal users
-  • <b>Per-User Tracking:</b> Busy groups with many legitimate users won't trigger false positives
-
 # Issue #628 remediation keys
 blacklists_set_bl_action_update_failed: "Failed to update blacklist action. Please try again."
 filters_overwrite_token_failed: "Failed to create overwrite confirmation. Please try again."
@@ -1518,7 +1466,7 @@ backup_help_msg: |
   • /import - Reply to a backup file to restore settings
   • /import notes filters - Import only specific modules
   • /reset - Reset all settings to default
-  • /reset warnings locks - Reset specific modules only
+  • /reset warnings filters - Reset specific modules only
 
   <b>Rate Limits:</b>
   • Export: 1 per 5 minutes
@@ -1605,7 +1553,6 @@ backup_module_connections: "Connections"
 backup_module_disabling: "Disabled Commands"
 backup_module_filters: "Filters"
 backup_module_greetings: "Greetings"
-backup_module_locks: "Locks"
 backup_module_notes: "Notes"
 backup_module_pins: "Pin Settings"
 backup_module_rules: "Rules"

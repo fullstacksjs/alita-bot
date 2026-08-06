@@ -55,7 +55,6 @@ func TestMain(m *testing.M) {
 			&models.DisableSettings{},
 			&models.DisableChatSettings{},
 			&models.RulesSettings{},
-			&models.LockSettings{},
 			&models.NotesSettings{},
 			&models.Notes{},
 			&models.CaptchaSettings{},

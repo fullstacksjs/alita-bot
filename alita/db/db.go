@@ -39,7 +39,6 @@ type (
 	DisableSettings        = models.DisableSettings
 	DisableChatSettings    = models.DisableChatSettings
 	RulesSettings          = models.RulesSettings
-	LockSettings           = models.LockSettings
 	NotesSettings          = models.NotesSettings
 	Notes                  = models.Notes
 	ApprovedUsers          = models.ApprovedUsers
