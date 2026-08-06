@@ -48,19 +48,26 @@ func (moduleStruct) chatInfo(b *gotgbot.Bot, ctx *ext.Context) error {
 		replyText, _ = tr.GetString("owner_specify_chat")
 	} else {
 		_chatId := args[1]
-		chatId, _ := strconv.Atoi(_chatId)
-		chat, err := b.GetChat(int64(chatId), nil)
+		chatId, _ := strconv.ParseInt(_chatId, 10, 64)
+		chat, err := b.GetChat(chatId, nil)
 		if err != nil {
-			_, _ = msg.Reply(b, err.Error(), nil)
-			return ext.EndGroups
+			dbChat := chats.GetChatSettings(chatId)
+			if dbChat != nil && dbChat.ChatId != 0 {
+				tr := i18n.English()
+				textTemplate, _ := tr.GetString("owner_chat_info")
+				replyText = fmt.Sprintf(textTemplate, dbChat.ChatName, dbChat.ChatId, len(dbChat.Users), "")
+			} else {
+				_, _ = msg.Reply(b, err.Error(), nil)
+				return ext.EndGroups
+			}
+		} else {
+			_chat := chat.ToChat()
+			gChat := &_chat
+			con, _ := gChat.GetMemberCount(b, nil)
+			tr := i18n.English()
+			textTemplate, _ := tr.GetString("owner_chat_info")
+			replyText = fmt.Sprintf(textTemplate, chat.Title, chat.Id, con, chat.InviteLink)
 		}
-		// need to convert chat to group chat to use GetMemberCount
-		_chat := chat.ToChat()
-		gChat := &_chat
-		con, _ := gChat.GetMemberCount(b, nil)
-		tr := i18n.English()
-		textTemplate, _ := tr.GetString("owner_chat_info")
-		replyText = fmt.Sprintf(textTemplate, chat.Title, chat.Id, con, chat.InviteLink)
 	}
 
 	_, err := msg.Reply(b, replyText, formatting.Shtml())
@@ -98,7 +105,7 @@ func (moduleStruct) chatList(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	var sb strings.Builder
 	for chatId, v := range allChats {
-		if !v.IsInactive {
+		if chats.IsChatActive(&v) {
 			fmt.Fprintf(&sb, "%d: %s\n", chatId, v.ChatName)
 		}
 	}

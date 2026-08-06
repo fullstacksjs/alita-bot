@@ -58,8 +58,8 @@ func IsSQLiteMode() bool {
 	return strings.HasPrefix(dsn, "sqlite") || strings.HasSuffix(dsn, ".db") || strings.HasSuffix(dsn, ".sqlite")
 }
 
-// formatSQLiteDSN prepares a SQLite connection string with WAL mode, busy timeout, and foreign keys.
-func formatSQLiteDSN(rawDSN string) string {
+// FormatSQLiteDSN prepares a SQLite connection string with WAL mode, busy timeout, and foreign keys.
+func FormatSQLiteDSN(rawDSN string) string {
 	pathStr := rawDSN
 	if strings.HasPrefix(pathStr, "sqlite://") {
 		pathStr = strings.TrimPrefix(pathStr, "sqlite://")
@@ -85,6 +85,10 @@ func formatSQLiteDSN(rawDSN string) string {
 	}
 
 	return pathStr + "?_busy_timeout=10000&_journal_mode=WAL&_foreign_keys=ON"
+}
+
+func formatSQLiteDSN(rawDSN string) string {
+	return FormatSQLiteDSN(rawDSN)
 }
 
 func init() {

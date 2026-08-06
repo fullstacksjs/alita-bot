@@ -204,15 +204,19 @@ func TestUpdateChat(t *testing.T) {
 	}
 }
 
-func TestUpdateChatReturnsAtomicAppendError(t *testing.T) {
+func TestUpdateChatAppendsUserInSQLite(t *testing.T) {
 	withChatSQLite(t)
 
 	const chatID = int64(-100123)
 	if err := EnsureChatInDb(chatID, "existing"); err != nil {
 		t.Fatalf("EnsureChatInDb() error = %v", err)
 	}
-	if err := UpdateChat(chatID, "existing", 42); err == nil {
-		t.Fatal("UpdateChat() error = nil when the PostgreSQL JSONB append fails")
+	if err := UpdateChat(chatID, "existing", 42); err != nil {
+		t.Fatalf("UpdateChat() unexpected error = %v", err)
+	}
+	chat := GetChatSettings(chatID)
+	if !slices.Contains(chat.Users, 42) {
+		t.Fatalf("chat.Users %v missing user 42 after UpdateChat in SQLite", chat.Users)
 	}
 }
 

@@ -59,6 +59,7 @@ func TestProductContract(t *testing.T) {
 		},
 		Watchers: []watcherContract{
 			{Group: -5, Kind: "message", Count: 1},
+			{Group: -1, Kind: "chat_member", Count: 1},
 			{Group: -1, Kind: "message", Count: 1},
 			{Group: -1, Kind: "my_chat_member", Count: 1},
 			{Group: 0, Kind: "chat_member", Count: 2},
