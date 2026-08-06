@@ -268,36 +268,27 @@ func TestCaptchaAttemptsConstraint_ExpirationIntegration(t *testing.T) {
 	assert.Error(t, err, "Creating captcha attempt with past expiration should fail due to CHECK constraint")
 }
 
-// TestWarnsUsersConstraint_NonNegativeNumWarns tests num_warns constraint
-func TestWarnsUsersConstraint_NonNegativeNumWarns(t *testing.T) {
+// TestWarnEvents_Creation tests creating normalized warn_events records
+func TestWarnEvents_Creation(t *testing.T) {
 	skipIfNoDb(t)
 
 	base := time.Now().UnixNano()
 	userID := base + 200
 	chatID := base + 201
+	_ = EnsureChatInDb(chatID, "")
+	_ = EnsureUserInDb(userID, "", "")
+
 	t.Cleanup(func() {
-		_ = DB.Where("user_id = ? AND chat_id = ?", userID, chatID).Delete(&Warns{}).Error
+		_ = DB.Where("user_id = ? AND chat_id = ?", userID, chatID).Delete(&WarnEvent{}).Error
 	})
 
-	// Test valid non-negative values
-	for _, numWarns := range []int{0, 1, 5, 10} {
-		warn := &Warns{
-			UserId:   userID + int64(numWarns),
-			ChatId:   chatID,
-			NumWarns: numWarns,
-		}
-		err := CreateRecord(warn)
-		assert.NoError(t, err, "Creating warns with num_warns %d should succeed", numWarns)
+	warn := &WarnEvent{
+		UserId: userID,
+		ChatId: chatID,
+		Reason: "test warning event",
 	}
-
-	// Test invalid negative value
-	invalidWarn := &Warns{
-		UserId:   userID + 9999,
-		ChatId:   chatID + 1,
-		NumWarns: -1,
-	}
-	err := CreateRecord(invalidWarn)
-	assert.Error(t, err, "Creating warns with negative num_warns should fail due to CHECK constraint")
+	err := CreateRecord(warn)
+	assert.NoError(t, err, "Creating WarnEvent should succeed")
 }
 
 // TestAntifloodConstraint_NonNegativeFloodLimit tests flood_limit constraint

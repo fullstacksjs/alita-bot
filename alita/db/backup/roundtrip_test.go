@@ -96,8 +96,11 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, db.DB.Create(&models.WarnSettings{
 		ChatId: srcChat, WarnLimit: 7,
 	}).Error)
-	require.NoError(t, db.DB.Create(&models.Warns{
-		UserId: warnUserID, ChatId: srcChat, NumWarns: 2, Reasons: models.StringArray{"one", "two"},
+	require.NoError(t, db.DB.Create(&models.WarnEvent{
+		UserId: warnUserID, ChatId: srcChat, Reason: "one",
+	}).Error)
+	require.NoError(t, db.DB.Create(&models.WarnEvent{
+		UserId: warnUserID, ChatId: srcChat, Reason: "two",
 	}).Error)
 
 	// Existing destination data must be replaced, not merged.
@@ -107,8 +110,8 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, db.DB.Create(&models.ChatFilters{
 		ChatId: dstChat, KeyWord: "stale", FilterReply: "stale",
 	}).Error)
-	require.NoError(t, db.DB.Create(&models.Warns{
-		UserId: staleWarnUserID, ChatId: dstChat, NumWarns: 1, Reasons: models.StringArray{"stale"},
+	require.NoError(t, db.DB.Create(&models.WarnEvent{
+		UserId: staleWarnUserID, ChatId: dstChat, Reason: "stale",
 	}).Error)
 
 	exported, err := ExportChatData(srcChat, "source", 42, nil)
@@ -231,10 +234,10 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, warnsData.WarnSettings)
 	assert.Equal(t, 7, warnsData.WarnSettings.WarnLimit)
-	require.Len(t, warnsData.Warns, 1)
+	require.Len(t, warnsData.Warns, 2)
 	assert.Equal(t, warnUserID, warnsData.Warns[0].UserId)
-	assert.Equal(t, 2, warnsData.Warns[0].NumWarns)
-	assert.Equal(t, models.StringArray{"one", "two"}, warnsData.Warns[0].Reasons)
+	assert.Equal(t, "one", warnsData.Warns[0].Reason)
+	assert.Equal(t, "two", warnsData.Warns[1].Reason)
 }
 
 func TestExportChatDataReturnsDatabaseErrors(t *testing.T) {
@@ -283,14 +286,14 @@ func TestImportWarnsCreatesMissingParents(t *testing.T) {
 	bkp.Data[BackupModuleWarns] = map[string]interface{}{
 		"warn_settings": map[string]interface{}{"warn_limit": 3},
 		"warns": []interface{}{
-			map[string]interface{}{"user_id": userID, "num_warns": 1, "warns": []interface{}{"reason"}},
+			map[string]interface{}{"user_id": userID, "reason": "reason"},
 		},
 	}
 	require.NoError(t, ImportChatData(chatID, bkp, nil))
 
 	require.NoError(t, db.DB.Where("chat_id = ?", chatID).Take(&models.Chat{}).Error)
 	require.NoError(t, db.DB.Where("user_id = ?", userID).Take(&models.User{}).Error)
-	require.NoError(t, db.DB.Where("chat_id = ? AND user_id = ?", chatID, userID).Take(&models.Warns{}).Error)
+	require.NoError(t, db.DB.Where("chat_id = ? AND user_id = ?", chatID, userID).Take(&models.WarnEvent{}).Error)
 }
 
 func TestLegacyBackupPreservesFieldsThatVersionDidNotExport(t *testing.T) {
@@ -311,8 +314,8 @@ func TestLegacyBackupPreservesFieldsThatVersionDidNotExport(t *testing.T) {
 	require.NoError(t, db.DB.Create(&models.WarnSettings{
 		ChatId: chatID, WarnLimit: 3,
 	}).Error)
-	require.NoError(t, db.DB.Create(&models.Warns{
-		ChatId: chatID, UserId: warnUserID, NumWarns: 2, Reasons: models.StringArray{"one", "two"},
+	require.NoError(t, db.DB.Create(&models.WarnEvent{
+		ChatId: chatID, UserId: warnUserID, Reason: "one",
 	}).Error)
 
 	raw := fmt.Sprintf(`{

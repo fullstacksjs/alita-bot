@@ -1,12 +1,80 @@
-//go:build testtools
-
 package approvals
 
 import (
+	"fmt"
+	"os"
+	"sync"
 	"testing"
 
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
 	"github.com/divkix/Alita_Robot/alita/db"
+	"github.com/divkix/Alita_Robot/alita/db/migrations"
 )
+
+func TestMain(m *testing.M) {
+	var dbFileName string
+	if db.DB == nil {
+		dbFile, err := os.CreateTemp("", "alita_test_*.db")
+		if err != nil {
+			fmt.Printf("temp file creation failed: %v\n", err)
+			os.Exit(1)
+		}
+		dbFileName = dbFile.Name()
+		if closeErr := dbFile.Close(); closeErr != nil {
+			fmt.Printf("temp file close failed: %v\n", closeErr)
+			os.Exit(1)
+		}
+		dbPath := db.FormatSQLiteDSN(dbFileName)
+		sqliteDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+			Logger: logger.Default.LogMode(logger.Silent),
+		})
+		if err != nil {
+			fmt.Printf("SQLite init failed: %v\n", err)
+			os.Exit(1)
+		}
+		sqliteDB.Exec("PRAGMA foreign_keys = ON;")
+		sqliteDB.Exec("PRAGMA journal_mode = WAL;")
+		sqliteDB.Exec("PRAGMA busy_timeout = 10000;")
+
+		sqlDB, err := sqliteDB.DB()
+		if err != nil {
+			fmt.Printf("SQLite handle failed: %v\n", err)
+			os.Exit(1)
+		}
+		sqlDB.SetMaxOpenConns(5)
+		sqlDB.SetMaxIdleConns(5)
+
+		runner := migrations.NewSQLiteMigrationRunner(sqliteDB)
+		if err := runner.RunMigrations(); err != nil {
+			fmt.Printf("Migration failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		db.DB = sqliteDB
+	}
+
+	exitCode := m.Run()
+
+	if db.DB != nil {
+		sqlDB, err := db.DB.DB()
+		if err != nil {
+			fmt.Printf("failed to get underlying DB: %v\n", err)
+		} else if closeErr := sqlDB.Close(); closeErr != nil {
+			fmt.Printf("DB close failed: %v\n", closeErr)
+		}
+	}
+
+	if dbFileName != "" {
+		if rmErr := os.Remove(dbFileName); rmErr != nil {
+			fmt.Printf("temp file remove failed: %v\n", rmErr)
+		}
+	}
+
+	os.Exit(exitCode)
+}
 
 func skipIfNoDb(t *testing.T) {
 	if db.DB == nil {
@@ -181,10 +249,9 @@ func TestCacheInvalidationOnWrite(t *testing.T) {
 	if len(users3) != 1 {
 		t.Fatalf("cache not invalidated: expected 1 user after remove, got %d", len(users3))
 	}
-
 }
 
-func TestDuplicateApprovalIsError(t *testing.T) {
+func TestDuplicateApprovalUpdatesExemption(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := int64(-999999999999997)
@@ -193,13 +260,56 @@ func TestDuplicateApprovalIsError(t *testing.T) {
 		clearApprovalsForTest(chatID)
 	})
 
-	if err := AddApprovedUser(chatID, 7777, 1, ""); err != nil {
+	if err := AddApprovedUser(chatID, 7777, 1, "initial reason"); err != nil {
 		t.Fatalf("AddApprovedUser() error = %v", err)
 	}
 
-	// Duplicate should error (GORM duplicate check on unique index)
-	err := AddApprovedUser(chatID, 7777, 1, "other reason")
-	if err == nil {
-		t.Fatalf("AddApprovedUser() duplicate = nil, expected error")
+	// Re-approving user updates reason and audit fields idempotently without duplicate row
+	if err := AddApprovedUser(chatID, 7777, 2, "updated reason"); err != nil {
+		t.Fatalf("AddApprovedUser() update error = %v", err)
+	}
+
+	users := GetApprovedUsers(chatID)
+	if len(users) != 1 {
+		t.Fatalf("expected 1 approved user, got %d", len(users))
+	}
+	if users[0].Reason != "updated reason" {
+		t.Fatalf("expected Reason='updated reason', got %q", users[0].Reason)
+	}
+	if users[0].ApprovedBy != 2 {
+		t.Fatalf("expected ApprovedBy=2, got %d", users[0].ApprovedBy)
+	}
+}
+
+func TestConcurrentApprovals(t *testing.T) {
+	skipIfNoDb(t)
+
+	chatID := int64(-999999999999996)
+	const workers = 10
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	t.Cleanup(func() {
+		clearApprovalsForTest(chatID)
+	})
+
+	for i := 0; i < workers; i++ {
+		userID := int64(1000 + i)
+		go func(u int64) {
+			defer wg.Done()
+			if err := AddApprovedUser(chatID, u, 1, "concurrent"); err != nil {
+				t.Errorf("AddApprovedUser(%d) error = %v", u, err)
+			}
+			if !IsUserApproved(chatID, u) {
+				t.Errorf("IsUserApproved(%d) = false, want true", u)
+			}
+		}(userID)
+	}
+
+	wg.Wait()
+
+	users := GetApprovedUsers(chatID)
+	if len(users) != workers {
+		t.Fatalf("GetApprovedUsers() returned %d users, want %d", len(users), workers)
 	}
 }

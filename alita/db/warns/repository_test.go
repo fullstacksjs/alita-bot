@@ -15,6 +15,7 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/chats"
+	"github.com/divkix/Alita_Robot/alita/db/migrations"
 	"github.com/divkix/Alita_Robot/alita/db/models"
 	"github.com/divkix/Alita_Robot/alita/db/user"
 )
@@ -32,7 +33,7 @@ func TestMain(m *testing.M) {
 			fmt.Printf("temp file close failed: %v\n", closeErr)
 			os.Exit(1)
 		}
-		dbPath := dbFileName + "?_busy_timeout=10000&_journal_mode=WAL"
+		dbPath := db.FormatSQLiteDSN(dbFileName)
 		sqliteDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Silent),
 		})
@@ -40,51 +41,29 @@ func TestMain(m *testing.M) {
 			fmt.Printf("SQLite init failed: %v\n", err)
 			os.Exit(1)
 		}
+		sqliteDB.Exec("PRAGMA foreign_keys = ON;")
+		sqliteDB.Exec("PRAGMA journal_mode = WAL;")
+		sqliteDB.Exec("PRAGMA busy_timeout = 10000;")
+
 		sqlDB, err := sqliteDB.DB()
 		if err != nil {
 			fmt.Printf("SQLite handle failed: %v\n", err)
 			os.Exit(1)
 		}
-		sqlDB.SetMaxOpenConns(1)
-		db.DB = sqliteDB
-	}
+		sqlDB.SetMaxOpenConns(5)
+		sqlDB.SetMaxIdleConns(5)
 
-	if dbFileName != "" {
-		err := db.DB.AutoMigrate(
-			&models.User{},
-			&models.Chat{},
-			&models.WarnSettings{},
-			&models.Warns{},
-			&models.GreetingSettings{},
-			&models.ChatFilters{},
-			&models.AdminSettings{},
-			&models.BlacklistSettings{},
-			&models.PinSettings{},
-			&models.DevSettings{},
-			&models.ChannelSettings{},
-			&models.AntifloodSettings{},
-			&models.ConnectionSettings{},
-			&models.DisableSettings{},
-			&models.DisableChatSettings{},
-			&models.RulesSettings{},
-			&models.NotesSettings{},
-			&models.Notes{},
-			&models.CaptchaSettings{},
-			&models.CaptchaAttempts{},
-			&models.StoredMessages{},
-			&models.CaptchaMutedUsers{},
-			&models.ApprovedUsers{},
-			&models.AntiRaidSettings{},
-		)
-		if err != nil {
-			fmt.Printf("AutoMigrate failed: %v\n", err)
+		runner := migrations.NewSQLiteMigrationRunner(sqliteDB)
+		if err := runner.RunMigrations(); err != nil {
+			fmt.Printf("Migration failed: %v\n", err)
 			os.Exit(1)
 		}
+
+		db.DB = sqliteDB
 	}
 
 	exitCode := m.Run()
 
-	// Close DB handle before removing temp file.
 	if db.DB != nil {
 		sqlDB, err := db.DB.DB()
 		if err != nil {
@@ -94,7 +73,6 @@ func TestMain(m *testing.M) {
 		}
 	}
 
-	// Remove temp file before exit.
 	if dbFileName != "" {
 		if rmErr := os.Remove(dbFileName); rmErr != nil {
 			fmt.Printf("temp file remove failed: %v\n", rmErr)

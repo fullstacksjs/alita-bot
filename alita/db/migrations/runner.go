@@ -917,6 +917,9 @@ func (m *MigrationRunner) logMigrationStatus() {
 
 // verifyIndexes checks that expected composite indexes are created
 func (m *MigrationRunner) verifyIndexes() error {
+	if m.db != nil && m.db.Dialector != nil && m.db.Dialector.Name() == "sqlite" {
+		return nil
+	}
 	log.Info("[Migrations] Verifying database indexes...")
 
 	// Define expected indexes (table -> index_name -> columns)

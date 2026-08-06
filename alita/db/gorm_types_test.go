@@ -616,7 +616,7 @@ func TestTableNames(t *testing.T) {
 		{"User", User{}, "users"},
 		{"Chat", Chat{}, "chats"},
 		{"WarnSettings", WarnSettings{}, "warns_settings"},
-		{"Warns", Warns{}, "warns_users"},
+		{"WarnEvent", WarnEvent{}, "warn_events"},
 		{"GreetingSettings", GreetingSettings{}, "greetings"},
 		{"ChatFilters", ChatFilters{}, "filters"},
 		{"AdminSettings", AdminSettings{}, "admin"},

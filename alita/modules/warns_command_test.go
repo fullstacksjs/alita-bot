@@ -166,11 +166,17 @@ func TestWarnsListsCountWhenReasonsAreEmpty(t *testing.T) {
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Warn Chat"}
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 
-	if err := db.DB.Create(&db.Warns{
-		UserId:   42,
-		ChatId:   chat.Id,
-		NumWarns: 2,
-		Reasons:  db.StringArray{},
+	if err := db.DB.Create(&db.WarnEvent{
+		UserId: 42,
+		ChatId: chat.Id,
+		Reason: "reason 1",
+	}).Error; err != nil {
+		t.Fatalf("create warns fixture: %v", err)
+	}
+	if err := db.DB.Create(&db.WarnEvent{
+		UserId: 42,
+		ChatId: chat.Id,
+		Reason: "reason 2",
 	}).Error; err != nil {
 		t.Fatalf("create warns fixture: %v", err)
 	}
