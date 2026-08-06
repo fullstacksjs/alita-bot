@@ -34,7 +34,7 @@ Connection - true, true
 Admin can approve a user in the chat
 */
 // approveUser handles the /approve command to add a user to the approved list.
-// Approved users are immune to anti-spam measures (antiflood, blacklists, locks, antispam).
+// Approved users are immune to automated abuse protection (antiflood, antiraid, blacklists).
 func (m moduleStruct) approveUser(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	// connection status

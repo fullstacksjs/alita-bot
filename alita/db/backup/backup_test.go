@@ -19,7 +19,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/disabling"
 	"github.com/divkix/Alita_Robot/alita/db/filters"
 	"github.com/divkix/Alita_Robot/alita/db/greetings"
-	"github.com/divkix/Alita_Robot/alita/db/locks"
 	"github.com/divkix/Alita_Robot/alita/db/models"
 	"github.com/divkix/Alita_Robot/alita/db/notes"
 	"github.com/divkix/Alita_Robot/alita/db/pins"
@@ -342,9 +341,6 @@ func cleanupBackupChat(t *testing.T, chatID int64) {
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.GreetingSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting GreetingSettings: %v", err)
 	}
-	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.LockSettings{}).Error; err != nil {
-		t.Errorf("cleanup failed deleting LockSettings: %v", err)
-	}
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.NotesSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting NotesSettings: %v", err)
 	}
@@ -605,39 +601,6 @@ func TestExportImportRulesRoundTrip(t *testing.T) {
 	assert.True(t, settings.Private)
 }
 
-func TestExportImportLocksRoundTrip(t *testing.T) {
-	skipIfNoDb(t)
-
-	srcChat := time.Now().UnixNano()
-	dstChat := srcChat + 1
-	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_locks"))
-	require.NoError(t, chats.EnsureChatInDb(dstChat, "dst_locks"))
-	t.Cleanup(func() {
-		cleanupBackupChat(t, srcChat)
-		cleanupBackupChat(t, dstChat)
-	})
-
-	require.NoError(t, locks.UpdateLock(srcChat, " stickers", true))
-	require.NoError(t, locks.UpdateLock(srcChat, " url", false))
-
-	// Export
-	exported, err := exportLocksData(srcChat)
-	require.NoError(t, err)
-	require.NotNil(t, exported)
-	assert.Len(t, exported.Locks, 2)
-
-	// Convert to map for import
-	payload := map[string]interface{}{
-		"locks": exported.Locks,
-	}
-
-	// Import into destination
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleLocks, payload))
-
-	lockMap := locks.GetChatLocks(dstChat)
-	assert.True(t, lockMap[" stickers"])
-	assert.False(t, lockMap[" url"])
-}
 
 func TestExportImportWarnsRoundTrip(t *testing.T) {
 	skipIfNoDb(t)
@@ -1043,10 +1006,6 @@ func TestClearModuleData_IndividualModules(t *testing.T) {
 	require.NoError(t, ClearModuleData(chatID, BackupModuleWarns))
 	assert.Equal(t, 3, warns.GetWarnSetting(chatID).WarnLimit)
 
-	// --- Locks ---
-	require.NoError(t, locks.UpdateLock(chatID, " stickers", true))
-	require.NoError(t, ClearModuleData(chatID, BackupModuleLocks))
-	assert.False(t, locks.GetChatLocks(chatID)[" stickers"])
 
 	// --- Greetings ---
 	require.NoError(t, greetings.SetWelcomeToggle(chatID, true))
@@ -1105,9 +1064,6 @@ func TestExportModuleData_EdgeCases(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, greetingsData)
 
-	locksData, err := exportLocksData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, locksData)
 
 	notesData, err := exportNotesData(chatID)
 	require.NoError(t, err)

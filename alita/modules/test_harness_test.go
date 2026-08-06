@@ -340,7 +340,6 @@ func TestMain(m *testing.M) {
 		&db.ApprovedUsers{},
 		&db.ChatFilters{},
 		&db.BlacklistSettings{},
-		&db.LockSettings{},
 		&db.ChannelSettings{},
 		&db.AntifloodSettings{},
 		&db.AntiRaidSettings{},

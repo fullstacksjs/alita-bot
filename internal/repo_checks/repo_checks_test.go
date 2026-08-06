@@ -91,18 +91,6 @@ func TestPollingLoadsModulesBeforeStartingPolling(t *testing.T) {
 	}
 }
 
-func TestAntiSpamCleanupDefersUnlockAndRecovers(t *testing.T) {
-	t.Parallel()
-
-	source := readRepoFile(t, "alita", "modules", "antispam.go")
-	if !strings.Contains(source, "error_handling.RecoverFromPanic") {
-		t.Fatal("antiSpamCleanupLoop must recover from panics")
-	}
-	if !strings.Contains(source, "defer antiSpamMutex.Unlock()") {
-		t.Fatal("antiSpamCleanupLoop must defer mutex unlock after locking")
-	}
-}
-
 
 func TestLoadModulesDelegatesToRegistryOnly(t *testing.T) {
 	t.Parallel()
@@ -182,27 +170,6 @@ func TestHelpRegistryDoesNotExposeGlobalMutableSingleton(t *testing.T) {
 	}
 	if !strings.Contains(source, "func newHelpRegistry() *moduleStruct") {
 		t.Fatal("help registry must keep a constructor for isolated tests")
-	}
-}
-
-func TestBotLockApprovedBypassRequiresPositiveSenderID(t *testing.T) {
-	t.Parallel()
-
-	source := readRepoFile(t, "alita", "modules", "locks.go")
-	start := strings.Index(source, "func (moduleStruct) botLockHandler")
-	if start == -1 {
-		t.Fatal("botLockHandler function is missing")
-	}
-
-	body := source[start:]
-	end := strings.Index(body, "\n}\n")
-	if end == -1 {
-		t.Fatal("botLockHandler body is malformed")
-	}
-	body = body[:end]
-
-	if !strings.Contains(body, "senderID > 0 && chat_status.IsApproved") {
-		t.Fatal("botLockHandler must not call IsApproved unless senderID is positive")
 	}
 }
 

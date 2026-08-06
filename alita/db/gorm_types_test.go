@@ -629,7 +629,6 @@ func TestTableNames(t *testing.T) {
 		{"DisableSettings", DisableSettings{}, "disable"},
 		{"DisableChatSettings", DisableChatSettings{}, "disable_chat_settings"},
 		{"RulesSettings", RulesSettings{}, "rules"},
-		{"LockSettings", LockSettings{}, "locks"},
 		{"NotesSettings", NotesSettings{}, "notes_settings"},
 		{"Notes", Notes{}, "notes"},
 		{"CaptchaSettings", CaptchaSettings{}, "captcha_settings"},

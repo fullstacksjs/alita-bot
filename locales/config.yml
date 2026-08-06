@@ -16,7 +16,6 @@ alt_names:
   Filters: [filter]
   Formatting: [markdownhelp, mdhelp]
   Greetings: [welcome, greeting]
-  Locks: [lock, unlock]
   Misc: [extra, extras]
   Mutes: [mute, unmute]
   Notes: [note, notes]

@@ -35,7 +35,7 @@ func TestAddListActionAndRemoveBlacklistCommands(t *testing.T) {
 		t.Fatalf("blacklist list text = %q, want stored words", lastText)
 	}
 
-	actionCtx := newModuleMessageContext(bot, chat, admin, "/blaction mute")
+	actionCtx := newModuleMessageContext(bot, chat, admin, "/blacklistaction mute")
 	if err := blacklistsModule.setBlacklistAction(bot, actionCtx); err != ext.EndGroups {
 		t.Fatalf("setBlacklistAction error = %v, want EndGroups", err)
 	}
@@ -113,15 +113,15 @@ func TestBlacklistCommandsHandleValidationBranches(t *testing.T) {
 		t.Fatalf("removeBlacklist absent error = %v, want EndGroups", err)
 	}
 
-	currentActionCtx := newModuleMessageContext(bot, chat, admin, "/blaction")
+	currentActionCtx := newModuleMessageContext(bot, chat, admin, "/blacklistaction")
 	if err := blacklistsModule.setBlacklistAction(bot, currentActionCtx); err != ext.EndGroups {
 		t.Fatalf("setBlacklistAction current error = %v, want EndGroups", err)
 	}
-	invalidActionCtx := newModuleMessageContext(bot, chat, admin, "/blaction freeze")
+	invalidActionCtx := newModuleMessageContext(bot, chat, admin, "/blacklistaction freeze")
 	if err := blacklistsModule.setBlacklistAction(bot, invalidActionCtx); err != ext.EndGroups {
 		t.Fatalf("setBlacklistAction invalid error = %v, want EndGroups", err)
 	}
-	tooManyActionCtx := newModuleMessageContext(bot, chat, admin, "/blaction mute ban")
+	tooManyActionCtx := newModuleMessageContext(bot, chat, admin, "/blacklistaction mute ban")
 	if err := blacklistsModule.setBlacklistAction(bot, tooManyActionCtx); err != ext.EndGroups {
 		t.Fatalf("setBlacklistAction too-many error = %v, want EndGroups", err)
 	}

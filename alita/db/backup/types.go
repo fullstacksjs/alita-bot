@@ -108,7 +108,6 @@ const (
 	BackupModuleDisabling   = "disabling"
 	BackupModuleFilters     = "filters"
 	BackupModuleGreetings   = "greetings"
-	BackupModuleLocks       = "locks"
 	BackupModuleNotes       = "notes"
 	BackupModulePins        = "pins"
 	BackupModuleReactions   = "reactions"
@@ -128,7 +127,6 @@ func AllExportableModules() []string {
 		BackupModuleDisabling,
 		BackupModuleFilters,
 		BackupModuleGreetings,
-		BackupModuleLocks,
 		BackupModuleNotes,
 		BackupModulePins,
 		BackupModuleReactions,
@@ -197,11 +195,6 @@ type FiltersBackup struct {
 // GreetingsBackup represents greetings/welcome settings backup data
 type GreetingsBackup struct {
 	Settings *models.GreetingSettings `json:"settings,omitempty"`
-}
-
-// LocksBackup represents lock settings backup data
-type LocksBackup struct {
-	Locks []models.LockSettings `json:"locks,omitempty"`
 }
 
 // NotesBackup represents notes backup data

@@ -52,7 +52,6 @@ func TestMain(m *testing.M) {
 			&DisableSettings{},
 			&DisableChatSettings{},
 			&RulesSettings{},
-			&LockSettings{},
 			&NotesSettings{},
 			&Notes{},
 			&CaptchaSettings{},

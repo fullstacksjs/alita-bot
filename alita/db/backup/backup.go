@@ -33,8 +33,6 @@ func ExportModuleData(chatID int64, module string) (interface{}, error) {
 		return exportFiltersData(chatID)
 	case BackupModuleGreetings:
 		return exportGreetingsData(chatID)
-	case BackupModuleLocks:
-		return exportLocksData(chatID)
 	case BackupModuleNotes:
 		return exportNotesData(chatID)
 	case BackupModulePins:
@@ -392,11 +390,6 @@ func exportGreetingsData(chatID int64) (*GreetingsBackup, error) {
 	return &GreetingsBackup{Settings: settings}, err
 }
 
-func exportLocksData(chatID int64) (*LocksBackup, error) {
-	rows, err := findChatRows[models.LockSettings](chatID)
-	return &LocksBackup{Locks: rows}, err
-}
-
 func exportNotesData(chatID int64) (*NotesBackup, error) {
 	settings, err := findChatSetting[models.NotesSettings](chatID)
 	if err != nil {
@@ -459,8 +452,6 @@ func importModuleData(tx *gorm.DB, chatID int64, module string, data interface{}
 		return importFilters(tx, chatID, data)
 	case BackupModuleGreetings:
 		return importGreetings(tx, chatID, data)
-	case BackupModuleLocks:
-		return importLocks(tx, chatID, data)
 	case BackupModuleNotes:
 		return importNotes(tx, chatID, data, preserveLegacyOmissions)
 	case BackupModulePins:
@@ -649,23 +640,6 @@ func importGreetings(tx *gorm.DB, chatID int64, payload interface{}) ([]string, 
 	return []string{cacheKey("greetings", chatID)}, nil
 }
 
-func importLocks(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) { //nolint:dupl // module-specific schema
-	var data LocksBackup
-	if err := decodeModuleData(payload, BackupModuleLocks, &data); err != nil {
-		return nil, err
-	}
-	for i := range data.Locks {
-		if data.Locks[i].LockType == "" {
-			return nil, fmt.Errorf("invalid empty lock type")
-		}
-		data.Locks[i].ChatId = chatID
-	}
-	if err := replaceChatRows(tx, chatID, data.Locks); err != nil {
-		return nil, err
-	}
-	return []string{cacheKey("lock", chatID), cacheKey("locks_map", chatID)}, nil
-}
-
 func importNotes(tx *gorm.DB, chatID int64, payload interface{}, preserveLegacyOmissions bool) ([]string, error) { //nolint:dupl // module-specific schema
 	restoreSettings := !preserveLegacyOmissions || moduleFieldPresent(payload, "settings")
 	var data NotesBackup
@@ -825,8 +799,6 @@ func clearModuleData(tx *gorm.DB, chatID int64, module string) ([]string, error)
 		return clearFilters(tx, chatID)
 	case BackupModuleGreetings:
 		return clearGreetings(tx, chatID)
-	case BackupModuleLocks:
-		return clearLocks(tx, chatID)
 	case BackupModuleNotes:
 		return clearNotes(tx, chatID)
 	case BackupModulePins:
@@ -921,13 +893,6 @@ func clearGreetings(tx *gorm.DB, chatID int64) ([]string, error) {
 		},
 	}
 	return []string{cacheKey("greetings", chatID)}, replaceChatSetting(tx, chatID, settings)
-}
-
-func clearLocks(tx *gorm.DB, chatID int64) ([]string, error) {
-	return []string{
-		cacheKey("lock", chatID),
-		cacheKey("locks_map", chatID),
-	}, replaceChatRows[models.LockSettings](tx, chatID, nil)
 }
 
 func clearNotes(tx *gorm.DB, chatID int64) ([]string, error) {

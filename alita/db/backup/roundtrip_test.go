@@ -75,9 +75,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, db.DB.Model(&models.GreetingSettings{}).
 		Where("chat_id = ?", srcChat).
 		Update("welcome_enabled", false).Error)
-	require.NoError(t, db.DB.Create(&models.LockSettings{
-		ChatId: srcChat, LockType: "stickers", Locked: false,
-	}).Error)
 	require.NoError(t, db.DB.Create(&models.NotesSettings{ChatId: srcChat, Private: true}).Error)
 	require.NoError(t, db.DB.Create(&models.Notes{
 		ChatId: srcChat, NoteName: "policy", NoteContent: "read it", FileID: "note-file",
@@ -191,12 +188,6 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	assert.Equal(t, "welcome-file", greetingsData.Settings.WelcomeSettings.FileID)
 	assert.Equal(t, 2, greetingsData.Settings.WelcomeSettings.WelcomeType)
 	assert.Equal(t, buttons, greetingsData.Settings.WelcomeSettings.Button)
-
-	locksData, err := exportLocksData(dstChat)
-	require.NoError(t, err)
-	require.Len(t, locksData.Locks, 1)
-	assert.Equal(t, "stickers", locksData.Locks[0].LockType)
-	assert.False(t, locksData.Locks[0].Locked)
 
 	notesData, err := exportNotesData(dstChat)
 	require.NoError(t, err)

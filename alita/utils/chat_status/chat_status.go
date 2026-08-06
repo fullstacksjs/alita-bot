@@ -189,7 +189,7 @@ func CheckDisabledCmd(bot *gotgbot.Bot, msg *gotgbot.Message, cmd string) bool {
 }
 
 // IsApproved checks if a user is in the approved whitelist for a chat.
-// Approved users are immune to anti-spam measures (antiflood, blacklists, locks, captcha, antispam).
+// Approved users are immune to automated abuse protection (antiflood, antiraid, blacklists).
 // This is a simple delegation to the DB layer for consistent usage in watcher handlers.
 func IsApproved(b *gotgbot.Bot, chatID, userID int64) bool {
 	return approvals.IsUserApproved(chatID, userID)
