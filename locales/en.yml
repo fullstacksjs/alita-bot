@@ -308,27 +308,14 @@ disabling_help_msg:
 
   Disabled commands are still accessible through the /connect feature. If you would
   be interested to see this disabled too, let me know in the support chat."
-devs_help_msg:
-  "Bot management and diagnostic commands restricted to the bot owner and
-  trusted developers. These commands are not surfaced to regular users.
+owner_help_msg:
+  "Operational commands restricted to the bot owner. These commands are not
+  surfaced to regular users.
 
-  *Team Commands:*
+
+  Commands:
 
   × /stats: Display bot statistics and system info.
-
-  × /teamusers: List all team members.
-
-  *Owner Commands:*
-
-  × /addsudo: Grant sudo permissions to a user.
-
-  × /adddev: Grant developer permissions to a user.
-
-  × /remsudo: Revoke sudo permissions from a user.
-
-  × /remdev: Revoke developer permissions from a user.
-
-  *Diagnostic Commands:*
 
   × /chatinfo: Display detailed information about a chat.
 
@@ -826,8 +813,8 @@ notes_invalid: Invalid Note!
 
 # Misc module strings
 
-# Devs module strings
-devs_specify_user: You must specify a user to get info on
+# Owner module strings
+owner_specify_chat: You must specify a chat to act on
 
 # Common error messages used across modules
 error_generic: "An error occurred. Please try again later."
@@ -1010,7 +997,6 @@ misc_user_info: "<b>User Info:</b>\nID: <code>%d</code>\nName: %s"
 misc_user_username: "Username: @%s"
 misc_user_link: "User link: %s"
 misc_owner_tag: "He is my owner!"
-misc_dev_user_tag: "He is one of my dev users!"
 misc_pinging: "<code>Pinging</code>"
 misc_pinged_in: Pinged in %d ms
 misc_ping_response: "🏓 Pong! <b>%dms</b>"
@@ -1031,30 +1017,13 @@ misc_username: "Username: @%s"
 misc_channel_link: "Channel link: @%s"
 misc_user_info_header: "<b>User Info:</b>\n\nID: <code>%d</code>\n\nName: %s"
 misc_owner_info: He is my owner!
-misc_dev_info: He is one of my dev users!
 
-# Devs module strings
-devs_chat_info: "<b>Name:</b> %s\n<b>Chat ID</b>: %d\n<b>Users Count:</b> %d\n<b>Link:</b> %s"
-devs_getting_chat_list: Getting list of chats I'm in...
-devs_chat_list_caption: Here is the list of chats in my Database!
-devs_left_chat: Okay, I left the chat!
-devs_user_already_sudo: User is already Sudo!
-devs_added_to_sudo: Added %s to Sudo List!
-devs_user_already_dev: User is already Dev!
-devs_added_to_dev: Added %s to Dev List!
-devs_user_not_sudo: User is not Sudo!
-devs_removed_from_sudo: Removed %s from Sudo List!
-devs_user_not_dev: User is not Dev!
-devs_removed_from_dev: Removed %s from Dev List!
-devs_no_team_users: No users are added in Team!
-devs_dev_users_header: "<b>Dev Users:</b>"
-devs_sudo_users_header: "<b>Sudo Users:</b>"
-devs_no_users: "No Users"
-devs_fetching_stats: "<code>Fetching bot stats...</code>"
-devs_failed_to_add_sudo: "Failed to add user to Sudo list. Please try again."
-devs_failed_to_add_dev: "Failed to add user to Dev list. Please try again."
-devs_failed_to_remove_sudo: "Failed to remove user from Sudo list. Please try again."
-devs_failed_to_remove_dev: "Failed to remove user from Dev list. Please try again."
+# Owner module strings
+owner_chat_info: "<b>Name:</b> %s\n<b>Chat ID</b>: %d\n<b>Users Count:</b> %d\n<b>Link:</b> %s"
+owner_getting_chat_list: Getting list of chats I'm in...
+owner_chat_list_caption: Here is the list of chats in my Database!
+owner_left_chat: Okay, I left the chat!
+owner_fetching_stats: "<code>Fetching bot stats...</code>"
 
 # Additional hardcoded strings from modules
 bans_anonymous_ban_only_error: This command cannot be used on anonymous user, these user can only be banned/unbanned.
@@ -1422,7 +1391,7 @@ blacklists_set_bl_action_update_failed: "Failed to update blacklist action. Plea
 filters_overwrite_token_failed: "Failed to create overwrite confirmation. Please try again."
 notes_overwrite_token_failed: "Failed to create overwrite confirmation. Please try again."
 common_settings_save_failed: "Failed to save settings. Please try again later."
-devs_chatlist_error: "Failed to generate chat list. Please try again."
+owner_chatlist_error: "Failed to generate chat list. Please try again."
 
 # Reactions module strings
 reactions_help_msg: |

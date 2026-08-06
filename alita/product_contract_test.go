@@ -38,7 +38,7 @@ func TestProductContract(t *testing.T) {
 
 	want := productContract{
 		Commands: []string{
-			"about", "addblacklist", "adddev", "addfilter", "addnote", "addreaction", "addsudo",
+			"about", "addblacklist", "addfilter", "addnote", "addreaction",
 			"admincache", "anonadmin", "antichannelpin", "antiraid", "approval",
 			"approve", "approved", "autoantiraid", "ban",
 			"blacklistaction", "blacklists", "chatinfo",
@@ -50,14 +50,14 @@ func TestProductContract(t *testing.T) {
 			"info", "invitelink", "kick", "kickme", "leavechat",
 			"markdownhelp", "mute", "notes", "permapin", "pin", "ping", "pinned",
 			"privaterules", "promote", "purge",
-			"raidactiontime", "raidtime", "reactions", "remdev",
-			"removebotkeyboard", "removereaction", "remsudo", "report",
+			"raidactiontime", "raidtime", "reactions",
+			"removebotkeyboard", "removereaction", "report",
 			"reset", "resetallwarns", "resetrules", "resetrulesbtn",
 			"resetrulesbutton", "resetwarns", "rmallbl",
 			"rmblacklist", "rmfilter", "rmnote", "rmwarn", "rules", "rulesbtn", "rulesbutton",
 			"setflood", "setfloodmode", "setrules", "setwarnlimit",
 			"setwelcome", "start", "stat", "stats",
-			"teamusers", "tell", "title", "unapprove",
+			"tell", "title", "unapprove",
 			"unban", "unmute", "unpin", "unpinall", "warn",
 			"warnings", "warns", "welcome",
 		},

@@ -2,7 +2,11 @@ package models
 
 import "time"
 
-// DevSettings represents developer settings
+// DevSettings maps the dormant `devs` role table.
+//
+// Bot-wide authorization relies solely on OWNER_ID, so no runtime code reads or
+// writes this table. The model is kept only so the schema stays describable
+// until the table is dropped by the state-contraction work.
 type DevSettings struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"-"`
 	UserId    int64     `gorm:"column:user_id;uniqueIndex;not null" json:"user_id,omitempty"`
