@@ -44,21 +44,21 @@ func TestGenFormattingKbCallbackData(t *testing.T) {
 	}
 }
 
-func TestMarkdownHelpRepliesInPrivateAndGroup(t *testing.T) {
+func TestFormattingHelpRepliesInPrivateAndGroup(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)
 	user := gotgbot.User{Id: 42, FirstName: "Formatter"}
 
 	privateChat := gotgbot.Chat{Id: 42, Type: "private", FirstName: "Formatter"}
-	privateCtx := newModuleMessageContext(bot, privateChat, user, "/markdownhelp")
-	if err := formattingModule.markdownHelp(bot, privateCtx); err != ext.EndGroups {
-		t.Fatalf("markdownHelp private error = %v, want EndGroups", err)
+	privateCtx := newModuleMessageContext(bot, privateChat, user, "/formatting")
+	if err := formattingModule.formattingHelp(bot, privateCtx); err != ext.EndGroups {
+		t.Fatalf("formattingHelp private error = %v, want EndGroups", err)
 	}
 
 	groupChat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Format Chat"}
-	groupCtx := newModuleMessageContext(bot, groupChat, user, "/markdownhelp")
-	if err := formattingModule.markdownHelp(bot, groupCtx); err != ext.EndGroups {
-		t.Fatalf("markdownHelp group error = %v, want EndGroups", err)
+	groupCtx := newModuleMessageContext(bot, groupChat, user, "/formatting")
+	if err := formattingModule.formattingHelp(bot, groupCtx); err != ext.EndGroups {
+		t.Fatalf("formattingHelp group error = %v, want EndGroups", err)
 	}
 
 	calls := client.callsFor("sendMessage")

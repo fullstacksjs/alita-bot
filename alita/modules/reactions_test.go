@@ -202,8 +202,8 @@ func TestLoadReactionsRegistersHelpAndHandlers(t *testing.T) {
 	if !DefaultHelpRegistry().AbleMap[reactionsModule.moduleName] {
 		t.Fatal("reactions help registration = false, want enabled")
 	}
-	if got := DefaultHelpRegistry().AltHelpOptions["Reactions"]; len(got) != 1 || got[0] != "reaction" {
-		t.Fatalf("reactions alt help = %v, want [reaction]", got)
+	if got := DefaultHelpRegistry().AltHelpOptions["Reactions"]; len(got) != 0 {
+		t.Fatalf("reactions alt help = %v, want none", got)
 	}
 	if got := DefaultHelpRegistry().helpableKb["Reactions"]; len(got) != 0 {
 		t.Fatalf("reactions help keyboard = %#v, want no help-only callbacks", got)

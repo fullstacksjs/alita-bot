@@ -22,7 +22,6 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/utils/content"
 	"github.com/divkix/Alita_Robot/alita/utils/extraction"
-	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 	"github.com/divkix/Alita_Robot/alita/utils/media"
 
 	"github.com/divkix/Alita_Robot/alita/utils/keyword_matcher"
@@ -319,10 +318,6 @@ Any user can view users in a chat
 // Any user can view the list of available filters with their trigger keywords.
 func (moduleStruct) filtersList(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
-	// if command is disabled, return
-	if chat_status.CheckDisabledCmd(b, msg, "filters") {
-		return ext.EndGroups
-	}
 	// connection status
 	connectedChat := chat_status.IsUserConnected(b, ctx, false, true)
 	if connectedChat == nil {
@@ -370,7 +365,6 @@ func (moduleStruct) filtersList(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	return ext.EndGroups
 }
-
 
 // CallbackQuery handler for filters_overwite. query
 // filterOverWriteHandler handles callback queries for filter overwrite confirmations.
@@ -638,7 +632,6 @@ func LoadFilters(dispatcher *ext.Dispatcher) {
 	dispatcher.AddHandler(handlers.NewCommand("addfilter", filtersModule.addFilter))
 	dispatcher.AddHandler(handlers.NewCommand("rmfilter", filtersModule.rmFilter))
 	dispatcher.AddHandler(handlers.NewCommand("filters", filtersModule.filtersList))
-	helpers.AddCmdToDisableable("filters")
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("filters_overwrite"), filtersModule.filterOverWriteHandler))
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(func(msg *gotgbot.Message) bool {
 		return msg.Text != "" || msg.Caption != ""

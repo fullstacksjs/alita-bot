@@ -79,22 +79,6 @@ func TestCheckFuncNilGuards(t *testing.T) {
 		c     *CommandContext
 	}{
 		{
-			name:  "CheckDisabled with nil Msg",
-			check: CheckDisabled("test"),
-			c: &CommandContext{
-				Bot: &gotgbot.Bot{Token: "test"},
-				Msg: nil,
-			},
-		},
-		{
-			name:  "CheckDisabled with nil Bot",
-			check: CheckDisabled("test"),
-			c: &CommandContext{
-				Bot: nil,
-				Msg: &gotgbot.Message{},
-			},
-		},
-		{
 			name:  "RequireUserAdmin with nil User",
 			check: RequireUserAdmin(),
 			c: &CommandContext{
@@ -282,15 +266,6 @@ func TestCheckFuncTrueBranches(t *testing.T) {
 			check: CanBotDelete(),
 			c:     &CommandContext{Bot: newCpBot(999), Ctx: makeCpContext("supergroup")},
 			want:  true,
-		},
-		{
-			name:  "CheckDisabled in private chat (always false)",
-			check: CheckDisabled("kick"),
-			c: &CommandContext{
-				Bot: newCpBot(999),
-				Msg: &gotgbot.Message{Chat: gotgbot.Chat{Id: 42, Type: "private"}},
-			},
-			want: true,
 		},
 		{
 			name:  "RequireUserAdmin when user is admin",
@@ -552,43 +527,6 @@ func TestWrapCommandSuccess(t *testing.T) {
 	}
 	if gotC.Bot != bot {
 		t.Fatal("CommandContext.Bot mismatch")
-	}
-}
-
-func TestWrapCommandWithDisableable(t *testing.T) {
-	d := ext.NewDispatcher(&ext.DispatcherOpts{})
-
-	handler := func(_ *CommandContext) error {
-		return nil
-	}
-
-	cmdsMu.Lock()
-	orig := make([]string, len(DisableCmds))
-	copy(orig, DisableCmds)
-	cmdsMu.Unlock()
-	defer func() {
-		cmdsMu.Lock()
-		DisableCmds = orig
-		cmdsMu.Unlock()
-	}()
-
-	WrapCommand(d, CommandDescriptor{
-		Name:           "testdisableable",
-		Disableable:    true,
-		RequiredChecks: []CheckFunc{},
-	}, handler)
-
-	found := false
-	cmdsMu.Lock()
-	for _, c := range DisableCmds {
-		if c == "testdisableable" {
-			found = true
-			break
-		}
-	}
-	cmdsMu.Unlock()
-	if !found {
-		t.Fatal("expected testdisableable to be registered as disableable")
 	}
 }
 

@@ -27,7 +27,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
 	"github.com/divkix/Alita_Robot/alita/utils/extraction"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
-	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 )
 
 const (
@@ -948,8 +947,6 @@ func LoadAntiRaid(dispatcher *ext.Dispatcher) {
 	)
 
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("antiraid"), antiRaidModule.callbackHandler))
-
-	helpers.AddCmdToDisableable("antiraid")
 
 	StartAntiRaidExpiryPoller()
 }

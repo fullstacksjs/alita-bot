@@ -253,10 +253,6 @@ Anyone can view blacklists in group
 func (m moduleStruct) listBlacklists(b *gotgbot.Bot, ctx *ext.Context) error {
 	tr := i18n.English()
 	msg := ctx.EffectiveMessage
-	// if command is disabled, return
-	if chat_status.CheckDisabledCmd(b, msg, "blacklists") {
-		return ext.EndGroups
-	}
 	// connection status
 	connectedChat := chat_status.IsUserConnected(b, ctx, false, true)
 	if connectedChat == nil {
@@ -661,7 +657,6 @@ func LoadBlacklists(dispatcher *ext.Dispatcher) {
 	DefaultHelpRegistry().AbleMap[blacklistsModule.moduleName] = true
 
 	dispatcher.AddHandler(handlers.NewCommand("blacklists", blacklistsModule.listBlacklists))
-	helpers.AddCmdToDisableable("blacklists")
 	dispatcher.AddHandler(handlers.NewCommand("addblacklist", blacklistsModule.addBlacklist))
 	dispatcher.AddHandler(handlers.NewCommand("rmblacklist", blacklistsModule.removeBlacklist))
 	dispatcher.AddHandler(handlers.NewCommand("blacklistaction", blacklistsModule.setBlacklistAction))

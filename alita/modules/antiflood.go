@@ -484,10 +484,6 @@ func (m *moduleStruct) flood(b *gotgbot.Bot, ctx *ext.Context) error {
 	var text string
 	msg := ctx.EffectiveMessage
 
-	// if command is disabled, return
-	if chat_status.CheckDisabledCmd(b, msg, "flood") {
-		return ext.EndGroups
-	}
 	// connection status
 	connectedChat := chat_status.IsUserConnected(b, ctx, false, true)
 	if connectedChat == nil {
@@ -629,6 +625,5 @@ func LoadAntiflood(dispatcher *ext.Dispatcher) {
 	dispatcher.AddHandler(handlers.NewCommand("setfloodmode", antifloodModule.setFloodMode))
 	dispatcher.AddHandler(handlers.NewCommand("delflood", antifloodModule.setFloodDeleter))
 	dispatcher.AddHandler(handlers.NewCommand("flood", antifloodModule.flood))
-	helpers.AddCmdToDisableable("flood")
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(message.All, antifloodModule.checkFlood), antifloodModule.handlerGroup)
 }

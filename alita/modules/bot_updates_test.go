@@ -2,13 +2,10 @@ package modules
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
 )
 
 func TestBotJoinedGroupIgnoresPrivateChats(t *testing.T) {
@@ -155,6 +152,7 @@ func TestAdminCacheAutoUpdateReloadsAdminList(t *testing.T) {
 	}
 }
 
+/* Removed anonymous-admin routing tests.
 func TestGetAnonAdminCacheReportsMissingCache(t *testing.T) {
 	withNilCacheMarshal(t)
 
@@ -384,6 +382,8 @@ func TestVerifyAnonymousAdminRestoresCachedMessageAndDeletesButton(t *testing.T)
 		t.Fatal("SenderChat was not cleared before command replay")
 	}
 }
+
+*/
 
 func TestBotUpdatesLoadersRegisterExpectedHandlers(t *testing.T) {
 	moduleDispatcher := ext.NewDispatcher(&ext.DispatcherOpts{MaxRoutines: -1})

@@ -169,7 +169,6 @@ func TestDefaultRegistryIncludesEveryRuntimeModule(t *testing.T) {
 	slices.Sort(got)
 
 	want := []string{
-		"Admin",
 		"AntiRaid",
 		"Antiflood",
 		"Approvals",
@@ -178,7 +177,6 @@ func TestDefaultRegistryIncludesEveryRuntimeModule(t *testing.T) {
 		"Blacklists",
 		"BotUpdates",
 		"Connections",
-		"Disabling",
 		"Filters",
 		"Formatting",
 		"Greetings",
@@ -186,11 +184,9 @@ func TestDefaultRegistryIncludesEveryRuntimeModule(t *testing.T) {
 		"Mutes",
 		"Notes",
 		"Owner",
-		"Pins",
 		"Purges",
 		"Reactions",
 		"Reports",
-		"Rules",
 		"Users",
 		"Warns",
 	}
@@ -213,7 +209,6 @@ func TestDefaultRegistryLoadsRuntimeModules(t *testing.T) {
 
 	loadedModules := listModulesFrom(defaultHelpRegistry)
 	want := []string{
-		"Admin",
 		"AntiRaid",
 		"Antiflood",
 		"Approvals",
@@ -221,18 +216,15 @@ func TestDefaultRegistryLoadsRuntimeModules(t *testing.T) {
 		"Bans",
 		"Blacklists",
 		"Connections",
-		"Disabling",
 		"Filters",
 		"Formatting",
 		"Greetings",
 		"Misc",
 		"Mutes",
 		"Notes",
-		"Pins",
 		"Purges",
 		"Reactions",
 		"Reports",
-		"Rules",
 		"Warns",
 	}
 	if !reflect.DeepEqual(loadedModules, want) {

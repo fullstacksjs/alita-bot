@@ -11,13 +11,11 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/divkix/Alita_Robot/alita/db/rules"
 	"github.com/divkix/Alita_Robot/alita/db/warns"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/extraction"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
-	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
@@ -37,9 +35,7 @@ func (moduleStruct) warnThisUser(b *gotgbot.Bot, ctx *ext.Context, userId int64,
 	msg := ctx.EffectiveMessage
 	tr := i18n.English()
 
-	// Get translated button texts
 	removeWarnText, _ := tr.GetString("warns_remove_button")
-	rulesButtonText, _ := tr.GetString("common_rules_button_emoji")
 
 	// permissions check
 	if chat_status.IsUserAdmin(b, chat.Id, userId) {
@@ -84,33 +80,11 @@ func (moduleStruct) warnThisUser(b *gotgbot.Bot, ctx *ext.Context, userId int64,
 		}
 		reply += sb.String()
 	} else {
-		rules := rules.GetChatRulesInfo(chat.Id)
-		if len(rules.Rules) >= 1 {
-			keyboard = gotgbot.InlineKeyboardMarkup{
-				InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
-					{
-						{
-							Text:         removeWarnText,
-							CallbackData: encodeCallbackData("rmWarn", map[string]string{"u": fmt.Sprint(u.Id)}),
-						},
-						{
-							Text: rulesButtonText,
-							Url:  fmt.Sprintf("t.me/%s?start=rules_%d", b.Username, chat.Id),
-						},
-					},
-				},
-			}
-		} else {
-			keyboard = gotgbot.InlineKeyboardMarkup{
-				InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
-					{
-						{
-							Text:         removeWarnText,
-							CallbackData: encodeCallbackData("rmWarn", map[string]string{"u": fmt.Sprint(u.Id)}),
-						},
-					},
-				},
-			}
+		keyboard = gotgbot.InlineKeyboardMarkup{
+			InlineKeyboard: [][]gotgbot.InlineKeyboardButton{{{
+				Text:         removeWarnText,
+				CallbackData: encodeCallbackData("rmWarn", map[string]string{"u": fmt.Sprint(u.Id)}),
+			}}},
 		}
 
 		temp, _ := tr.GetString("warns_user_warning")
@@ -233,11 +207,6 @@ func (moduleStruct) warns(b *gotgbot.Bot, ctx *ext.Context) error {
 	chat := ctx.EffectiveChat
 	msg := ctx.EffectiveMessage
 	tr := i18n.English()
-
-	// if command is disabled, return
-	if chat_status.CheckDisabledCmd(b, msg, "warns") {
-		return ext.EndGroups
-	}
 
 	userId := extraction.ExtractUser(b, ctx)
 	if userId == -1 {
@@ -730,7 +699,6 @@ func LoadWarns(dispatcher *ext.Dispatcher) {
 	dispatcher.AddHandler(handlers.NewCommand("resetwarns", warnsModule.resetWarns))
 	dispatcher.AddHandler(handlers.NewCommand("rmwarn", warnsModule.removeWarn))
 	dispatcher.AddHandler(handlers.NewCommand("warns", warnsModule.warns))
-	helpers.AddCmdToDisableable("warns")
 	dispatcher.AddHandler(handlers.NewCommand("setwarnlimit", warnsModule.setWarnLimit))
 	dispatcher.AddHandler(handlers.NewCommand("resetallwarns", warnsModule.resetAllWarns))
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("rmAllChatWarns"), warnsModule.warnsButtonHandler))
@@ -740,5 +708,4 @@ func LoadWarns(dispatcher *ext.Dispatcher) {
 
 func init() {
 	RegisterLegacyModule("Warns", 200, LoadWarns)
-	RegisterAnonymousAdminHandler("warn", warnsModule.warnUser)
 }

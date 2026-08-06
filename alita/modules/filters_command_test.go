@@ -284,8 +284,6 @@ func TestFilterOverwriteCallbackCancelAndExpired(t *testing.T) {
 	}
 }
 
-
-
 func TestFilterCommandsPropagateGotgbotRequestErrors(t *testing.T) {
 	requestErr := errors.New("telegram request failed")
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
@@ -449,8 +447,6 @@ func TestFilterCallbackHandlersReturnEarlyWithoutChat(t *testing.T) {
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Filter Chat"}
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-
-
 
 	overwriteCtx := newModuleCallbackContext(bot, chat, admin, encodeCallbackData("filters_overwrite", map[string]string{"a": "cancel"}))
 	overwriteCtx.EffectiveChat = nil

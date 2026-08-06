@@ -235,6 +235,4 @@ func LoadMutes(dispatcher *ext.Dispatcher) {
 
 func init() {
 	RegisterLegacyModule("Mutes", 80, LoadMutes)
-	RegisterAnonymousAdminHandler("mute", mutesModule.mute)
-	RegisterAnonymousAdminHandler("unmute", mutesModule.unmute)
 }

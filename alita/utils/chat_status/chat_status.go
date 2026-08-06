@@ -10,16 +10,12 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	"github.com/eko/gocache/lib/v4/store"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/divkix/Alita_Robot/alita/db/admin"
 	"github.com/divkix/Alita_Robot/alita/db/approvals"
 	"github.com/divkix/Alita_Robot/alita/db/connections"
-	"github.com/divkix/Alita_Robot/alita/db/disabling"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
-	"github.com/divkix/Alita_Robot/alita/utils/callbackcodec"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 )
 
@@ -32,8 +28,7 @@ const (
 )
 
 var (
-	tgAdminList           = []int64{groupAnonymousBot, tgUserId}
-	anonChatMapExpiration = 20 * time.Second
+	tgAdminList = []int64{groupAnonymousBot, tgUserId}
 )
 
 // IsValidUserId checks if an ID represents a valid Telegram user.
@@ -61,24 +56,6 @@ func callbackQueryFromContext(ctx *ext.Context) (*gotgbot.CallbackQuery, bool) {
 		return nil, false
 	}
 	return update.CallbackQuery, true
-}
-
-// checkAnonAdmin handles anonymous admin checks.
-// Returns true if user should be treated as admin (anon bypass enabled),
-// false if anon keyboard was sent, and a bool indicating if caller should return immediately.
-func checkAnonAdmin(b *gotgbot.Bot, chat *gotgbot.Chat, msg *gotgbot.Message, sender *gotgbot.Sender) (isAdmin bool, shouldReturn bool) {
-	if sender == nil || !sender.IsAnonymousAdmin() {
-		return false, false
-	}
-	if admin.GetAdminSettings(chat.Id).AnonAdmin {
-		return true, true
-	}
-	setAnonAdminCache(chat.Id, msg)
-	_, err := sendAnonAdminKeyboard(b, msg, chat)
-	if err != nil {
-		log.Error(err)
-	}
-	return false, true
 }
 
 // extractChatFromContext extracts the chat from the context.
@@ -148,44 +125,6 @@ func GetChat(bot *gotgbot.Bot, chatId string) (*gotgbot.Chat, error) {
 
 	var c gotgbot.Chat
 	return &c, json.Unmarshal(r, &c)
-}
-
-// CheckDisabledCmd checks if a command is disabled in the chat and handles deletion if configured.
-// Returns true if the command should be blocked, false if it should proceed.
-// Skips checks for private chats and admin users.
-// If command is disabled for non-admin users, optionally deletes the message based on chat settings.
-func CheckDisabledCmd(bot *gotgbot.Bot, msg *gotgbot.Message, cmd string) bool {
-	// Private chats don't have disabled commands
-	if msg.Chat.Type == "private" {
-		return false
-	}
-
-	// Check if command is disabled in this chat
-	if !disabling.IsCommandDisabled(msg.Chat.Id, cmd) {
-		return false
-	}
-
-	// msg.From can be nil for channel posts
-	if msg.From == nil {
-		return false
-	}
-
-	// Admins and creators can bypass disabled commands
-	if IsUserAdmin(bot, msg.Chat.Id, msg.From.Id) {
-		return false
-	}
-
-	// Command is disabled and user is not admin - block the command
-	// Optionally delete the message if chat has deletion enabled
-	if disabling.ShouldDel(msg.Chat.Id) {
-		_, err := msg.Delete(bot, nil)
-		if err != nil {
-			log.Errorf("[CheckDisabledCmd] Failed to delete message for disabled command '%s' in chat %d: %v", cmd, msg.Chat.Id, err)
-		}
-	}
-
-	// Return true to indicate command is blocked (regardless of whether deletion succeeded)
-	return true
 }
 
 // IsApproved checks if a user is in the approved whitelist for a chat.
@@ -378,12 +317,6 @@ func CanInvite(b *gotgbot.Bot, ctx *ext.Context, chat *gotgbot.Chat, msg *gotgbo
 	if !botChatMember.MergeChatMember().CanInviteUsers {
 		return false
 	}
-	sender := ctx.EffectiveSender
-
-	if isAdmin, shouldReturn := checkAnonAdmin(b, chat, msg, sender); shouldReturn {
-		return isAdmin
-	}
-
 	// msg.From can be nil for channel posts
 	if msg.From == nil {
 		return false
@@ -573,22 +506,6 @@ func IsUserBanProtected(b *gotgbot.Bot, ctx *ext.Context, chat *gotgbot.Chat, us
 	return IsUserAdmin(b, ctx.EffectiveChat.Id, userId) || slices.Contains(tgAdminList, userId)
 }
 
-// setAnonAdminCache stores anonymous admin message information in cache.
-// Used to track anonymous admin verification requests with expiration.
-// Logs errors but doesn't fail since cache is non-critical.
-func setAnonAdminCache(chatId int64, msg *gotgbot.Message) {
-	m := cache.GetMarshal()
-	if m == nil || msg == nil {
-		log.Debug("Skipping anonymous admin cache set: cache unavailable or message nil")
-		return
-	}
-	err := m.Set(cache.Context, fmt.Sprintf("alita:anonAdmin:%d:%d", chatId, msg.MessageId), msg, store.WithExpiration(anonChatMapExpiration))
-	if err != nil {
-		// Log error but don't fail the operation since cache is not critical
-		log.Errorf("Failed to set anonymous admin cache: %v", err)
-	}
-}
-
 // GetEffectiveUser safely extracts the user from context.
 // Returns nil for channel posts and cases where user is unavailable.
 func GetEffectiveUser(ctx *ext.Context) *gotgbot.User {
@@ -696,33 +613,4 @@ func ExtractAdminUpdateStatusChange(u *gotgbot.ChatMemberUpdated) bool {
 		))
 
 	return adminStatusChanged
-}
-
-// sendAnonAdminKeyboard sends an inline keyboard to verify anonymous admin identity.
-// Creates a callback button that anonymous admins can click to prove their admin status.
-func sendAnonAdminKeyboard(b *gotgbot.Bot, msg *gotgbot.Message, chat *gotgbot.Chat) (*gotgbot.Message, error) {
-	tr := i18n.English()
-	mainText, _ := tr.GetString("chat_status_anon_confirm")
-	buttonText, _ := tr.GetString("chat_status_anon_prove_admin")
-	callbackData, err := callbackcodec.Encode("anon_admin", map[string]string{
-		"c": fmt.Sprint(chat.Id),
-		"m": fmt.Sprint(msg.MessageId),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("encode anonymous-admin callback: %w", err)
-	}
-
-	return msg.Reply(b,
-		mainText,
-		&gotgbot.SendMessageOpts{
-			ReplyMarkup: gotgbot.InlineKeyboardMarkup{
-				InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
-					{{
-						Text:         buttonText,
-						CallbackData: callbackData,
-					}},
-				},
-			},
-		},
-	)
 }

@@ -2,20 +2,16 @@ package modules
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
-	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
 
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
-	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 )
 
@@ -74,10 +70,9 @@ func botJoinedGroup(b *gotgbot.Bot, ctx *ext.Context) error {
 	// send a message to group itself
 	tr := i18n.English()
 	thanksText, _ := tr.GetString("bot_updates_thanks_for_adding")
-	creatorsPlug, _ := tr.GetString("bot_updates_creators_plug")
 	_, err := b.SendMessage(
 		chat.Id,
-		fmt.Sprint(thanksText, creatorsPlug, msgAdmin),
+		fmt.Sprint(thanksText, msgAdmin),
 		nil,
 	)
 	if err != nil {
@@ -105,133 +100,8 @@ func adminCacheAutoUpdate(b *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.ContinueGroups
 }
 
-// verifyAnonymousAdmin handles callback verification for anonymous admins.
-// When an anonymous admin presses the verify button, this function:
-// 1. Verifies they are actually an admin in the chat
-// 2. Retrieves the original command from cache
-// 3. Executes the appropriate command handler with restored context
-func verifyAnonymousAdmin(b *gotgbot.Bot, ctx *ext.Context) error {
-	defer error_handling.RecoverFromPanic("bot_updates", "verifyAnonymousAdmin")
-
-	query, ok := callbackQueryFromContext(ctx)
-	if !ok {
-		return ext.EndGroups
-	}
-	qmsg := query.Message
-	tr := i18n.English()
-	if qmsg == nil {
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-
-	chatIDRaw := ""
-	msgIDRaw := ""
-	if decoded, ok := decodeCallbackData(query.Data, "anon_admin"); ok {
-		chatIDRaw, _ = decoded.Field("c")
-		msgIDRaw, _ = decoded.Field("m")
-	}
-	if chatIDRaw == "" || msgIDRaw == "" {
-		log.Warnf("[BotUpdates] Invalid callback data format: %s", query.Data)
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-	chatId, err := strconv.ParseInt(chatIDRaw, 10, 64)
-	if err != nil {
-		log.Warnf("[BotUpdates] Invalid callback chat ID: %s (%s)", query.Data, chatIDRaw)
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-	msgId, err := strconv.ParseInt(msgIDRaw, 10, 64)
-	if err != nil {
-		log.Warnf("[BotUpdates] Invalid callback message ID: %s (%s)", query.Data, msgIDRaw)
-		text, _ := tr.GetString("common_callback_invalid_request")
-		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: text})
-		return ext.EndGroups
-	}
-
-	// if non-admins try to press it
-	// using this func because it's the only one that can be called by taking chatId from callback query
-	if !chat_status.IsUserAdmin(b, chatId, query.From.Id) {
-		text, _ := tr.GetString("bot_updates_need_admin")
-		_, err := query.Answer(b,
-			&gotgbot.AnswerCallbackQueryOpts{
-				Text: text,
-			},
-		)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		return ext.EndGroups
-	}
-
-	msg, errCache := getAnonAdminCache(chatId, msgId)
-
-	if errCache != nil {
-		tr := i18n.English()
-		expiredText, _ := tr.GetString("bot_updates_button_expired")
-		_, _, err := qmsg.EditText(b, expiredText, nil)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		return ext.EndGroups
-	}
-
-	if msg == nil {
-		log.WithFields(log.Fields{
-			"chatId": chatId,
-			"msgId":  msgId,
-		}).Error("getAnonAdminCache: nil message from cache")
-		return ext.EndGroups
-	}
-
-	_, err = qmsg.Delete(b, nil)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-
-	ctx.EffectiveMessage = msg            // set the message to the message that was originally used when command was given
-	ctx.EffectiveMessage.SenderChat = nil // make senderChat nil to avoid chat_status.isAnonAdmin to mistaken user for GroupAnonymousBot
-	ctx.CallbackQuery = nil               // callback query is not needed anymore
-
-	// Extract the command from Text or Caption (caption commands would panic on empty Text)
-	text := msg.Text
-	if text == "" {
-		text = msg.Caption
-	}
-	if len(text) == 0 || text[0] != '/' {
-		return ext.EndGroups
-	}
-	parts := strings.SplitN(text, " ", 2)
-	command := strings.SplitN(parts[0][1:], "@", 2)[0]
-
-	if err := HandleAnonymousAdmin(b, ctx, command); err != nil {
-		return ext.EndGroups
-	}
-	return ext.EndGroups
-}
-
-// getAnonAdminCache retrieves cached message data for anonymous admin verification.
-// Returns the original message context stored during anonymous admin command execution.
-func getAnonAdminCache(chatId, msgId int64) (*gotgbot.Message, error) {
-	m := cache.GetMarshal()
-	if m == nil {
-		return nil, fmt.Errorf("cache not initialized")
-	}
-	result, err := m.Get(cache.Context, fmt.Sprintf("alita:anonAdmin:%d:%d", chatId, msgId), new(gotgbot.Message))
-	if err != nil {
-		return nil, err
-	}
-	return result.(*gotgbot.Message), nil
-}
-
 // LoadBotUpdates registers bot event handlers for group management.
-// Sets up handlers for bot joins, admin updates, and anonymous admin verification.
+// Sets up handlers for bot joins and admin cache updates.
 func LoadBotUpdates(dispatcher *ext.Dispatcher) {
 	dispatcher.AddHandlerToGroup(
 		handlers.NewMyChatMember(
@@ -251,7 +121,6 @@ func LoadBotUpdates(dispatcher *ext.Dispatcher) {
 		),
 	)
 
-	dispatcher.AddHandler(handlers.NewCallback(callbackquery.Prefix("anon_admin"), verifyAnonymousAdmin))
 }
 
 func init() {

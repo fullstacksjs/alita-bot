@@ -44,8 +44,6 @@ func TestAddGetListAndRemoveTextNote(t *testing.T) {
 	}
 }
 
-
-
 func TestAddExistingNoteUsesOverwriteConfirmation(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)

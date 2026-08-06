@@ -6,14 +6,11 @@ import (
 
 // module struct for all modules
 type moduleStruct struct {
-	moduleName        string
-	handlerGroup      int
-	permHandlerGroup  int
-	restrHandlerGroup int
-	defaultRulesBtn   string
-	AbleMap           map[string]bool
-	AltHelpOptions    map[string][]string
-	helpableKb        map[string][][]gotgbot.InlineKeyboardButton
+	moduleName     string
+	handlerGroup   int
+	AbleMap        map[string]bool
+	AltHelpOptions map[string][]string
+	helpableKb     map[string][][]gotgbot.InlineKeyboardButton
 }
 
 func newHelpRegistry() *moduleStruct {
