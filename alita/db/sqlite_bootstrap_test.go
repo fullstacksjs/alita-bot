@@ -134,7 +134,7 @@ func TestSQLiteBootstrap_RetainedDomainBaselineSchemaOnly(t *testing.T) {
 		"notes",
 		"reactions",
 		"warns_settings",
-		"warns_users",
+		"warn_events",
 		"schema_migrations",
 	}
 

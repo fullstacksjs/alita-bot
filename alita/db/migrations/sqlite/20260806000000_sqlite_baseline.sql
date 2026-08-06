@@ -195,16 +195,15 @@ CREATE TABLE IF NOT EXISTS warns_settings (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_warns_settings_chat_id ON warns_settings (chat_id);
 
--- Warns Users table
-CREATE TABLE IF NOT EXISTS warns_users (
+-- Warn Events table
+CREATE TABLE IF NOT EXISTS warn_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id BIGINT NOT NULL,
     chat_id BIGINT NOT NULL,
-    num_warns INTEGER DEFAULT 0,
-    warns TEXT DEFAULT '[]',
+    reason TEXT DEFAULT '',
     created_at DATETIME,
     updated_at DATETIME,
     FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uk_warns_users_user_chat ON warns_users (user_id, chat_id);
+CREATE INDEX IF NOT EXISTS idx_warn_events_user_chat ON warn_events (user_id, chat_id);

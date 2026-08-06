@@ -24,6 +24,7 @@ type (
 	User                   = models.User
 	Chat                   = models.Chat
 	WarnSettings           = models.WarnSettings
+	WarnEvent              = models.WarnEvent
 	Warns                  = models.Warns
 	GreetingSettings       = models.GreetingSettings
 	WelcomeSettings        = models.WelcomeSettings

@@ -15,17 +15,19 @@ func (WarnSettings) TableName() string {
 	return "warns_settings"
 }
 
-// Warns represents user warnings in a chat
-type Warns struct {
-	ID        uint        `gorm:"primaryKey;autoIncrement" json:"-"`
-	UserId    int64       `gorm:"column:user_id;not null;uniqueIndex:uk_warns_users_user_chat" json:"user_id,omitempty"`
-	ChatId    int64       `gorm:"column:chat_id;not null;uniqueIndex:uk_warns_users_user_chat" json:"chat_id,omitempty"`
-	NumWarns  int         `gorm:"column:num_warns;default:0;check:chk_warns_num_warns,num_warns >= 0" json:"num_warns,omitempty"`
-	Reasons   StringArray `gorm:"column:warns;type:jsonb" json:"warns" default:"[]"`
-	CreatedAt time.Time   `gorm:"column:created_at" json:"created_at,omitempty"`
-	UpdatedAt time.Time   `gorm:"column:updated_at" json:"updated_at,omitempty"`
+// WarnEvent represents an individual warning event for a user in a chat
+type WarnEvent struct {
+	ID        uint      `gorm:"primaryKey;autoIncrement" json:"-"`
+	UserId    int64     `gorm:"column:user_id;not null;index:idx_warn_events_user_chat" json:"user_id,omitempty"`
+	ChatId    int64     `gorm:"column:chat_id;not null;index:idx_warn_events_user_chat" json:"chat_id,omitempty"`
+	Reason    string    `gorm:"column:reason;default:''" json:"reason,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at" json:"created_at,omitempty"`
+	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at,omitempty"`
 }
 
-func (Warns) TableName() string {
-	return "warns_users"
+func (WarnEvent) TableName() string {
+	return "warn_events"
 }
+
+// Warns is an alias for WarnEvent
+type Warns = WarnEvent

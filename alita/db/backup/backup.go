@@ -718,7 +718,7 @@ func importWarns(tx *gorm.DB, chatID int64, payload interface{}, preserveLegacyO
 		}
 	}
 	for i := range data.Warns {
-		if data.Warns[i].UserId == 0 || data.Warns[i].NumWarns < 0 {
+		if data.Warns[i].UserId == 0 {
 			return nil, fmt.Errorf("invalid warn record")
 		}
 		data.Warns[i].ChatId = chatID

@@ -39,7 +39,7 @@ func TestMain(m *testing.M) {
 			&User{},
 			&Chat{},
 			&WarnSettings{},
-			&Warns{},
+			&WarnEvent{},
 			&GreetingSettings{},
 			&ChatFilters{},
 			&AdminSettings{},

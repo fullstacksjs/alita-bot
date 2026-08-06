@@ -3,6 +3,8 @@ package connections
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -14,17 +16,30 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/user"
 )
 
+func retryOnLock(fn func() error) error {
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		err = fn()
+		if err == nil {
+			return nil
+		}
+		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(err.Error(), "locked") {
+			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
+			continue
+		}
+		break
+	}
+	return err
+}
+
 // getUserConnectionSetting retrieves connection settings for a user.
 // Returns default settings (not connected) if not found, without creating a record.
-// This avoids violating foreign key constraints when ChatId would be 0.
 func getUserConnectionSetting(userID int64) (connectionSrc *models.ConnectionSettings) {
 	connectionSrc = &models.ConnectionSettings{}
-	err := db.GetRecord(connectionSrc, models.ConnectionSettings{UserId: userID})
+	err := db.DB.Where("user_id = ?", userID).First(connectionSrc).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// Return default settings without creating a record to avoid FK violation with ChatId=0
 		connectionSrc = &models.ConnectionSettings{UserId: userID, Connected: false}
 	} else if err != nil {
-		// Return default on error
 		connectionSrc = &models.ConnectionSettings{UserId: userID, Connected: false}
 		log.Errorf("[Database] getUserConnectionSetting: %d - %v", userID, err)
 	}
@@ -33,7 +48,6 @@ func getUserConnectionSetting(userID int64) (connectionSrc *models.ConnectionSet
 }
 
 // Connection returns the connection settings for a user.
-// This is a wrapper around getUserConnectionSetting.
 func Connection(UserID int64) *models.ConnectionSettings {
 	return getUserConnectionSetting(UserID)
 }
@@ -55,10 +69,12 @@ func ConnectId(UserID, chatID int64) error {
 	}
 
 	connection := &models.ConnectionSettings{UserId: UserID, ChatId: chatID, Connected: true}
-	err := db.DB.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"chat_id", "connected", "updated_at"}),
-	}).Create(connection).Error
+	err := retryOnLock(func() error {
+		return db.DB.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"chat_id", "connected", "updated_at"}),
+		}).Create(connection).Error
+	})
 	if err != nil {
 		log.Errorf("[Database] ConnectId: %v - %d", err, chatID)
 	}
@@ -68,7 +84,9 @@ func ConnectId(UserID, chatID int64) error {
 // DisconnectId disconnects a user from their current chat connection.
 // The connection row is removed so no chat history is retained for reconnect.
 func DisconnectId(UserID int64) error {
-	err := db.DB.Where("user_id = ?", UserID).Delete(&models.ConnectionSettings{}).Error
+	err := retryOnLock(func() error {
+		return db.DB.Where("user_id = ?", UserID).Delete(&models.ConnectionSettings{}).Error
+	})
 	if err != nil {
 		log.Errorf("[Database] DisconnectId: %v - %d", err, UserID)
 	}
