@@ -151,6 +151,25 @@ func (moduleStruct) logUsers(bot *gotgbot.Bot, ctx *ext.Context) error {
 		}
 	}
 
+	// update if message contains new chat members (membership tracking)
+	if msg != nil && len(msg.NewChatMembers) > 0 && chat != nil && chat_status.RequireGroup(bot, ctx, chat) {
+		for _, member := range msg.NewChatMembers {
+			if !member.IsBot {
+				updateCurrentChat(chat.Id, chat.Title, member.Id)
+				updateCurrentUser(member.Id, member.Username, formatting.GetFullName(member.FirstName, member.LastName))
+			}
+		}
+	}
+
+	// update if message contains left chat member (membership tracking)
+	if msg != nil && msg.LeftChatMember != nil && chat != nil && chat_status.RequireGroup(bot, ctx, chat) {
+		member := msg.LeftChatMember
+		if !member.IsBot {
+			updateCurrentChat(chat.Id, chat.Title, member.Id)
+			updateCurrentUser(member.Id, member.Username, formatting.GetFullName(member.FirstName, member.LastName))
+		}
+	}
+
 	// update if message is replied
 	if repliedMsg != nil {
 		replySender := repliedMsg.GetSender()
@@ -178,7 +197,7 @@ func (moduleStruct) logUsers(bot *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	// update if message is forwarded
-	if msg.ForwardOrigin != nil {
+	if msg != nil && msg.ForwardOrigin != nil {
 		forwarded := msg.ForwardOrigin.MergeMessageOrigin()
 		if forwarded.Chat != nil && forwarded.Chat.Type != "group" {
 			if shouldUpdate(channelUpdateCache, forwarded.Chat.Id, channelUpdateInterval) {
@@ -206,10 +225,27 @@ func (moduleStruct) logUsers(bot *gotgbot.Bot, ctx *ext.Context) error {
 	return ext.ContinueGroups
 }
 
+// logChatMember handles automatic tracking for ChatMember updates.
+func logChatMember(bot *gotgbot.Bot, ctx *ext.Context) error {
+	if ctx.ChatMember == nil || ctx.EffectiveChat == nil {
+		return ext.ContinueGroups
+	}
+	chat := ctx.EffectiveChat
+	if chat_status.RequireGroup(bot, ctx, chat) {
+		member := ctx.ChatMember.NewChatMember.MergeChatMember().User
+		if member.Id != 0 && !member.IsBot {
+			updateCurrentChat(chat.Id, chat.Title, member.Id)
+			updateCurrentUser(member.Id, member.Username, formatting.GetFullName(member.FirstName, member.LastName))
+		}
+	}
+	return ext.ContinueGroups
+}
+
 // LoadUsers registers the user logging handler with the dispatcher
-// to automatically track users and chats across all messages.
+// to automatically track users and chats across all messages and member events.
 func LoadUsers(dispatcher *ext.Dispatcher) {
 	dispatcher.AddHandlerToGroup(handlers.NewMessage(message.All, usersModule.logUsers), usersModule.handlerGroup)
+	dispatcher.AddHandlerToGroup(handlers.NewChatMember(func(u *gotgbot.ChatMemberUpdated) bool { return true }, logChatMember), usersModule.handlerGroup)
 }
 
 func init() {

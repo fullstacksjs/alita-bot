@@ -3,8 +3,10 @@ package chats
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/cache"
 	"github.com/divkix/Alita_Robot/alita/db/models"
@@ -12,6 +14,30 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// GetInactivityThreshold returns the duration after which a chat is considered inactive.
+func GetInactivityThreshold() time.Duration {
+	days := 30
+	if config.AppConfig != nil && config.AppConfig.InactivityThresholdDays > 0 {
+		days = config.AppConfig.InactivityThresholdDays
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
+// IsChatActive determines whether a chat is active based on last_activity and is_inactive flag.
+func IsChatActive(chat *models.Chat) bool {
+	if chat == nil {
+		return false
+	}
+	if chat.IsInactive {
+		return false
+	}
+	if chat.LastActivity.IsZero() {
+		return true
+	}
+	cutoff := time.Now().Add(-GetInactivityThreshold())
+	return !chat.LastActivity.Before(cutoff)
+}
 
 // GetChatSettings retrieves chat settings using optimized cached queries.
 // Returns an empty Chat struct if not found or on error.
@@ -44,7 +70,18 @@ func EnsureChatInDb(chatId int64, chatName string) error {
 		onConflict.DoNothing = false
 		onConflict.DoUpdates = clause.AssignmentColumns([]string{"chat_name", "updated_at"})
 	}
-	err := db.DB.Clauses(onConflict).Create(chatUpdate).Error
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		err = db.DB.Clauses(onConflict).Create(chatUpdate).Error
+		if err == nil {
+			break
+		}
+		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(err.Error(), "locked") {
+			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
+			continue
+		}
+		break
+	}
 	if err != nil {
 		log.Errorf("[Database] EnsureChatInDb: %v", err)
 		return fmt.Errorf("failed to ensure chat %d in database: %w", chatId, err)
@@ -71,21 +108,50 @@ func UpdateChat(chatId int64, chatname string, userid int64) error {
 		IsInactive:   false,
 		LastActivity: now,
 	}
-	if err := db.DB.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "chat_id"}},
-		DoUpdates: clause.AssignmentColumns(columns),
-	}).Create(chat).Error; err != nil {
+
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		err = db.DB.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "chat_id"}},
+			DoUpdates: clause.AssignmentColumns(columns),
+		}).Create(chat).Error
+		if err == nil {
+			break
+		}
+		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(err.Error(), "locked") {
+			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
+			continue
+		}
+		log.Errorf("[Database] UpdateChat upsert failed for chat %d: %v", chatId, err)
+		return err
+	}
+	if err != nil {
 		log.Errorf("[Database] UpdateChat upsert failed for chat %d: %v", chatId, err)
 		return err
 	}
 	defer cache.DeleteCache(cache.CacheKey("chat", chatId))
 
 	// Atomically append userid only if not already present in the JSON array
-	result := db.DB.Exec(
-		`UPDATE chats SET users = users || to_jsonb(?::bigint) WHERE chat_id = ? AND NOT (users @> to_jsonb(?::bigint))`,
-		userid, chatId, userid,
-	)
-	if result.Error != nil {
+	for attempt := 0; attempt < 5; attempt++ {
+		var result *gorm.DB
+		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" {
+			result = db.DB.Exec(
+				`UPDATE chats SET users = json_insert(COALESCE(NULLIF(CAST(users AS TEXT), ''), '[]'), '$[#]', ?) WHERE chat_id = ? AND NOT EXISTS (SELECT 1 FROM json_each(COALESCE(NULLIF(CAST(users AS TEXT), ''), '[]')) WHERE value = ?)`,
+				userid, chatId, userid,
+			)
+		} else {
+			result = db.DB.Exec(
+				`UPDATE chats SET users = users || to_jsonb(?::bigint) WHERE chat_id = ? AND NOT (users @> to_jsonb(?::bigint))`,
+				userid, chatId, userid,
+			)
+		}
+		if result.Error == nil {
+			break
+		}
+		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(result.Error.Error(), "locked") {
+			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
+			continue
+		}
 		log.Errorf("[Database] UpdateChat atomic append failed for chat %d user %d: %v", chatId, userid, result.Error)
 		return result.Error
 	}
@@ -114,19 +180,23 @@ func GetAllChats() map[int64]models.Chat {
 	return chatMap
 }
 
-// LoadChatStats returns the count of active and inactive chats.
-// Active chats have is_inactive = false, inactive chats have is_inactive = true.
+// LoadChatStats returns the count of active and inactive chats derived on demand from last_activity.
 func LoadChatStats() (activeChats, inactiveChats int) {
+	cutoff := time.Now().Add(-GetInactivityThreshold())
 	var activeCount, inactiveCount int64
 
-	// Count active chats
-	err := db.DB.Model(&models.Chat{}).Where("is_inactive = ?", false).Count(&activeCount).Error
+	// Active chats: is_inactive = false AND (last_activity >= cutoff OR last_activity IS NULL OR last_activity = zero)
+	err := db.DB.Model(&models.Chat{}).
+		Where("is_inactive = ? AND (last_activity >= ? OR last_activity IS NULL OR last_activity = ?)", false, cutoff, time.Time{}).
+		Count(&activeCount).Error
 	if err != nil {
 		log.Errorf("[Database][LoadChatStats] counting active chats: %v", err)
 	}
 
-	// Count inactive chats
-	err = db.DB.Model(&models.Chat{}).Where("is_inactive = ?", true).Count(&inactiveCount).Error
+	// Inactive chats: is_inactive = true OR (last_activity < cutoff AND last_activity > zero)
+	err = db.DB.Model(&models.Chat{}).
+		Where("is_inactive = ? OR (last_activity < ? AND last_activity > ?)", true, cutoff, time.Time{}).
+		Count(&inactiveCount).Error
 	if err != nil {
 		log.Errorf("[Database][LoadChatStats] counting inactive chats: %v", err)
 	}
@@ -170,3 +240,4 @@ func LoadActivityStats() (dag, wag, mag int64) {
 
 	return dag, wag, mag
 }
+
