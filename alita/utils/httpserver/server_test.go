@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -409,6 +410,42 @@ func TestRegisterHealth(t *testing.T) {
 	ct := rr.Header().Get("Content-Type")
 	if !strings.Contains(ct, "application/json") {
 		t.Errorf("expected application/json content type, got %s", ct)
+	}
+}
+
+func TestRegisterHealth_SQLiteMode(t *testing.T) {
+	tempFile := filepath.Join(t.TempDir(), "health_sqlite.db")
+	database, err := gorm.Open(sqlite.Open(tempFile), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("failed to open sqlite database for health check test: %v", err)
+	}
+
+	oldDB := db.DB
+	db.DB = database
+	t.Cleanup(func() { db.DB = oldDB })
+
+	s := New(8080, time.Now())
+	s.RegisterHealth()
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rr := httptest.NewRecorder()
+
+	s.mux.ServeHTTP(rr, req)
+
+	ct := rr.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		t.Errorf("expected application/json content type, got %s", ct)
+	}
+
+	var res HealthStatus
+	if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to unmarshal health response: %v", err)
+	}
+
+	if !res.Checks["database"] {
+		t.Errorf("expected checks[\"database\"] to be true in SQLite mode")
 	}
 }
 
