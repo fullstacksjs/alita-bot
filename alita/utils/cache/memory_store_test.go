@@ -4,7 +4,6 @@ package cache
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/eko/gocache/lib/v4/store"
 
 	"github.com/divkix/Alita_Robot/alita/utils/constants"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 func withMemoryMarshaler(t *testing.T) {
@@ -20,6 +20,7 @@ func withMemoryMarshaler(t *testing.T) {
 
 func TestAdminCacheRoundTripWithMemoryStore(t *testing.T) {
 	withMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	const chatID = int64(-100123)
 	adminViaMap := gotgbot.MergedChatMember{
@@ -37,9 +38,7 @@ func TestAdminCacheRoundTripWithMemoryStore(t *testing.T) {
 		Cached:   true,
 	}
 
-	if err := GetMarshal().Set(Context, fmt.Sprintf("alita:adminCache:%d", chatID), adminCache); err != nil {
-		t.Fatalf("cache set: %v", err)
-	}
+	state.Set(context.Background(), adminCacheKey(chatID), adminCache, time.Minute)
 
 	found, gotCache := GetAdminCacheList(chatID)
 	if !found || !gotCache.Cached || gotCache.ChatId != chatID {

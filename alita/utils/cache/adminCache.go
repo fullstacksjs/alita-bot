@@ -3,32 +3,85 @@ package cache
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
-	"github.com/eko/gocache/lib/v4/store"
 
 	"github.com/divkix/Alita_Robot/alita/utils/constants"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
+var (
+	// adminLoadGroup collapses concurrent administrator loads for the same chat
+	// so a burst of updates results in a single Telegram API round trip.
+	adminLoadGroup singleflight.Group
+	// adminCacheGeneration is bumped on every invalidation so an in-flight load
+	// started before a promotion or demotion cannot store its stale snapshot.
+	adminCacheGeneration atomic.Uint64
+)
+
+// adminCacheKey returns the in-process state key holding a chat's admin list.
+func adminCacheKey(chatId int64) string {
+	return fmt.Sprintf("alita:adminCache:%d", chatId)
+}
+
+// clone returns a copy of the admin cache so callers cannot mutate the shared
+// in-process entry. Entries used to be re-created per read by deserialization.
+func (a AdminCache) clone() AdminCache {
+	cloned := AdminCache{
+		ChatId: a.ChatId,
+		Cached: a.Cached,
+	}
+	if a.UserInfo != nil {
+		cloned.UserInfo = make([]gotgbot.MergedChatMember, len(a.UserInfo))
+		copy(cloned.UserInfo, a.UserInfo)
+	}
+	if a.UserMap != nil {
+		cloned.UserMap = make(map[int64]gotgbot.MergedChatMember, len(a.UserMap))
+		for id, member := range a.UserMap {
+			cloned.UserMap[id] = member
+		}
+	}
+	return cloned
+}
+
 // LoadAdminCache retrieves and caches the list of administrators for a given chat.
-// It fetches the current administrators from Telegram API and stores them in cache
-// with a 30-minute expiration. Returns an AdminCache struct containing the admin list.
+// It fetches the current administrators from Telegram API and stores them in the
+// in-process state store with the configured admin TTL. Returns an AdminCache
+// struct containing the admin list.
 func LoadAdminCache(b *gotgbot.Bot, chatId int64) AdminCache {
 	if b == nil {
 		log.Error("LoadAdminCache: bot is nil")
 		return AdminCache{}
 	}
+
+	loaded, _, _ := adminLoadGroup.Do(adminCacheKey(chatId), func() (interface{}, error) {
+		return loadAdminCache(b, chatId), nil
+	})
+
+	adminCache, ok := loaded.(AdminCache)
+	if !ok {
+		return AdminCache{}
+	}
+	return adminCache.clone()
+}
+
+func loadAdminCache(b *gotgbot.Bot, chatId int64) AdminCache {
+	generation := adminCacheGeneration.Load()
 	storeResult := func(adminCache AdminCache) AdminCache {
-		if m := GetMarshal(); m != nil {
-			if err := m.Set(Context, fmt.Sprintf("alita:adminCache:%d", chatId), adminCache, store.WithExpiration(constants.AdminCacheTTL)); err != nil {
-				log.WithFields(log.Fields{
-					"chatId": chatId,
-					"error":  err,
-				}).Error("LoadAdminCache: Failed to cache admin list")
-			}
+		// Skip the write when an invalidation happened while this load ran, so a
+		// pre-promotion snapshot cannot outlive the update that invalidated it.
+		if generation != adminCacheGeneration.Load() {
+			return adminCache
+		}
+		key := adminCacheKey(chatId)
+		state.Set(context.Background(), key, adminCache, constants.AdminCacheTTL)
+		if generation != adminCacheGeneration.Load() {
+			state.Delete(context.Background(), key)
 		}
 		return adminCache
 	}
@@ -140,48 +193,22 @@ func LoadAdminCache(b *gotgbot.Bot, chatId int64) AdminCache {
 // GetAdminCacheList retrieves the cached administrator list for a specific chat.
 // Returns true and the AdminCache if found in cache, false and empty AdminCache if cache miss.
 func GetAdminCacheList(chatId int64) (bool, AdminCache) {
-	m := GetMarshal()
-	if m == nil {
-		return false, AdminCache{}
-	}
-	gotAdminlist, err := m.Get(
-		Context,
-		fmt.Sprintf("alita:adminCache:%d", chatId),
-		new(AdminCache),
-	)
-	if err != nil {
+	adminCache, ok := state.Get[AdminCache](context.Background(), adminCacheKey(chatId))
+	if !ok {
 		log.WithFields(log.Fields{
 			"chatId": chatId,
-			"error":  err,
 		}).Debug("GetAdminCacheList: Cache miss, will attempt fallback")
 		return false, AdminCache{}
 	}
-	if gotAdminlist == nil {
-		log.WithFields(log.Fields{
-			"chatId": chatId,
-		}).Debug("GetAdminCacheList: Cache empty, will attempt fallback")
-		return false, AdminCache{}
-	}
-	return true, *gotAdminlist.(*AdminCache)
+	return true, adminCache.clone()
 }
 
 // GetAdminCacheUser searches for a specific user in the cached administrator list of a chat.
 // Returns true and the MergedChatMember if the user is found as an admin,
 // false and empty MergedChatMember if not found or cache miss.
 func GetAdminCacheUser(chatId, userId int64) (bool, gotgbot.MergedChatMember) {
-	m := GetMarshal()
-	if m == nil {
-		return false, gotgbot.MergedChatMember{}
-	}
-	// Use consistent string key format matching LoadAdminCache
-	adminList, err := m.Get(Context, fmt.Sprintf("alita:adminCache:%d", chatId), new(AdminCache))
-	if err != nil || adminList == nil {
-		return false, gotgbot.MergedChatMember{}
-	}
-
-	// Type assert with check to prevent panic
-	adminCache, ok := adminList.(*AdminCache)
-	if !ok || adminCache == nil {
+	adminCache, ok := state.Get[AdminCache](context.Background(), adminCacheKey(chatId))
+	if !ok {
 		return false, gotgbot.MergedChatMember{}
 	}
 
@@ -190,7 +217,7 @@ func GetAdminCacheUser(chatId, userId int64) (bool, gotgbot.MergedChatMember) {
 		return true, admin
 	}
 
-	// Fallback to linear search for backwards compatibility (e.g., cached data without UserMap)
+	// Fallback to linear search for entries stored without a lookup map
 	for i := range adminCache.UserInfo {
 		admin := &adminCache.UserInfo[i]
 		if admin.User.Id == userId {
@@ -203,14 +230,11 @@ func GetAdminCacheUser(chatId, userId int64) (bool, gotgbot.MergedChatMember) {
 // InvalidateAdminCache removes the cached admin list for a chat.
 // Should be called when admins are promoted/demoted to ensure fresh data.
 func InvalidateAdminCache(chatId int64) {
-	m := GetMarshal()
-	if m == nil {
-		return
-	}
-	cacheKey := fmt.Sprintf("alita:adminCache:%d", chatId)
-	if err := m.Delete(Context, cacheKey); err != nil {
-		log.Debugf("[AdminCache] Failed to invalidate cache for chat %d: %v", chatId, err)
-	} else {
-		log.Debugf("[AdminCache] Invalidated admin cache for chat %d", chatId)
-	}
+	// Bump the generation and drop any in-flight singleflight result before the
+	// delete so the next load cannot join a load that predates this invalidation.
+	adminCacheGeneration.Add(1)
+	adminLoadGroup.Forget(adminCacheKey(chatId))
+
+	state.Delete(context.Background(), adminCacheKey(chatId))
+	log.Debugf("[AdminCache] Invalidated admin cache for chat %d", chatId)
 }

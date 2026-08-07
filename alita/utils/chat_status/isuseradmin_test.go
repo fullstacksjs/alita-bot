@@ -248,13 +248,7 @@ func TestIsUserAdminUsesCache(t *testing.T) {
 		UserMap:  map[int64]gotgbot.MergedChatMember{adminID: adminEntry},
 		Cached:   true,
 	}
-	if err := cache.GetMarshal().Set(
-		cache.Context,
-		fmt.Sprintf("alita:adminCache:%d", chatID),
-		seedCache,
-	); err != nil {
-		t.Fatalf("seeding admin cache: %v", err)
-	}
+	cache.SetAdminCacheForTest(t, chatID, seedCache)
 
 	// A recording bot that must NOT be called during the cache-hit phase.
 	inner := &statusOnlyBotClient{
@@ -448,13 +442,7 @@ func TestIsUserAdminCacheHitLinearScan(t *testing.T) {
 		UserMap:  nil, // explicitly nil to force linear scan
 		Cached:   true,
 	}
-	if err := cache.GetMarshal().Set(
-		cache.Context,
-		fmt.Sprintf("alita:adminCache:%d", chatID),
-		seedCache,
-	); err != nil {
-		t.Fatalf("seeding admin cache without UserMap: %v", err)
-	}
+	cache.SetAdminCacheForTest(t, chatID, seedCache)
 
 	inner := &statusOnlyBotClient{botID: 9907, statusMap: map[int64]string{}}
 	rec := &recordingStatusClient{inner: inner}

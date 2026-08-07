@@ -208,3 +208,48 @@ func TestCodeUsesSafeCallbackQueryAccessor(t *testing.T) {
 		}
 	}
 }
+
+// TestRetainedCacheDoesNotDependOnRedis keeps the retained repository cache and
+// its consumers free of Redis-specific types: those reads are served by the
+// in-process TTL state store.
+func TestRetainedCacheDoesNotDependOnRedis(t *testing.T) {
+	t.Parallel()
+
+	redisImports := []string{
+		`"github.com/redis/go-redis/v9"`,
+		`"github.com/eko/gocache/lib/v4/store"`,
+		`"github.com/eko/gocache/lib/v4/marshaler"`,
+		`"github.com/eko/gocache/store/redis/v4"`,
+	}
+
+	root := filepath.Join("..", "..", "alita", "db")
+	var files []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to list Go files under %s: %v", root, err)
+	}
+	if len(files) == 0 {
+		t.Fatal("expected repository sources to exist")
+	}
+
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("failed to read Go file %s: %v", file, err)
+		}
+		for _, redisImport := range redisImports {
+			if strings.Contains(string(data), redisImport) {
+				t.Fatalf("%s imports %s; retained caching must go through alita/utils/state", file, redisImport)
+			}
+		}
+	}
+}

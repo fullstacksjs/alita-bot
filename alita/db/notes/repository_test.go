@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"context"
 	"slices"
 	"sync"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/models"
 	utilsCache "github.com/divkix/Alita_Robot/alita/utils/cache"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 func skipIfNoDb(t *testing.T) {
@@ -681,9 +683,7 @@ func TestNotesSettingsCacheInvalidation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cleanup Chat failed: %v", err)
 		}
-		if m := utilsCache.GetMarshal(); m != nil {
-			_ = m.Delete(utilsCache.Context, cache.CacheKey("notes_settings", chatID))
-		}
+		cache.DeleteCache(cache.CacheKey("notes_settings", chatID))
 	})
 
 	// Establish baseline: default settings (Private=false) are read from DB
@@ -700,9 +700,7 @@ func TestNotesSettingsCacheInvalidation(t *testing.T) {
 	// If TooglePrivateNote forgets to invalidate cache, the next GetNotes
 	// will serve this stale false instead of the DB truth.
 	stale := &models.NotesSettings{ChatId: chatID, Private: false}
-	if err := utilsCache.GetMarshal().Set(utilsCache.Context, cache.CacheKey("notes_settings", chatID), stale); err != nil {
-		t.Fatalf("failed to seed stale cache: %v", err)
-	}
+	state.Set(context.Background(), cache.CacheKey("notes_settings", chatID), stale, time.Minute)
 
 	// Toggle private notes on — must invalidate cache.
 	if err := TooglePrivateNote(chatID, true); err != nil {
@@ -710,9 +708,8 @@ func TestNotesSettingsCacheInvalidation(t *testing.T) {
 	}
 
 	// Verify the stale cache entry was evicted.
-	var cached models.NotesSettings
-	_, cacheErr := utilsCache.GetMarshal().Get(utilsCache.Context, cache.CacheKey("notes_settings", chatID), &cached)
-	if cacheErr == nil && !cached.Private {
+	cached, found := state.Get[*models.NotesSettings](context.Background(), cache.CacheKey("notes_settings", chatID))
+	if found && !cached.Private {
 		t.Fatalf("cache was not invalidated after TooglePrivateNote(true)")
 	}
 
@@ -724,17 +721,15 @@ func TestNotesSettingsCacheInvalidation(t *testing.T) {
 
 	// Corrupt cache again to test toggle(false) invalidation.
 	stale = &models.NotesSettings{ChatId: chatID, Private: true}
-	if err := utilsCache.GetMarshal().Set(utilsCache.Context, cache.CacheKey("notes_settings", chatID), stale); err != nil {
-		t.Fatalf("failed to seed stale cache for false toggle: %v", err)
-	}
+	state.Set(context.Background(), cache.CacheKey("notes_settings", chatID), stale, time.Minute)
 
 	// Toggle back to false.
 	if err := TooglePrivateNote(chatID, false); err != nil {
 		t.Fatalf("TooglePrivateNote(false) error = %v", err)
 	}
 
-	_, cacheErr = utilsCache.GetMarshal().Get(utilsCache.Context, cache.CacheKey("notes_settings", chatID), &cached)
-	if cacheErr == nil && cached.Private {
+	cached, found = state.Get[*models.NotesSettings](context.Background(), cache.CacheKey("notes_settings", chatID))
+	if found && cached.Private {
 		t.Fatalf("cache was not invalidated after TooglePrivateNote(false)")
 	}
 
@@ -759,9 +754,7 @@ func TestNotesSettingsCacheDefaultsForMissingChat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cleanup Chat failed: %v", err)
 		}
-		if m := utilsCache.GetMarshal(); m != nil {
-			_ = m.Delete(utilsCache.Context, cache.CacheKey("notes_settings", chatID))
-		}
+		cache.DeleteCache(cache.CacheKey("notes_settings", chatID))
 	})
 
 	settings := GetNotes(chatID)
