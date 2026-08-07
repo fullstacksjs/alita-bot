@@ -213,9 +213,20 @@ func TestLoadFilterStatsErrorBranch(t *testing.T) {
 		t.Fatalf("DropTable failed: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := db.DB.AutoMigrate(&models.ChatFilters{}); err != nil {
-			t.Errorf("AutoMigrate failed: %v", err)
-		}
+		db.DB.Exec(`CREATE TABLE IF NOT EXISTS filters (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			chat_id BIGINT NOT NULL,
+			keyword TEXT NOT NULL,
+			filter_reply TEXT,
+			msgtype INTEGER,
+			fileid TEXT,
+			nonotif BOOLEAN DEFAULT 0,
+			filter_buttons TEXT,
+			created_at DATETIME,
+			updated_at DATETIME,
+			FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
+		);`)
+		db.DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uk_filters_chat_keyword ON filters (chat_id, keyword);`)
 	})
 
 	if err := AddFilter(1, "missing-table", "reply", "", nil, db.TEXT); err == nil {
@@ -288,3 +299,76 @@ func TestAddFilterConcurrentInsert(t *testing.T) {
 		t.Fatalf("concurrent insert left filters=%+v", rows)
 	}
 }
+
+func TestUpdateFilterAndConcurrentOps(t *testing.T) {
+	skipIfNoDb(t)
+
+	chatID := newFilterTestChat(t)
+	t.Cleanup(func() {
+		_ = RemoveAllFilters(chatID)
+	})
+
+	// Updating non-existent filter returns false
+	updated, err := UpdateFilter(chatID, "ghost", "new text", "", nil, db.TEXT)
+	if err != nil {
+		t.Fatalf("UpdateFilter(ghost) unexpected error = %v", err)
+	}
+	if updated {
+		t.Fatal("UpdateFilter(ghost) returned true, want false")
+	}
+
+	// Add initial filter
+	if err := AddFilter(chatID, "test_item", "initial reply", "", nil, db.TEXT); err != nil {
+		t.Fatalf("AddFilter failed: %v", err)
+	}
+
+	// Overwrite via UpdateFilter
+	updated, err = UpdateFilter(chatID, "test_item", "updated reply", "file1", nil, db.PHOTO)
+	if err != nil || !updated {
+		t.Fatalf("UpdateFilter(test_item) updated=%v, err=%v", updated, err)
+	}
+
+	// Verify persistence
+	var filter models.ChatFilters
+	if err := db.DB.Where("chat_id = ? AND keyword = ?", chatID, "test_item").Take(&filter).Error; err != nil {
+		t.Fatalf("read updated filter error = %v", err)
+	}
+	if filter.FilterReply != "updated reply" || filter.FileID != "file1" || filter.MsgType != db.PHOTO {
+		t.Fatalf("updated filter state = %+v", filter)
+	}
+
+	// Concurrent operations: Add, Update, Remove, GetFiltersList
+	const workers = 10
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*4)
+
+	for i := range workers {
+		wg.Add(4)
+		word := fmt.Sprintf("conc_%d", i)
+		go func(w string) {
+			defer wg.Done()
+			if err := AddFilter(chatID, w, "reply", "", nil, db.TEXT); err != nil {
+				errs <- fmt.Errorf("AddFilter(%s): %w", w, err)
+			}
+		}(word)
+		go func(w string) {
+			defer wg.Done()
+			_, _ = UpdateFilter(chatID, w, "new_reply", "", nil, db.TEXT)
+		}(word)
+		go func(w string) {
+			defer wg.Done()
+			_ = GetFiltersList(chatID)
+		}(word)
+		go func(w string) {
+			defer wg.Done()
+			_ = RemoveFilter(chatID, w)
+		}(word)
+	}
+
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+}
+
