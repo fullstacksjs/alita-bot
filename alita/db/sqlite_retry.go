@@ -29,7 +29,7 @@ func RetryOnLock(fn func() error) error {
 
 // isSQLiteLockError reports whether err is a transient SQLite contention error.
 func isSQLiteLockError(err error) bool {
-	if DB == nil || DB.Dialector == nil || DB.Dialector.Name() != "sqlite" {
+	if DB == nil || DB.Dialector == nil || DB.Name() != "sqlite" {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
