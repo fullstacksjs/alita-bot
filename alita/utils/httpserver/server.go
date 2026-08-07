@@ -23,10 +23,8 @@ import (
 	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/monitoring"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
 	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
 	"github.com/divkix/Alita_Robot/alita/utils/tracing"
-	"github.com/eko/gocache/lib/v4/store"
 )
 
 // maxRequestBodySize defines the maximum allowed request body size (10MB)
@@ -84,48 +82,23 @@ func checkDatabase() bool {
 	return sqlDB.PingContext(ctx) == nil
 }
 
-// checkRedis checks if the Redis connection is healthy
-func checkRedis() bool {
-	if cache.Manager == nil {
-		return false
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	// Try to set and get a test key
-	testKey := "health_check_test"
-	err := cache.Manager.Set(ctx, testKey, "ok", store.WithExpiration(5*time.Second))
-	if err != nil {
-		return false
-	}
-
-	_, err = cache.Manager.Get(ctx, testKey)
-	// Delete the test key
-	_ = cache.Manager.Delete(ctx, testKey)
-
-	return err == nil
-}
-
 // RegisterHealth registers the /health endpoint
 func (s *Server) RegisterHealth() {
 	s.mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		dbHealthy := checkDatabase()
-		redisHealthy := checkRedis()
 
 		status := HealthStatus{
 			Status: "healthy",
 			Checks: map[string]bool{
 				"database": dbHealthy,
-				"redis":    redisHealthy,
 			},
 			Version: config.AppConfig.BotVersion,
 			Uptime:  time.Since(s.startTime).String(),
 		}
 
-		if !dbHealthy || !redisHealthy {
+		if !dbHealthy {
 			status.Status = "unhealthy"
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}

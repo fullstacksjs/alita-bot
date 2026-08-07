@@ -8,7 +8,7 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/models"
-	utilsCache "github.com/divkix/Alita_Robot/alita/utils/cache"
+
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -28,9 +28,8 @@ func withChannelSQLite(t *testing.T) {
 	}
 
 	originalDB := db.DB
-	originalMarshal := utilsCache.GetMarshal()
 	testDB, err := gorm.Open(
-		sqlite.Open(fmt.Sprintf("file:channels-%d?mode=memory&cache=shared", time.Now().UnixNano())),
+		sqlite.Open(fmt.Sprint("file:channels-", time.Now().UnixNano(), "?mode=memory&cache=shared")),
 		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
 	)
 	if err != nil {
@@ -42,7 +41,6 @@ func withChannelSQLite(t *testing.T) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	db.DB = testDB
-	utilsCache.SetMarshal(nil)
 	if err := db.DB.AutoMigrate(&models.ChannelSettings{}); err != nil {
 		t.Fatalf("AutoMigrate ChannelSettings: %v", err)
 	}
@@ -50,7 +48,6 @@ func withChannelSQLite(t *testing.T) {
 	t.Cleanup(func() {
 		_ = sqlDB.Close()
 		db.DB = originalDB
-		utilsCache.SetMarshal(originalMarshal)
 	})
 }
 

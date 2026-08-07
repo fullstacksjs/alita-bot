@@ -114,9 +114,6 @@ func TestLoadConfig(t *testing.T) {
 		if cfg.DatabaseURL != "postgres://localhost/test" {
 			t.Errorf("DatabaseURL: got %q, want %q", cfg.DatabaseURL, "postgres://localhost/test")
 		}
-		if cfg.RedisAddress != "redis:6379" {
-			t.Errorf("RedisAddress: got %q, want %q", cfg.RedisAddress, "redis:6379")
-		}
 		if cfg.HTTPPort != 9090 {
 			t.Errorf("HTTPPort: got %d, want %d", cfg.HTTPPort, 9090)
 		}
@@ -208,11 +205,7 @@ func TestValidateConfigPure(t *testing.T) {
 			setup:   func(c *Config) { c.DatabaseURL = "" },
 			wantErr: "DATABASE_URL is required",
 		},
-		{
-			name:    "missing redis address",
-			setup:   func(c *Config) { c.RedisAddress = "" },
-			wantErr: "REDIS_ADDRESS or REDIS_URL is required",
-		},
+
 		{
 			name: "webhook requires domain",
 			setup: func(c *Config) {
@@ -293,56 +286,4 @@ func TestValidateConfigPure(t *testing.T) {
 	}
 }
 
-func TestRedisEnvParsingPure(t *testing.T) {
-	tests := []struct {
-		name         string
-		redisAddr    string
-		redisPass    string
-		redisURL     string
-		wantAddr     string
-		wantPassword string
-	}{
-		{
-			name:         "explicit address and password take precedence",
-			redisAddr:    "redis.internal:6379",
-			redisPass:    "direct-password",
-			redisURL:     "redis://:url-password@example.com:6380",
-			wantAddr:     "redis.internal:6379",
-			wantPassword: "direct-password",
-		},
-		{
-			name:      "explicit address ignores URL credentials",
-			redisAddr: "redis.internal:6379",
-			redisURL:  "redis://:stale@example.com:6380",
-			wantAddr:  "redis.internal:6379",
-		},
-		{
-			name:         "url supplies host and password",
-			redisURL:     "redis://:secret@example.com:6380/1",
-			wantAddr:     "example.com:6380",
-			wantPassword: "secret",
-		},
-		{
-			name:     "invalid url returns empty values",
-			redisURL: "://bad-url",
-		},
-		{
-			name: "empty env returns empty values",
-		},
-	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("REDIS_ADDRESS", tc.redisAddr)
-			t.Setenv("REDIS_PASSWORD", tc.redisPass)
-			t.Setenv("REDIS_URL", tc.redisURL)
-
-			if got := getRedisAddress(); got != tc.wantAddr {
-				t.Fatalf("getRedisAddress() = %q, want %q", got, tc.wantAddr)
-			}
-			if got := getRedisPassword(); got != tc.wantPassword {
-				t.Fatalf("getRedisPassword() = %q, want %q", got, tc.wantPassword)
-			}
-		})
-	}
-}

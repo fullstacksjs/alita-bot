@@ -7,31 +7,17 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	gocache "github.com/eko/gocache/lib/v4/cache"
-	"github.com/eko/gocache/lib/v4/marshaler"
-	"github.com/eko/gocache/lib/v4/store"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
 )
 
-// withNilCacheMarshal clears the cache marshaler for the duration of a test.
-func withNilCacheMarshal(t *testing.T) {
-	t.Helper()
 
-	previousMarshal := cache.GetMarshal()
-	cache.SetMarshal(nil)
-	t.Cleanup(func() {
-		cache.SetMarshal(previousMarshal)
-	})
-}
 
 type moduleBotCall struct {
 	Method string
@@ -198,105 +184,8 @@ func newModuleCallbackContext(
 	return ext.NewContext(bot, &gotgbot.Update{UpdateId: 2, CallbackQuery: query}, nil)
 }
 
-type moduleMemoryStore struct {
-	mu   sync.RWMutex
-	data map[string][]byte
-	ttls map[string]time.Time
-}
-
-func newModuleMemoryStore() *moduleMemoryStore {
-	return &moduleMemoryStore{
-		data: make(map[string][]byte),
-		ttls: make(map[string]time.Time),
-	}
-}
-
-func (m *moduleMemoryStore) Get(_ context.Context, key any) (any, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	k := fmt.Sprint(key)
-	if expiry, ok := m.ttls[k]; ok && time.Now().After(expiry) {
-		return nil, fmt.Errorf("key expired")
-	}
-	v, ok := m.data[k]
-	if !ok {
-		return nil, fmt.Errorf("key not found")
-	}
-	return v, nil
-}
-
-func (m *moduleMemoryStore) GetWithTTL(_ context.Context, key any) (any, time.Duration, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	k := fmt.Sprint(key)
-	v, ok := m.data[k]
-	if !ok {
-		return nil, 0, fmt.Errorf("key not found")
-	}
-	var ttl time.Duration
-	if expiry, ok := m.ttls[k]; ok {
-		ttl = time.Until(expiry)
-		if ttl < 0 {
-			return nil, 0, fmt.Errorf("key expired")
-		}
-	}
-	return v, ttl, nil
-}
-
-func (m *moduleMemoryStore) Set(_ context.Context, key, value any, options ...store.Option) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	k := fmt.Sprint(key)
-	opts := store.ApplyOptions(options...)
-	switch v := value.(type) {
-	case []byte:
-		m.data[k] = v
-	case string:
-		m.data[k] = []byte(v)
-	default:
-		return fmt.Errorf("unsupported value type %T", value)
-	}
-	if opts.Expiration > 0 {
-		m.ttls[k] = time.Now().Add(opts.Expiration)
-	} else {
-		delete(m.ttls, k)
-	}
-	return nil
-}
-
-func (m *moduleMemoryStore) Delete(_ context.Context, key any) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	k := fmt.Sprint(key)
-	delete(m.data, k)
-	delete(m.ttls, k)
-	return nil
-}
-
-func (m *moduleMemoryStore) Invalidate(_ context.Context, _ ...store.InvalidateOption) error {
-	return nil
-}
-
-func (m *moduleMemoryStore) Clear(_ context.Context) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.data = make(map[string][]byte)
-	m.ttls = make(map[string]time.Time)
-	return nil
-}
-
-func (m *moduleMemoryStore) GetType() string {
-	return "memory"
-}
-
 func TestMain(m *testing.M) {
 	var dbFileName string
-	cache.SetMarshal(marshaler.New(gocache.New[any](newModuleMemoryStore())))
 	if db.DB == nil {
 		dbFile, err := os.CreateTemp("", "alita_modules_test_*.db")
 		if err != nil {

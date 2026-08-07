@@ -13,7 +13,7 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/models"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
+
 )
 
 func skipIfNoDb(t *testing.T) {
@@ -295,9 +295,6 @@ func TestSetAntiRaidThresholdNegativeRejection(t *testing.T) {
 
 func TestAntiRaidSettingsCacheInvalidation(t *testing.T) {
 	skipIfNoDb(t)
-	if !cache.IsRedisAvailable() {
-		t.Skip("requires Redis cache")
-	}
 
 	chatID := time.Now().UnixNano()
 	t.Cleanup(func() {

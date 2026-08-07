@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path"
 	"runtime"
@@ -30,64 +29,7 @@ func isCliModeActive() bool {
 	return false
 }
 
-// getRedisAddress returns the Redis address from REDIS_ADDRESS or parses it from REDIS_URL.
-// REDIS_URL format: redis://user:password@host:port (standard Redis URL format)
-// Returns: host:port
-func getRedisAddress() string {
-	if addr := os.Getenv("REDIS_ADDRESS"); addr != "" {
-		return addr
-	}
 
-	// Fallback to parsing REDIS_URL (standard Redis URL format used by many platforms)
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
-		return ""
-	}
-
-	parsed, err := url.Parse(redisURL)
-	if err != nil {
-		log.Warnf("Failed to parse REDIS_URL: %v", err)
-		return ""
-	}
-
-	return parsed.Host
-}
-
-// getRedisURL returns REDIS_URL only when the direct address form is not in use.
-func getRedisURL() string {
-	if os.Getenv("REDIS_ADDRESS") != "" {
-		return ""
-	}
-	return os.Getenv("REDIS_URL")
-}
-
-// getRedisPassword returns the Redis password from REDIS_PASSWORD or extracts it from REDIS_URL
-func getRedisPassword() string {
-	if pass := os.Getenv("REDIS_PASSWORD"); pass != "" {
-		return pass
-	}
-	if os.Getenv("REDIS_ADDRESS") != "" {
-		return ""
-	}
-
-	// Fallback to extracting from REDIS_URL
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
-		return ""
-	}
-
-	parsed, err := url.Parse(redisURL)
-	if err != nil {
-		return ""
-	}
-
-	if parsed.User != nil {
-		pass, _ := parsed.User.Password()
-		return pass
-	}
-
-	return ""
-}
 
 func getHTTPPort() int {
 	value := os.Getenv("HTTP_PORT")
@@ -125,11 +67,7 @@ type Config struct {
 	// Database monitoring configuration
 	EnableDBMonitoring bool `env:"ENABLE_DB_MONITORING" envDefault:"false"`
 
-	// Redis configuration
-	RedisAddress  string `validate:"required"`
-	RedisURL      string
-	RedisPassword string
-	RedisDB       int
+
 
 	// HTTP Server configuration (unified server for health, metrics, webhook)
 	HTTPPort int `validate:"min=1,max=65535"`
@@ -144,8 +82,7 @@ type Config struct {
 	EnableBackgroundStats       bool
 	DispatcherMaxRoutines       int `validate:"min=1,max=1000"` // Max concurrent goroutines for dispatcher
 
-	// Cache configuration - Redis only (no local cache configuration needed)
-	ClearCacheOnStartup bool // Whether to clear all caches on bot startup
+
 
 	// Activity monitoring configuration
 	InactivityThresholdDays int  `validate:"min=1,max=365"` // Days before marking a chat as inactive
@@ -192,9 +129,7 @@ func ValidateConfig(cfg *Config) error {
 	if cfg.DatabaseURL == "" && cfg.SQLitePath == "" {
 		return fmt.Errorf("DATABASE_URL is required")
 	}
-	if cfg.RedisAddress == "" {
-		return fmt.Errorf("REDIS_ADDRESS or REDIS_URL is required")
-	}
+
 
 	// Validate webhook configuration if webhooks are enabled
 	if cfg.UseWebhooks {
@@ -265,11 +200,7 @@ func LoadConfig() (*Config, error) {
 		// Database monitoring configuration
 		EnableDBMonitoring: typeConvertor{str: os.Getenv("ENABLE_DB_MONITORING")}.Bool(),
 
-		// Redis configuration (supports both REDIS_ADDRESS and REDIS_URL for platform compatibility)
-		RedisAddress:  getRedisAddress(),
-		RedisURL:      getRedisURL(),
-		RedisPassword: getRedisPassword(),
-		RedisDB:       typeConvertor{str: os.Getenv("REDIS_DB")}.Int(),
+
 
 		// HTTP Server configuration
 		HTTPPort: getHTTPPort(),
@@ -284,8 +215,7 @@ func LoadConfig() (*Config, error) {
 		EnableBackgroundStats:       typeConvertor{str: os.Getenv("ENABLE_BACKGROUND_STATS")}.Bool(),
 		DispatcherMaxRoutines:       typeConvertor{str: os.Getenv("DISPATCHER_MAX_ROUTINES")}.Int(),
 
-		// Cache configuration - Redis only
-		ClearCacheOnStartup: typeConvertor{str: os.Getenv("CLEAR_CACHE_ON_STARTUP")}.Bool(),
+
 
 		// Activity monitoring configuration
 		InactivityThresholdDays: typeConvertor{str: os.Getenv("INACTIVITY_THRESHOLD_DAYS")}.Int(),
@@ -352,12 +282,7 @@ func (cfg *Config) setDefaults() {
 	if cfg.WorkingMode == "" {
 		cfg.WorkingMode = "worker"
 	}
-	if cfg.RedisAddress == "" {
-		cfg.RedisAddress = "localhost:6379"
-	}
-	if cfg.RedisDB == 0 && os.Getenv("REDIS_DB") != "0" {
-		cfg.RedisDB = 1
-	}
+
 
 	if cfg.HTTPPort == 0 {
 		cfg.HTTPPort = 8080
@@ -394,11 +319,7 @@ func (cfg *Config) setDefaults() {
 		cfg.DispatcherMaxRoutines = 200 // Optimized for better throughput
 	}
 
-	// Set cache defaults
-	// ClearCacheOnStartup defaults to true for better reliability, but only if not explicitly set via env var
-	if os.Getenv("CLEAR_CACHE_ON_STARTUP") == "" {
-		cfg.ClearCacheOnStartup = true
-	}
+
 
 	// Enable monitoring by default in production
 	if !cfg.Debug {
@@ -490,7 +411,6 @@ func init() {
 	logredact.RegisterSecret(
 		cfg.BotToken,
 		cfg.DatabaseURL,
-		cfg.RedisPassword,
 		cfg.WebhookSecret,
 		cfg.MetricsAuthToken,
 	)

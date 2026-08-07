@@ -8,7 +8,6 @@ import (
 )
 
 func TestRecentJoinProcessingNoCacheFallback(t *testing.T) {
-	withNilCacheMarshal(t)
 	t.Cleanup(func() {
 		clearRecentJoinProcessing(-100123, 456)
 	})

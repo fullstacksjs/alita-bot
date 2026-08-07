@@ -36,20 +36,10 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     env:
       BOT_TOKEN: test-token
       OWNER_ID: "1"
       MESSAGE_DUMP: "1"
-      REDIS_ADDRESS: "localhost:6379"
       DATABASE_URL: "postgres://postgres:postgres@localhost:5432/alita_test?sslmode=disable"
       AUTO_MIGRATE: "false"
       USE_WEBHOOKS: "false"

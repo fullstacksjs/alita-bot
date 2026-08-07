@@ -222,7 +222,7 @@ func TestRetainedCacheDoesNotDependOnRedis(t *testing.T) {
 		`"github.com/eko/gocache/store/redis/v4"`,
 	}
 
-	root := filepath.Join("..", "..", "alita", "db")
+	root := filepath.Join("..", "..", "alita")
 	var files []string
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -248,7 +248,7 @@ func TestRetainedCacheDoesNotDependOnRedis(t *testing.T) {
 		}
 		for _, redisImport := range redisImports {
 			if strings.Contains(string(data), redisImport) {
-				t.Fatalf("%s imports %s; retained caching must go through alita/utils/state", file, redisImport)
+				t.Fatalf("%s imports %s; caching must go through alita/utils/state", file, redisImport)
 			}
 		}
 	}

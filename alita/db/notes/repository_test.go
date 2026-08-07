@@ -11,7 +11,7 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/cache"
 	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/models"
-	utilsCache "github.com/divkix/Alita_Robot/alita/utils/cache"
+
 	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
@@ -668,7 +668,6 @@ func TestAddNoteConcurrentInsert(t *testing.T) {
 
 func TestNotesSettingsCacheInvalidation(t *testing.T) {
 	skipIfNoDb(t)
-	utilsCache.SetupTestMemoryMarshaler(t)
 
 	chatID := time.Now().UnixNano()
 	if err := chats.EnsureChatInDb(chatID, "test-cache-invalidation"); err != nil {
@@ -739,9 +738,8 @@ func TestNotesSettingsCacheInvalidation(t *testing.T) {
 	}
 }
 
-func TestNotesSettingsCacheDefaultsForMissingChat(t *testing.T) {
+func TestGetNotesSettingsCached_ErrorHandling(t *testing.T) {
 	skipIfNoDb(t)
-	utilsCache.SetupTestMemoryMarshaler(t)
 
 	chatID := time.Now().UnixNano()
 	// Do NOT create the chat — chat does not exist.

@@ -10,7 +10,7 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/models"
-	utilsCache "github.com/divkix/Alita_Robot/alita/utils/cache"
+
 	"gorm.io/gorm"
 )
 
@@ -71,7 +71,6 @@ func TestGetUserBasicInfo(t *testing.T) {
 
 func TestGetUserBasicInfoCached(t *testing.T) {
 	skipIfNoDb(t)
-	utilsCache.SetupTestMemoryMarshaler(t)
 
 	userID := time.Now().UnixNano()
 	username := fmt.Sprintf("testuser_%d", userID)
@@ -115,7 +114,6 @@ func TestGetUserBasicInfoCached(t *testing.T) {
 
 func TestGetUserBasicInfoCached_RecordNotFound(t *testing.T) {
 	skipIfNoDb(t)
-	utilsCache.SetupTestMemoryMarshaler(t)
 
 	userID := time.Now().UnixNano()
 

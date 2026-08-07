@@ -9,7 +9,7 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/models"
-	utilsCache "github.com/divkix/Alita_Robot/alita/utils/cache"
+
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -30,7 +30,6 @@ func TestGetChatDisabledCMDsCachedDoesNotCacheDatabaseErrors(t *testing.T) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	db.DB = testDB
-	utilsCache.SetupTestMemoryMarshaler(t)
 	t.Cleanup(func() {
 		_ = sqlDB.Close()
 		db.DB = originalDB

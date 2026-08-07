@@ -24,7 +24,7 @@ import (
 	dbmonitoring "github.com/divkix/Alita_Robot/alita/db/monitoring"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/modules"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
+
 	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
 	"github.com/divkix/Alita_Robot/alita/utils/errors"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
@@ -88,11 +88,7 @@ func main() {
 		log.Info("Running in RELEASE Mode...")
 	}
 
-	// Initialize Redis-backed application caches before other services.
-	if err := cache.InitCache(); err != nil {
-		log.Fatalf("Failed to initialize cache: %v", err)
-	}
-	log.Info("Cache system initialized successfully")
+
 
 	// Initialize the process-local locale maps (English only).
 	if err := i18n.GetManager().Initialize(&Locales, "locales"); err != nil {

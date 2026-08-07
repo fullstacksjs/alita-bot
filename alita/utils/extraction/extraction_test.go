@@ -16,7 +16,6 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
 )
 
 func TestTemporaryUntilDate(t *testing.T) {
@@ -129,7 +128,6 @@ func newExtractionContext(bot *gotgbot.Bot, text string) *ext.Context {
 }
 
 func TestMain(m *testing.M) {
-	cache.SetMarshal(nil)
 
 	dbFile, err := os.CreateTemp("", "alita_extraction_test_*.db")
 	if err != nil {

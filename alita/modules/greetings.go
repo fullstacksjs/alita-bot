@@ -1,7 +1,7 @@
 package modules
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,18 +10,17 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
-	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/divkix/Alita_Robot/alita/db/greetings"
 	"github.com/divkix/Alita_Robot/alita/i18n"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/content"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 	"github.com/divkix/Alita_Robot/alita/utils/keyboard"
 	"github.com/divkix/Alita_Robot/alita/utils/media"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 // Concurrency limit for processing multiple new members
@@ -31,7 +30,6 @@ const (
 )
 
 var greetingsModule = moduleStruct{moduleName: "Greetings"}
-var recentJoinProcessing sync.Map
 
 func recentJoinProcessingKey(chatID, userID int64) string {
 	return fmt.Sprintf("alita:recentJoinProcessing:%d:%d", chatID, userID)
@@ -39,45 +37,12 @@ func recentJoinProcessingKey(chatID, userID int64) string {
 
 func claimRecentJoinProcessing(chatID, userID int64) bool {
 	key := recentJoinProcessingKey(chatID, userID)
-
-	if rdb := cache.GetRedisClient(); rdb != nil {
-		_, err := rdb.SetArgs(cache.Context, key, true, redis.SetArgs{
-			Mode: "NX",
-			TTL:  recentJoinProcessTTL,
-		}).Result()
-		if err == nil {
-			// Key did not exist; we set it — claim is ours.
-			return true
-		}
-		if errors.Is(err, redis.Nil) {
-			// Key already existed; another goroutine claimed this join.
-			return false
-		}
-		// Genuine Redis error — fall through to in-memory fallback.
-		log.Debugf("[Greetings] Redis SETNX unavailable for join dedupe key %s, falling back to in-memory claim: %v", key, err)
-	}
-
-	if _, loaded := recentJoinProcessing.LoadOrStore(key, struct{}{}); loaded {
-		return false
-	}
-
-	time.AfterFunc(recentJoinProcessTTL, func() {
-		recentJoinProcessing.Delete(key)
-	})
-
-	return true
+	return state.SetNX(context.Background(), key, struct{}{}, recentJoinProcessTTL)
 }
 
 func clearRecentJoinProcessing(chatID, userID int64) {
 	key := recentJoinProcessingKey(chatID, userID)
-
-	if m := cache.GetMarshal(); m != nil {
-		if err := m.Delete(cache.Context, key); err != nil {
-			log.Debugf("[Greetings] Failed to clear shared join dedupe key %s: %v", key, err)
-		}
-	}
-
-	recentJoinProcessing.Delete(key)
+	state.Delete(context.Background(), key)
 }
 
 // welcome displays or toggles the configured welcome message.

@@ -9,9 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eko/gocache/lib/v4/store"
-
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 func TestFormatCooldown(t *testing.T) {
@@ -117,7 +115,7 @@ func TestBackupRateLimiter_RecordMethods_NilCache_NoPanic(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBackupRateLimiter_recordOperationAndGetLastOperation(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	limiter := &BackupRateLimiter{}
 	const chatID = int64(99901)
@@ -158,7 +156,7 @@ func TestBackupRateLimiter_recordOperationAndGetLastOperation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBackupRateLimiter_CanExport_AllowedThenBlocked(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	limiter := &BackupRateLimiter{}
 	const chatID = int64(99902)
@@ -186,7 +184,7 @@ func TestBackupRateLimiter_CanExport_AllowedThenBlocked(t *testing.T) {
 }
 
 func TestBackupRateLimiter_AcquireExportIsAtomic(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	limiter := &BackupRateLimiter{}
 	const chatID = int64(99906)
@@ -223,7 +221,7 @@ func TestBackupRateLimiter_AcquireExportIsAtomic(t *testing.T) {
 }
 
 func TestBackupRateLimiter_CanImport_AllowedThenBlocked(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	limiter := &BackupRateLimiter{}
 	const chatID = int64(99903)
@@ -248,7 +246,7 @@ func TestBackupRateLimiter_CanImport_AllowedThenBlocked(t *testing.T) {
 }
 
 func TestBackupRateLimiter_CanReset_AllowedThenBlocked(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	limiter := &BackupRateLimiter{}
 	const chatID = int64(99904)
@@ -273,7 +271,7 @@ func TestBackupRateLimiter_CanReset_AllowedThenBlocked(t *testing.T) {
 }
 
 func TestBackupRateLimiter_CanExport_AfterCooldown(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	limiter := &BackupRateLimiter{}
 	const chatID = int64(99905)
@@ -281,10 +279,7 @@ func TestBackupRateLimiter_CanExport_AfterCooldown(t *testing.T) {
 
 	// Manually seed cache with a timestamp well in the past.
 	past := time.Now().Add(-DefaultExportCooldown - time.Second)
-	// marshaler stores time values via msgpack, so we must store via marshaler
-	if err := cache.GetMarshal().Set(context.Background(), cacheKey, past, store.WithExpiration(DefaultExportCooldown)); err != nil {
-		t.Fatalf("failed to seed cache: %v", err)
-	}
+	state.Set(context.Background(), cacheKey, past, DefaultExportCooldown)
 
 	allowed, remaining := limiter.CanExport(chatID)
 	if !allowed {
@@ -296,16 +291,14 @@ func TestBackupRateLimiter_CanExport_AfterCooldown(t *testing.T) {
 }
 
 func TestBackupRateLimiter_CanImport_AfterCooldown(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	limiter := &BackupRateLimiter{}
 	const chatID = int64(99906)
 	cacheKey := importRatePrefix + fmt.Sprint(chatID)
 
 	past := time.Now().Add(-DefaultImportCooldown - time.Second)
-	if err := cache.GetMarshal().Set(context.Background(), cacheKey, past, store.WithExpiration(DefaultImportCooldown)); err != nil {
-		t.Fatalf("failed to seed cache: %v", err)
-	}
+	state.Set(context.Background(), cacheKey, past, DefaultImportCooldown)
 
 	allowed, remaining := limiter.CanImport(chatID)
 	if !allowed {
@@ -317,16 +310,14 @@ func TestBackupRateLimiter_CanImport_AfterCooldown(t *testing.T) {
 }
 
 func TestBackupRateLimiter_CanReset_AfterCooldown(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	limiter := &BackupRateLimiter{}
 	const chatID = int64(99907)
 	cacheKey := resetRatePrefix + fmt.Sprint(chatID)
 
 	past := time.Now().Add(-DefaultResetCooldown - time.Second)
-	if err := cache.GetMarshal().Set(context.Background(), cacheKey, past, store.WithExpiration(DefaultResetCooldown)); err != nil {
-		t.Fatalf("failed to seed cache: %v", err)
-	}
+	state.Set(context.Background(), cacheKey, past, DefaultResetCooldown)
 
 	allowed, remaining := limiter.CanReset(chatID)
 	if !allowed {
@@ -338,7 +329,7 @@ func TestBackupRateLimiter_CanReset_AfterCooldown(t *testing.T) {
 }
 
 func TestBackupRateLimiter_recordOperation_UnknownPrefix(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	limiter := &BackupRateLimiter{}
 	cacheKey := "backup:unknown:12345"
@@ -356,16 +347,14 @@ func TestBackupRateLimiter_recordOperation_UnknownPrefix(t *testing.T) {
 }
 
 func TestBackupRateLimiter_getLastOperation_CacheError(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	limiter := &BackupRateLimiter{}
 	const chatID = int64(99908)
 	cacheKey := exportRatePrefix + fmt.Sprint(chatID)
 
 	// Seed cache with non-time data so unmarshalling fails.
-	if err := cache.GetMarshal().Set(context.Background(), cacheKey, "not-a-time"); err != nil {
-		t.Fatalf("failed to seed cache: %v", err)
-	}
+	state.Set(context.Background(), cacheKey, "not-a-time", DefaultExportCooldown)
 
 	_, err := limiter.getLastOperation(cacheKey)
 	if err == nil {
