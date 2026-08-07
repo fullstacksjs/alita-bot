@@ -157,7 +157,7 @@ func newValidationTestDB(t *testing.T) *gorm.DB {
 		switch check.table {
 		case "devs":
 			columns = "user_id INTEGER"
-		case "chat_users", "connection", "warns_users":
+		case "chat_users", "connection", "warn_events":
 			columns = "chat_id INTEGER, user_id INTEGER"
 		case "channels":
 			columns = "chat_id INTEGER, channel_id INTEGER"

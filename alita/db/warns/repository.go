@@ -116,28 +116,54 @@ func WarnUser(userId, chatId int64, reason string) (int, []string, error) {
 	return numWarns, reasons, nil
 }
 
+// removeWarnAttempts bounds the retries used to claim a warning event when
+// several removals race for the same row.
+const removeWarnAttempts = 10
+
 // RemoveWarn removes the most recent warning event from a user in a specific chat.
 // Returns whether a warning was removed and any persistence error.
+//
+// The delete targets the newest event in a single statement rather than reading
+// it first and deleting it afterwards: under PostgreSQL's READ COMMITTED, two
+// concurrent removals would otherwise both read the same event and both report
+// success while only one row disappeared. When another caller claims the chosen
+// event first, this retries against the next one so every caller that reports a
+// removal really removed a warning.
 func RemoveWarn(userId, chatId int64) (bool, error) {
 	var removed bool
 
 	err := db.RetryOnLock(func() error {
-		return db.DB.Transaction(func(tx *gorm.DB) error {
-			var lastEvent models.WarnEvent
-			err := tx.Where("user_id = ? AND chat_id = ?", userId, chatId).Order("id DESC").First(&lastEvent).Error; if err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					removed = false
-					return nil
-				}
-				return err
+		removed = false
+		for range removeWarnAttempts {
+			newest := db.DB.Model(&models.WarnEvent{}).
+				Select("id").
+				Where("user_id = ? AND chat_id = ?", userId, chatId).
+				Order("id DESC").
+				Limit(1)
+
+			result := db.DB.Where("id = (?)", newest).Delete(&models.WarnEvent{})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected > 0 {
+				removed = true
+				return nil
 			}
 
-			if err := tx.Delete(&lastEvent).Error; err != nil {
+			// Nothing was deleted: either this user has no warnings left, or a
+			// concurrent removal claimed the event first. Only the latter is
+			// worth another attempt.
+			var remaining int64
+			if err := db.DB.Model(&models.WarnEvent{}).
+				Where("user_id = ? AND chat_id = ?", userId, chatId).
+				Count(&remaining).Error; err != nil {
 				return err
 			}
-			removed = true
-			return nil
-		})
+			if remaining == 0 {
+				return nil
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		log.Errorf("[Database] RemoveWarn: %v", err)
