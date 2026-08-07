@@ -12,6 +12,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db/migrations"
 )
 
@@ -220,28 +221,47 @@ func TestSQLiteBootstrap_NoExternalMigrationDirectoryRequired(t *testing.T) {
 	require.NoError(t, err, "migration runner must execute embedded migrations without requiring external directory")
 }
 
+// setDatabaseURL points both configuration sources at dsn for the duration of a
+// subtest. IsSQLiteMode prefers the loaded config over the environment, because
+// configuration is read once at startup, so setting only the environment
+// variable leaves a already-loaded config in place and the test would assert
+// against whatever DSN the surrounding environment happened to supply.
+func setDatabaseURL(t *testing.T, dsn string) {
+	t.Helper()
+
+	t.Setenv("DATABASE_URL", dsn)
+	if config.AppConfig == nil {
+		return
+	}
+	original := config.AppConfig.DatabaseURL
+	config.AppConfig.DatabaseURL = dsn
+	t.Cleanup(func() {
+		config.AppConfig.DatabaseURL = original
+	})
+}
+
 func TestSQLiteModeDetection(t *testing.T) {
 	t.Run("SQLITE_PATH set", func(t *testing.T) {
 		t.Setenv("SQLITE_PATH", "/data/bot.db")
-		t.Setenv("DATABASE_URL", "")
+		setDatabaseURL(t, "")
 		assert.True(t, IsSQLiteMode())
 	})
 
 	t.Run("DATABASE_URL with sqlite prefix", func(t *testing.T) {
 		t.Setenv("SQLITE_PATH", "")
-		t.Setenv("DATABASE_URL", "sqlite:///data/bot.db")
+		setDatabaseURL(t, "sqlite:///data/bot.db")
 		assert.True(t, IsSQLiteMode())
 	})
 
 	t.Run("DATABASE_URL with .db extension", func(t *testing.T) {
 		t.Setenv("SQLITE_PATH", "")
-		t.Setenv("DATABASE_URL", "mydata.db")
+		setDatabaseURL(t, "mydata.db")
 		assert.True(t, IsSQLiteMode())
 	})
 
 	t.Run("PostgreSQL DSN", func(t *testing.T) {
 		t.Setenv("SQLITE_PATH", "")
-		t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/dbname")
+		setDatabaseURL(t, "postgres://user:pass@localhost:5432/dbname")
 		assert.False(t, IsSQLiteMode())
 	})
 }
