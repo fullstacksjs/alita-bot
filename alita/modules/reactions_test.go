@@ -8,7 +8,7 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/reactions"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
+	dbcache "github.com/divkix/Alita_Robot/alita/db/cache"
 )
 
 func TestReactionCommandsManageDBRows(t *testing.T) {
@@ -154,19 +154,15 @@ func TestCheckReactionsNoopsForMissingMessageChatAndEmptyConfig(t *testing.T) {
 	}
 }
 
-// TestReactionCommandsWorkWithNilCacheMarshal verifies the DB-backed repository
-// still functions (bypassing cache) when the cache marshaler is unavailable,
-// so reactions are not lost just because Redis is down.
-func TestReactionCommandsWorkWithNilCacheMarshal(t *testing.T) {
+// TestReactionCommandsWorkWithCacheDisabled verifies the DB-backed repository
+// still functions (bypassing cache) when read-through cache is disabled.
+func TestReactionCommandsWorkWithCacheDisabled(t *testing.T) {
 	if db.DB == nil {
 		t.Skip("requires database connection")
 	}
 
-	orig := cache.GetMarshal()
-	cache.SetMarshal(nil)
-	t.Cleanup(func() {
-		cache.SetMarshal(orig)
-	})
+	restore := dbcache.SetEnabled(false)
+	t.Cleanup(restore)
 
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)

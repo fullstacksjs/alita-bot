@@ -8,7 +8,7 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/models"
-	utilsCache "github.com/divkix/Alita_Robot/alita/utils/cache"
+
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -25,9 +25,8 @@ func withChatSQLite(t *testing.T) {
 	t.Helper()
 
 	originalDB := db.DB
-	originalMarshal := utilsCache.GetMarshal()
 	testDB, err := gorm.Open(
-		sqlite.Open(fmt.Sprintf("file:chats-%d?mode=memory&cache=shared", time.Now().UnixNano())),
+		sqlite.Open(fmt.Sprint("file:chats-", time.Now().UnixNano(), "?mode=memory&cache=shared")),
 		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
 	)
 	if err != nil {
@@ -39,7 +38,6 @@ func withChatSQLite(t *testing.T) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	db.DB = testDB
-	utilsCache.SetMarshal(nil)
 	if err := db.DB.AutoMigrate(&models.Chat{}); err != nil {
 		t.Fatalf("AutoMigrate Chat: %v", err)
 	}
@@ -47,7 +45,6 @@ func withChatSQLite(t *testing.T) {
 	t.Cleanup(func() {
 		_ = sqlDB.Close()
 		db.DB = originalDB
-		utilsCache.SetMarshal(originalMarshal)
 	})
 }
 

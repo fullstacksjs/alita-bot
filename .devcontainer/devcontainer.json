@@ -35,13 +35,9 @@
     "5432": {
       "label": "PostgreSQL",
       "onAutoForward": "ignore"
-    },
-    "6379": {
-      "label": "Redis",
-      "onAutoForward": "ignore"
     }
   },
-  "postStartCommand": "docker compose -f debug.docker-compose.yml up -d postgres redis",
+  "postStartCommand": "docker compose -f debug.docker-compose.yml up -d postgres",
   "remoteUser": "vscode",
   "annotations": {
     "annotation": "Alita Robot - Telegram Group Management Bot"

@@ -17,7 +17,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/antiraid"
 	"github.com/divkix/Alita_Robot/alita/db/approvals"
 	"github.com/divkix/Alita_Robot/alita/db/models"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
 	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
@@ -94,7 +93,6 @@ func TestFormatDuration(t *testing.T) {
 }
 
 func TestAntiRaidKeysAndNoCacheFallbacks(t *testing.T) {
-	withNilCacheMarshal(t)
 
 	chatID := int64(-1001234567890)
 	if got := joinsKey(chatID); got != "alita:antiraid:joins:-1001234567890" {
@@ -162,17 +160,15 @@ func TestStartAntiRaidExpiryPollerSkipsWhenDatabaseUnavailable(t *testing.T) {
 func TestStartAntiRaidExpiryPollerRunsWithoutRedis(t *testing.T) {
 	antiRaidCancel = nil
 	antiRaidCtx = nil
-	restoreRedis := cache.DisableRedisForTest()
 	t.Cleanup(func() {
 		StopAntiRaidExpiryPoller()
-		restoreRedis()
 		antiRaidCtx = nil
 	})
 
-	// The raid window is persisted in SQLite, so expiry no longer depends on Redis.
+	// The raid window is persisted in SQLite.
 	StartAntiRaidExpiryPoller()
 	if antiRaidCancel == nil {
-		t.Fatal("StartAntiRaidExpiryPoller did not start without Redis")
+		t.Fatal("StartAntiRaidExpiryPoller did not start")
 	}
 }
 
@@ -876,7 +872,6 @@ func TestAntiRaidOnJoinSkipsIneligibleUpdates(t *testing.T) {
 // trackJoin: the count must stay below T for the first T-1 joins and reach T on
 // the T-th join, with no overlap between distinct chat IDs.
 func TestAntiRaidTrackJoinTriggersAtThreshold(t *testing.T) {
-	withMiniredis(t)
 
 	chatID := uniqueModuleChatID()
 	threshold := 3
@@ -957,7 +952,6 @@ func TestAntiRaidOnJoinAppliesConfiguredAction(t *testing.T) {
 	})
 
 	t.Run("auto-triggers raid and bans joiner at threshold", func(t *testing.T) {
-		withMiniredis(t)
 
 		client := newModuleBotClient()
 		bot := newModuleTestBot(client)
@@ -996,7 +990,6 @@ func TestAntiRaidOnJoinAppliesConfiguredAction(t *testing.T) {
 	})
 
 	t.Run("bans the rest of a batch after auto-triggering once", func(t *testing.T) {
-		withMiniredis(t)
 
 		client := newModuleBotClient()
 		bot := newModuleTestBot(client)
@@ -1091,7 +1084,7 @@ func TestAntiRaidLongRaidWindowSurvivesCacheLoss(t *testing.T) {
 		t.Fatalf("enableRaid(week) = (%v, %v), want (true, nil)", enabled, err)
 	}
 
-	withNilCacheMarshal(t)
+
 
 	state := getRaidState(chatID)
 	if !state.Active {

@@ -12,6 +12,7 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 
 	"github.com/divkix/Alita_Robot/alita/db"
+	"github.com/divkix/Alita_Robot/alita/utils/cache"
 )
 
 type recordingBotClient struct {
@@ -130,6 +131,9 @@ func TestResolveSendResult(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				cache.MarkChatNotRestricted(tc.chatID)
+			})
 			t.Parallel()
 
 			got, err := resolveSendResult(tc.result, tc.err, tc.chatID, tc.mediaType)

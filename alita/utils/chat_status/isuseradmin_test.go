@@ -11,6 +11,7 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2"
 
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 // errorBotClient is a bot client that returns an error for getChat requests,
@@ -146,7 +147,7 @@ func (c *recordingStatusClient) FileURL(token, path string, opts *gotgbot.Reques
 // NOTE: this test must NOT use t.Parallel() because SetupTestMemoryMarshaler
 // writes to package-level globals that are not safe to write concurrently.
 func TestIsUserAdminMemberStatuses(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	chatID := int64(-2001)
 
@@ -183,7 +184,7 @@ func TestIsUserAdminMemberStatuses(t *testing.T) {
 // call.  This guards against the privilege-escalation class of bugs where a
 // channel acting as a group member could be treated as an admin.
 func TestIsUserAdminChannelIDReturnsFalse(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	inner := &statusOnlyBotClient{
 		botID:     9900,
@@ -227,7 +228,7 @@ func TestIsUserAdminChannelIDReturnsFalse(t *testing.T) {
 //  2. Cache MISS: after the cache is invalidated, IsUserAdmin falls back to the
 //     live API (stubbed here) and returns the correct value.
 func TestIsUserAdminUsesCache(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	const (
 		chatID     = int64(-3001)
@@ -316,7 +317,7 @@ func TestIsUserAdminUsesCache(t *testing.T) {
 // service account IDs (groupAnonymousBot and tgUserId) are always treated as
 // admins regardless of what the cache or API would return.
 func TestIsUserAdminTelegramServiceAccounts(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	inner := &statusOnlyBotClient{
 		botID:     9903,
@@ -354,7 +355,7 @@ func TestIsUserAdminTelegramServiceAccounts(t *testing.T) {
 // are ≤ 0 but not channel IDs (i.e. zero and small-negative group IDs).
 // This exercises the else-if branch at chat_status.go:212.
 func TestIsUserAdminInvalidNonChannelUserIDs(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	inner := &statusOnlyBotClient{botID: 9904, statusMap: map[int64]string{}}
 	rec := &recordingStatusClient{inner: inner}
@@ -387,7 +388,7 @@ func TestIsUserAdminInvalidNonChannelUserIDs(t *testing.T) {
 // fails (cache miss scenario where the API is unreachable).
 // Exercises chat_status.go:251-258.
 func TestIsUserAdminGetChatError(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	bot := &gotgbot.Bot{
 		Token:     "9905:errtest",
@@ -405,7 +406,7 @@ func TestIsUserAdminGetChatError(t *testing.T) {
 // TestIsUserAdminNonGroupChatType covers the guard at chat_status.go:261-263
 // where the function returns false if the chat is not a group or supergroup.
 func TestIsUserAdminNonGroupChatType(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	// Use a bot whose getChat returns a "private" type — the guard fires immediately.
 	bot := &gotgbot.Bot{
@@ -424,7 +425,7 @@ func TestIsUserAdminNonGroupChatType(t *testing.T) {
 // scan path (chat_status.go:241-246) where a cached AdminCache has a nil
 // UserMap and must be searched via UserInfo slice.
 func TestIsUserAdminCacheHitLinearScan(t *testing.T) {
-	cache.SetupTestMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	const (
 		chatID  = int64(-5001)
@@ -489,7 +490,7 @@ func TestIsUserAdminFallbackGetChatMemberErrors(t *testing.T) {
 
 	for _, tc := range errTests {
 		t.Run(tc.name, func(t *testing.T) {
-			cache.SetupTestMemoryMarshaler(t)
+			state.SimulateRestart()
 
 			// Use a unique chatID per sub-test to avoid cache bleed.
 			chatID := int64(-6000) - int64(len(tc.name))

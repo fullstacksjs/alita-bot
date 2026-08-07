@@ -14,12 +14,11 @@ func skipIfNoConfig(t *testing.T) {
 
 func validBaseConfig() *Config {
 	return &Config{
-		BotToken:     "test-token",
-		OwnerId:      1,
-		MessageDump:  1,
-		DatabaseURL:  "postgres://localhost/test",
-		RedisAddress: "localhost:6379",
-		HTTPPort:     8080,
+		BotToken:    "test-token",
+		OwnerId:     1,
+		MessageDump: 1,
+		DatabaseURL: "postgres://localhost/test",
+		HTTPPort:    8080,
 	}
 }
 
@@ -58,11 +57,7 @@ func TestValidateConfig(t *testing.T) {
 			setup:   func(c *Config) { c.DatabaseURL = "" },
 			wantErr: true,
 		},
-		{
-			name:    "empty RedisAddress returns error",
-			setup:   func(c *Config) { c.RedisAddress = "" },
-			wantErr: true,
-		},
+
 		// Webhook validations
 		{
 			name: "UseWebhooks with empty domain returns error",
@@ -201,12 +196,6 @@ func TestSetDefaults(t *testing.T) {
 		if cfg.WorkingMode != "worker" {
 			t.Errorf("WorkingMode: got %q, want %q", cfg.WorkingMode, "worker")
 		}
-		if cfg.RedisAddress != "localhost:6379" {
-			t.Errorf("RedisAddress: got %q, want %q", cfg.RedisAddress, "localhost:6379")
-		}
-		if cfg.RedisDB != 1 {
-			t.Errorf("RedisDB: got %d, want %d", cfg.RedisDB, 1)
-		}
 		if cfg.HTTPPort != 8080 {
 			t.Errorf("HTTPPort: got %d, want %d", cfg.HTTPPort, 8080)
 		}
@@ -224,9 +213,6 @@ func TestSetDefaults(t *testing.T) {
 		}
 		if cfg.MigrationsPath != "migrations" {
 			t.Errorf("MigrationsPath: got %q, want %q", cfg.MigrationsPath, "migrations")
-		}
-		if !cfg.ClearCacheOnStartup {
-			t.Errorf("ClearCacheOnStartup: got false, want true")
 		}
 		if cfg.DispatcherMaxRoutines != 200 {
 			t.Errorf("DispatcherMaxRoutines: got %d, want %d", cfg.DispatcherMaxRoutines, 200)
@@ -253,27 +239,7 @@ func TestSetDefaults(t *testing.T) {
 		}
 	})
 
-	t.Run("pre-set RedisDB preserved", func(t *testing.T) {
-		t.Parallel()
 
-		cfg := &Config{RedisDB: 5}
-		cfg.setDefaults()
-
-		if cfg.RedisDB != 5 {
-			t.Errorf("RedisDB: got %d, want %d", cfg.RedisDB, 5)
-		}
-	})
-
-	t.Run("explicit Redis DB zero preserved", func(t *testing.T) {
-		t.Setenv("REDIS_DB", "0")
-
-		cfg := &Config{}
-		cfg.setDefaults()
-
-		if cfg.RedisDB != 0 {
-			t.Errorf("RedisDB: got %d, want 0", cfg.RedisDB)
-		}
-	})
 
 	t.Run("pre-set HTTPPort preserved", func(t *testing.T) {
 		t.Parallel()
@@ -285,102 +251,9 @@ func TestSetDefaults(t *testing.T) {
 			t.Errorf("HTTPPort: got %d, want %d", cfg.HTTPPort, 3000)
 		}
 	})
-
-	t.Run("ClearCacheOnStartup defaults to true when not set", func(t *testing.T) {
-		t.Setenv("CLEAR_CACHE_ON_STARTUP", "")
-
-		cfg := &Config{}
-		cfg.setDefaults()
-
-		if !cfg.ClearCacheOnStartup {
-			t.Errorf("ClearCacheOnStartup: got false, want true (default when env var not set)")
-		}
-	})
-
-	t.Run("ClearCacheOnStartup respects explicit false", func(t *testing.T) {
-		t.Setenv("CLEAR_CACHE_ON_STARTUP", "false")
-
-		cfg := &Config{ClearCacheOnStartup: typeConvertor{str: "false"}.Bool()}
-		cfg.setDefaults()
-
-		if cfg.ClearCacheOnStartup {
-			t.Errorf("ClearCacheOnStartup: got true, want false (should respect env var CLEAR_CACHE_ON_STARTUP=false)")
-		}
-	})
-
-	t.Run("ClearCacheOnStartup respects explicit true", func(t *testing.T) {
-		t.Setenv("CLEAR_CACHE_ON_STARTUP", "true")
-
-		cfg := &Config{ClearCacheOnStartup: typeConvertor{str: "true"}.Bool()}
-		cfg.setDefaults()
-
-		if !cfg.ClearCacheOnStartup {
-			t.Errorf("ClearCacheOnStartup: got false, want true (should respect env var CLEAR_CACHE_ON_STARTUP=true)")
-		}
-	})
-
-	t.Run("Debug false enables monitoring", func(t *testing.T) {
-		t.Setenv("ENABLE_PERFORMANCE_MONITORING", "")
-		t.Setenv("ENABLE_BACKGROUND_STATS", "")
-		cfg := &Config{Debug: false}
-		cfg.setDefaults()
-
-		if !cfg.EnablePerformanceMonitoring {
-			t.Errorf("EnablePerformanceMonitoring: got false, want true when Debug=false")
-		}
-		if !cfg.EnableBackgroundStats {
-			t.Errorf("EnableBackgroundStats: got false, want true when Debug=false")
-		}
-	})
-
-	t.Run("explicit false disables production monitoring", func(t *testing.T) {
-		t.Setenv("ENABLE_PERFORMANCE_MONITORING", "false")
-		t.Setenv("ENABLE_BACKGROUND_STATS", "false")
-		cfg := &Config{Debug: false}
-		cfg.setDefaults()
-
-		if cfg.EnablePerformanceMonitoring || cfg.EnableBackgroundStats {
-			t.Fatal("explicit false monitoring settings were overwritten")
-		}
-	})
 }
 
-// TestClearCacheOnStartupEnvVar tests that CLEAR_CACHE_ON_STARTUP env var is respected.
-// These tests do NOT call t.Parallel() because t.Setenv() is incompatible with parallel execution.
-func TestClearCacheOnStartupEnvVar(t *testing.T) {
-	t.Run("defaults to true when env var not set", func(t *testing.T) {
-		t.Setenv("CLEAR_CACHE_ON_STARTUP", "")
 
-		cfg := &Config{}
-		cfg.setDefaults()
-
-		if !cfg.ClearCacheOnStartup {
-			t.Errorf("ClearCacheOnStartup: got false, want true (default when env var not set)")
-		}
-	})
-
-	t.Run("respects explicit false", func(t *testing.T) {
-		t.Setenv("CLEAR_CACHE_ON_STARTUP", "false")
-
-		cfg := &Config{ClearCacheOnStartup: typeConvertor{str: "false"}.Bool()}
-		cfg.setDefaults()
-
-		if cfg.ClearCacheOnStartup {
-			t.Errorf("ClearCacheOnStartup: got true, want false (should respect env var CLEAR_CACHE_ON_STARTUP=false)")
-		}
-	})
-
-	t.Run("respects explicit true", func(t *testing.T) {
-		t.Setenv("CLEAR_CACHE_ON_STARTUP", "true")
-
-		cfg := &Config{ClearCacheOnStartup: typeConvertor{str: "true"}.Bool()}
-		cfg.setDefaults()
-
-		if !cfg.ClearCacheOnStartup {
-			t.Errorf("ClearCacheOnStartup: got false, want true (should respect env var CLEAR_CACHE_ON_STARTUP=true)")
-		}
-	})
-}
 
 func TestGetHTTPPort(t *testing.T) {
 	t.Run("HTTP_PORT wins", func(t *testing.T) {
@@ -399,132 +272,4 @@ func TestGetHTTPPort(t *testing.T) {
 	})
 }
 
-// TestGetRedisAddress tests the getRedisAddress() helper. The top-level test does
-// NOT call t.Parallel() because t.Setenv() (used in subtests) is incompatible with
-// parallel execution at the enclosing level — Go enforces this at runtime.
-func TestGetRedisAddress(t *testing.T) {
-	t.Run("REDIS_ADDRESS set returns it directly", func(t *testing.T) {
-		t.Setenv("REDIS_ADDRESS", "myhost:1234")
-		t.Setenv("REDIS_URL", "")
-		t.Setenv("REDIS_PASSWORD", "")
 
-		got := getRedisAddress()
-		if got != "myhost:1234" {
-			t.Errorf("got %q, want %q", got, "myhost:1234")
-		}
-	})
-
-	t.Run("REDIS_ADDRESS empty falls back to REDIS_URL host:port", func(t *testing.T) {
-		t.Setenv("REDIS_ADDRESS", "")
-		t.Setenv("REDIS_URL", "redis://user:pass@host:6380")
-		t.Setenv("REDIS_PASSWORD", "")
-
-		got := getRedisAddress()
-		if got != "host:6380" {
-			t.Errorf("got %q, want %q", got, "host:6380")
-		}
-	})
-
-	t.Run("both REDIS_ADDRESS and REDIS_URL empty returns empty string", func(t *testing.T) {
-		t.Setenv("REDIS_ADDRESS", "")
-		t.Setenv("REDIS_URL", "")
-		t.Setenv("REDIS_PASSWORD", "")
-
-		got := getRedisAddress()
-		if got != "" {
-			t.Errorf("got %q, want empty string", got)
-		}
-	})
-
-	t.Run("REDIS_ADDRESS takes priority over REDIS_URL", func(t *testing.T) {
-		t.Setenv("REDIS_ADDRESS", "x")
-		t.Setenv("REDIS_URL", "redis://host:9999")
-		t.Setenv("REDIS_PASSWORD", "")
-
-		got := getRedisAddress()
-		if got != "x" {
-			t.Errorf("got %q, want %q", got, "x")
-		}
-	})
-
-	t.Run("REDIS_URL with invalid percent-encoding returns empty string", func(t *testing.T) {
-		t.Setenv("REDIS_ADDRESS", "")
-		t.Setenv("REDIS_URL", "not-a-valid-url-%%%")
-		t.Setenv("REDIS_PASSWORD", "")
-
-		got := getRedisAddress()
-		if got != "" {
-			t.Errorf("got %q, want empty string on parse error", got)
-		}
-	})
-}
-
-// TestGetRedisPassword tests the getRedisPassword() helper. The top-level test does
-// NOT call t.Parallel() because t.Setenv() (used in subtests) is incompatible with
-// parallel execution at the enclosing level — Go enforces this at runtime.
-func TestGetRedisPassword(t *testing.T) {
-	t.Run("REDIS_PASSWORD set returns it directly", func(t *testing.T) {
-		t.Setenv("REDIS_PASSWORD", "secret")
-		t.Setenv("REDIS_URL", "")
-		t.Setenv("REDIS_ADDRESS", "")
-
-		got := getRedisPassword()
-		if got != "secret" {
-			t.Errorf("got %q, want %q", got, "secret")
-		}
-	})
-
-	t.Run("REDIS_PASSWORD empty extracts password from REDIS_URL", func(t *testing.T) {
-		t.Setenv("REDIS_PASSWORD", "")
-		t.Setenv("REDIS_URL", "redis://user:pass123@host:6380")
-		t.Setenv("REDIS_ADDRESS", "")
-
-		got := getRedisPassword()
-		if got != "pass123" {
-			t.Errorf("got %q, want %q", got, "pass123")
-		}
-	})
-
-	t.Run("REDIS_ADDRESS does not inherit REDIS_URL password", func(t *testing.T) {
-		t.Setenv("REDIS_PASSWORD", "")
-		t.Setenv("REDIS_URL", "redis://user:stale@old-host:6380")
-		t.Setenv("REDIS_ADDRESS", "new-host:6379")
-
-		if got := getRedisPassword(); got != "" {
-			t.Errorf("got %q, want empty password for direct address", got)
-		}
-	})
-
-	t.Run("both REDIS_PASSWORD and REDIS_URL empty returns empty string", func(t *testing.T) {
-		t.Setenv("REDIS_PASSWORD", "")
-		t.Setenv("REDIS_URL", "")
-		t.Setenv("REDIS_ADDRESS", "")
-
-		got := getRedisPassword()
-		if got != "" {
-			t.Errorf("got %q, want empty string", got)
-		}
-	})
-
-	t.Run("REDIS_URL without userinfo returns empty string", func(t *testing.T) {
-		t.Setenv("REDIS_PASSWORD", "")
-		t.Setenv("REDIS_URL", "redis://host:6380")
-		t.Setenv("REDIS_ADDRESS", "")
-
-		got := getRedisPassword()
-		if got != "" {
-			t.Errorf("got %q, want empty string when no userinfo in URL", got)
-		}
-	})
-
-	t.Run("REDIS_URL with username but no password returns empty string", func(t *testing.T) {
-		t.Setenv("REDIS_PASSWORD", "")
-		t.Setenv("REDIS_URL", "redis://user@host:6380")
-		t.Setenv("REDIS_ADDRESS", "")
-
-		got := getRedisPassword()
-		if got != "" {
-			t.Errorf("got %q, want empty string when user has no password", got)
-		}
-	})
-}

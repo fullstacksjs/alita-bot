@@ -10,6 +10,7 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 
+	"github.com/divkix/Alita_Robot/alita/utils/cache"
 	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 	"github.com/divkix/Alita_Robot/alita/utils/media"
 )
@@ -98,6 +99,9 @@ func TestSendMessageWithErrorHandlingSuppressesPermissionErrors(t *testing.T) {
 		"Bad Request: need administrator rights in the channel chat",
 	} {
 		t.Run(errText, func(t *testing.T) {
+			t.Cleanup(func() {
+				cache.MarkChatNotRestricted(-1001)
+			})
 			client := newTelegramHelperBotClient()
 			client.errors["sendMessage"] = fmt.Errorf("%s", errText)
 			bot := newTelegramHelperBot(client)

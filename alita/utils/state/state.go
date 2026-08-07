@@ -10,6 +10,7 @@ import (
 type Store interface {
 	Get(ctx context.Context, key string) (any, bool)
 	Set(ctx context.Context, key string, value any, ttl time.Duration)
+	SetNX(ctx context.Context, key string, value any, ttl time.Duration) bool
 	GetAndDelete(ctx context.Context, key string) (any, bool)
 	Delete(ctx context.Context, key string) bool
 	Clear(ctx context.Context)
@@ -101,6 +102,19 @@ func SetIn[T any](ctx context.Context, s Store, key string, val T, ttl time.Dura
 		return
 	}
 	s.Set(ctx, key, val, ttl)
+}
+
+// SetNX stores a value with a TTL in the active default store if key does not exist or is expired.
+func SetNX[T any](ctx context.Context, key string, val T, ttl time.Duration) bool {
+	return SetNXIn[T](ctx, GetStore(), key, val, ttl)
+}
+
+// SetNXIn stores a value with a TTL in the provided store if key does not exist or is expired.
+func SetNXIn[T any](ctx context.Context, s Store, key string, val T, ttl time.Duration) bool {
+	if s == nil {
+		return false
+	}
+	return s.SetNX(ctx, key, val, ttl)
 }
 
 // GetAndDelete atomically retrieves and removes a typed value for key from the active default store.

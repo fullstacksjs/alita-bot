@@ -174,6 +174,32 @@ func (s *MemoryStore) Set(_ context.Context, key string, value any, ttl time.Dur
 	}
 }
 
+// SetNX stores a value with a TTL duration if the key does not exist or has expired.
+// Returns true if the key was set, false otherwise.
+func (s *MemoryStore) SetNX(_ context.Context, key string, value any, ttl time.Duration) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := s.now()
+	item, ok := s.items[key]
+	if ok && (item.expiresAt.IsZero() || now.Before(item.expiresAt)) {
+		return false
+	}
+
+	var expiresAt time.Time
+	if ttl > 0 {
+		expiresAt = now.Add(ttl)
+	} else if ttl < 0 {
+		expiresAt = now.Add(-1 * time.Second)
+	}
+
+	s.items[key] = entry{
+		value:     value,
+		expiresAt: expiresAt,
+	}
+	return true
+}
+
 // GetAndDelete atomically retrieves and removes an entry by key if it exists and has not expired.
 func (s *MemoryStore) GetAndDelete(_ context.Context, key string) (any, bool) {
 	s.mu.Lock()
