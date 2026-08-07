@@ -24,7 +24,7 @@ type Chat struct {
 	ID           uint       `gorm:"primaryKey;autoIncrement" json:"-"`
 	ChatId       int64      `gorm:"column:chat_id;uniqueIndex;not null" json:"_id,omitempty"`
 	ChatName     string     `gorm:"column:chat_name" json:"chat_name" default:"nil"`
-	Users        Int64Array `gorm:"column:users;type:jsonb" json:"users" default:"nil"`
+	Users        Int64Array `gorm:"column:users;type:text" json:"users" default:"nil"`
 	IsInactive   bool       `gorm:"column:is_inactive;default:false" json:"is_inactive" default:"false"`
 	LastActivity time.Time  `gorm:"column:last_activity" json:"last_activity,omitempty"`
 	CreatedAt    time.Time  `gorm:"column:created_at" json:"created_at,omitempty"`

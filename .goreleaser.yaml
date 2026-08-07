@@ -25,14 +25,11 @@ before:
 builds:
   - binary: alita_robot
     env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
     goos:
-      - darwin
       - linux
-      - windows
     goarch:
       - amd64
-      - arm64
     mod_timestamp: "{{ .CommitTimestamp }}"
     flags:
       - -trimpath
@@ -103,7 +100,6 @@ dockers_v2:
       - "latest"
     platforms:
       - linux/amd64
-      - linux/arm64
     labels:
       "org.opencontainers.image.created": "{{.Date}}"
       "org.opencontainers.image.title": "{{ .ProjectName }}"
@@ -113,5 +109,3 @@ dockers_v2:
       "org.opencontainers.image.description": "Official Alita Go Robot Docker Image"
       "org.opencontainers.image.vendor": "FullstacksJS"
       "org.opencontainers.image.authors": "Divanshu Chauhan <divkix@divkix.me>"
-    extra_files:
-      - migrations

@@ -8,7 +8,7 @@
 </p>
 
 Alita is a Telegram group-management bot written in Go. It provides moderation,
-filters, notes, greetings, anti-spam, and backups.
+filters, notes, greetings, protection, and backups for a single private instance.
 
 ## Quick Start
 
@@ -16,15 +16,16 @@ Prerequisites: Docker, Docker Compose, a Telegram bot token from
 [@BotFather](https://t.me/BotFather), and a Telegram user ID plus log-channel ID.
 
 ```bash
-git clone https://github.com/divkix/Alita_Robot.git
-cd Alita_Robot
+git clone https://github.com/fullstacksjs/alita-bot.git
+cd alita-bot
 cp sample.env .env
-# Set BOT_TOKEN, OWNER_ID, MESSAGE_DUMP, WEBHOOK_DOMAIN, and WEBHOOK_SECRET in .env.
+# Set BOT_TOKEN, OWNER_ID, and MESSAGE_DUMP in .env.
+# Optional: SQLITE_PATH (defaults to /data/alita.db), webhook settings.
 docker compose up -d
 docker compose logs -f alita
 ```
 
-PostgreSQL and Redis are included in the Compose stack.
+SQLite is persisted on the `alita_data` Docker volume at `/data/alita.db`.
 
 ## Development
 

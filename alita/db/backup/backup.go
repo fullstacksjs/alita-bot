@@ -14,27 +14,35 @@ import (
 
 // ExportDomainData exports data for a single retained domain from a chat.
 func ExportDomainData(chatID int64, domain string) (interface{}, error) {
+	database, err := backupDB()
+	if err != nil {
+		return nil, err
+	}
+	return exportDomainData(database, chatID, domain)
+}
+
+func exportDomainData(tx *gorm.DB, chatID int64, domain string) (interface{}, error) {
 	switch domain {
 	case DomainAntiflood:
-		return exportAntifloodData(chatID)
+		return exportAntifloodData(tx, chatID)
 	case DomainAntiraid:
-		return exportAntiraidData(chatID)
+		return exportAntiraidData(tx, chatID)
 	case DomainApprovals:
-		return exportApprovalsData(chatID)
+		return exportApprovalsData(tx, chatID)
 	case DomainBlacklists:
-		return exportBlacklistsData(chatID)
+		return exportBlacklistsData(tx, chatID)
 	case DomainConnections:
-		return exportConnectionsData(chatID)
+		return exportConnectionsData(tx, chatID)
 	case DomainFilters:
-		return exportFiltersData(chatID)
+		return exportFiltersData(tx, chatID)
 	case DomainWelcome:
-		return exportWelcomeData(chatID)
+		return exportWelcomeData(tx, chatID)
 	case DomainNotes:
-		return exportNotesData(chatID)
+		return exportNotesData(tx, chatID)
 	case DomainReactions:
-		return exportReactionsData(chatID)
+		return exportReactionsData(tx, chatID)
 	case DomainWarnings:
-		return exportWarningsData(chatID)
+		return exportWarningsData(tx, chatID)
 	default:
 		return nil, fmt.Errorf("unsupported domain: %s", domain)
 	}
@@ -86,7 +94,8 @@ func ClearDomainData(chatID int64, domain string) error {
 	return nil
 }
 
-// ExportChatData exports the selected domains. A failed domain aborts the
+// ExportChatData exports the selected domains inside one read transaction so a
+// concurrent write cannot produce a torn backup. A failed domain aborts the
 // export so callers never receive a backup that only looks complete.
 func ExportChatData(chatID int64, chatName string, exportedBy int64, domains []string) (*BackupFormat, error) {
 	domains, err := checkedDomains(domains)
@@ -94,13 +103,24 @@ func ExportChatData(chatID int64, chatName string, exportedBy int64, domains []s
 		return nil, err
 	}
 
+	database, err := backupDB()
+	if err != nil {
+		return nil, err
+	}
+
 	backup := NewBackupFormat(chatID, chatName, exportedBy, domains)
-	for _, domain := range domains {
-		data, err := ExportDomainData(chatID, domain)
-		if err != nil {
-			return nil, fmt.Errorf("failed to export domain %s: %w", domain, err)
+	err = database.Transaction(func(tx *gorm.DB) error {
+		for _, domain := range domains {
+			data, exportErr := exportDomainData(tx, chatID, domain)
+			if exportErr != nil {
+				return fmt.Errorf("failed to export domain %s: %w", domain, exportErr)
+			}
+			backup.Data[domain] = data
 		}
-		backup.Data[domain] = data
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return backup, nil
 }
@@ -203,13 +223,9 @@ func backupDB() (*gorm.DB, error) {
 	return db.DB, nil
 }
 
-func findChatSetting[T any](chatID int64) (*T, error) {
-	database, err := backupDB()
-	if err != nil {
-		return nil, err
-	}
+func findChatSetting[T any](tx *gorm.DB, chatID int64) (*T, error) {
 	var setting T
-	err = database.Where("chat_id = ?", chatID).Take(&setting).Error
+	err := tx.Where("chat_id = ?", chatID).Take(&setting).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -219,13 +235,9 @@ func findChatSetting[T any](chatID int64) (*T, error) {
 	return &setting, nil
 }
 
-func findChatRows[T any](chatID int64) ([]T, error) {
-	database, err := backupDB()
-	if err != nil {
-		return nil, err
-	}
+func findChatRows[T any](tx *gorm.DB, chatID int64) ([]T, error) {
 	var rows []T
-	if err := database.Where("chat_id = ?", chatID).Find(&rows).Error; err != nil {
+	if err := tx.Where("chat_id = ?", chatID).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -334,64 +346,64 @@ func ensureUsers(tx *gorm.DB, userIDs []int64) error {
 
 // Exporters query complete rows instead of lossy summary getters.
 
-func exportAntifloodData(chatID int64) (*AntifloodBackup, error) {
-	settings, err := findChatSetting[models.AntifloodSettings](chatID)
+func exportAntifloodData(tx *gorm.DB, chatID int64) (*AntifloodBackup, error) {
+	settings, err := findChatSetting[models.AntifloodSettings](tx, chatID)
 	return &AntifloodBackup{Settings: settings}, err
 }
 
-func exportAntiraidData(chatID int64) (*AntiraidBackup, error) {
-	settings, err := findChatSetting[models.AntiRaidSettings](chatID)
+func exportAntiraidData(tx *gorm.DB, chatID int64) (*AntiraidBackup, error) {
+	settings, err := findChatSetting[models.AntiRaidSettings](tx, chatID)
 	return &AntiraidBackup{Settings: settings}, err
 }
 
-func exportApprovalsData(chatID int64) (*ApprovalsBackup, error) {
-	users, err := findChatRows[models.ApprovedUsers](chatID)
+func exportApprovalsData(tx *gorm.DB, chatID int64) (*ApprovalsBackup, error) {
+	users, err := findChatRows[models.ApprovedUsers](tx, chatID)
 	return &ApprovalsBackup{ApprovedUsers: users}, err
 }
 
-func exportBlacklistsData(chatID int64) (*BlacklistsBackup, error) {
-	entries, err := findChatRows[models.BlacklistSettings](chatID)
+func exportBlacklistsData(tx *gorm.DB, chatID int64) (*BlacklistsBackup, error) {
+	entries, err := findChatRows[models.BlacklistSettings](tx, chatID)
 	return &BlacklistsBackup{Entries: entries}, err
 }
 
-func exportConnectionsData(chatID int64) (*ConnectionsBackup, error) {
-	rows, err := findChatRows[models.ConnectionSettings](chatID)
+func exportConnectionsData(tx *gorm.DB, chatID int64) (*ConnectionsBackup, error) {
+	rows, err := findChatRows[models.ConnectionSettings](tx, chatID)
 	return &ConnectionsBackup{Connections: rows}, err
 }
 
-func exportFiltersData(chatID int64) (*FiltersBackup, error) {
-	rows, err := findChatRows[models.ChatFilters](chatID)
+func exportFiltersData(tx *gorm.DB, chatID int64) (*FiltersBackup, error) {
+	rows, err := findChatRows[models.ChatFilters](tx, chatID)
 	return &FiltersBackup{Filters: rows}, err
 }
 
-func exportWelcomeData(chatID int64) (*WelcomeBackup, error) {
-	settings, err := findChatSetting[models.GreetingSettings](chatID)
+func exportWelcomeData(tx *gorm.DB, chatID int64) (*WelcomeBackup, error) {
+	settings, err := findChatSetting[models.GreetingSettings](tx, chatID)
 	return &WelcomeBackup{Settings: settings}, err
 }
 
-func exportNotesData(chatID int64) (*NotesBackup, error) {
-	settings, err := findChatSetting[models.NotesSettings](chatID)
+func exportNotesData(tx *gorm.DB, chatID int64) (*NotesBackup, error) {
+	settings, err := findChatSetting[models.NotesSettings](tx, chatID)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := findChatRows[models.Notes](chatID)
+	rows, err := findChatRows[models.Notes](tx, chatID)
 	if err != nil {
 		return nil, err
 	}
 	return &NotesBackup{Settings: settings, Notes: rows}, nil
 }
 
-func exportReactionsData(chatID int64) (*ReactionsBackup, error) {
-	rows, err := findChatRows[models.Reactions](chatID)
+func exportReactionsData(tx *gorm.DB, chatID int64) (*ReactionsBackup, error) {
+	rows, err := findChatRows[models.Reactions](tx, chatID)
 	return &ReactionsBackup{Reactions: rows}, err
 }
 
-func exportWarningsData(chatID int64) (*WarningsBackup, error) {
-	settings, err := findChatSetting[models.WarnSettings](chatID)
+func exportWarningsData(tx *gorm.DB, chatID int64) (*WarningsBackup, error) {
+	settings, err := findChatSetting[models.WarnSettings](tx, chatID)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := findChatRows[models.Warns](chatID)
+	rows, err := findChatRows[models.Warns](tx, chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -467,11 +479,16 @@ func importApprovals(tx *gorm.DB, chatID int64, payload interface{}) ([]string, 
 	if err := decodeDomainData(payload, DomainApprovals, &data); err != nil {
 		return nil, err
 	}
+	userIDs := make([]int64, 0, len(data.ApprovedUsers))
 	for i := range data.ApprovedUsers {
 		if data.ApprovedUsers[i].UserID == 0 {
 			return nil, fmt.Errorf("invalid approved user ID")
 		}
 		data.ApprovedUsers[i].ChatID = chatID
+		userIDs = append(userIDs, data.ApprovedUsers[i].UserID)
+	}
+	if err := ensureUsers(tx, userIDs); err != nil {
+		return nil, fmt.Errorf("ensure approved users: %w", err)
 	}
 	if err := replaceChatRows(tx, chatID, data.ApprovedUsers); err != nil {
 		return nil, err

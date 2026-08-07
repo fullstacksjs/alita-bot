@@ -44,13 +44,6 @@ func setupRealSQLiteTestDB(t *testing.T) (*gorm.DB, string) {
 	err = runner.RunMigrations()
 	require.NoError(t, err, "embedded migrations failed")
 
-	_ = testDB.AutoMigrate(
-		&models.PinSettings{},
-		&models.RulesSettings{},
-		&models.DisableSettings{},
-		&models.DisableChatSettings{},
-	)
-
 	origDB := db.DB
 	db.DB = testDB
 

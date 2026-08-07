@@ -8,12 +8,8 @@ import (
 	"testing"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/db/rules"
 )
 
 type formattingBotClient struct{}
@@ -87,50 +83,59 @@ func TestFormattingReplacerHandlesNilUserAndMemberCount(t *testing.T) {
 	}
 }
 
-func TestFormattingReplacerAddsRulesButtons(t *testing.T) {
+// TestFormattingReplacerStripsRulesPlaceholders verifies that {rules},
+// {rules:same}, and {rules:up} placeholders are stripped from message text
+// without touching the database or appending buttons; the rules module (and
+// its buttons) is no longer retained.
+func TestFormattingReplacerStripsRulesPlaceholders(t *testing.T) {
 	originalDB := db.DB
-	sqliteDB, err := gorm.Open(sqlite.Open("file:formatting_rules?mode=memory&cache=shared"), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.DB = sqliteDB
-	t.Cleanup(func() {
-		if sqlDB, sqlErr := db.DB.DB(); sqlErr == nil {
-			_ = sqlDB.Close()
-		}
-		db.DB = originalDB
-	})
-	if err := db.DB.AutoMigrate(&db.Chat{}, &db.RulesSettings{}); err != nil {
-		t.Fatalf("AutoMigrate: %v", err)
-	}
+	db.DB = nil
+	t.Cleanup(func() { db.DB = originalDB })
 
 	bot := &gotgbot.Bot{
 		Token:     "123:test",
 		BotClient: formattingBotClient{},
 		User:      gotgbot.User{Id: 123, IsBot: true, Username: "FormatBot"},
 	}
-	bot.Username = "FormatBot"
 	chat := &gotgbot.Chat{Id: -100777, Type: "supergroup", Title: "Rules Chat"}
 
-	noRulesText, noRulesButtons := FormattingReplacer(
-		bot,
-		chat,
-		&gotgbot.User{Id: 5, FirstName: "Ada"},
-		"before {rules} after",
-		nil,
-	)
-	if noRulesText != "before  after" {
-		t.Fatalf("result without rules = %q, want rules token removed", noRulesText)
-	}
-	if len(noRulesButtons) != 0 {
-		t.Fatalf("buttons without rules = %#v, want none", noRulesButtons)
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		buttons []db.Button
+	}{
+		{name: "bare rules placeholder", input: "before {rules} after", want: "before  after"},
+		{name: "same-line directive", input: "show {rules:same}", want: "show "},
+		{name: "up directive", input: "before {rules:up} after", want: "before  after"},
+		{
+			name:    "existing buttons pass through untouched",
+			input:   "before {rules:up} after",
+			want:    "before  after",
+			buttons: []db.Button{{Name: "Existing", Url: "https://example.com"}},
+		},
 	}
 
-	rules.SetChatRules(chat.Id, "Keep it tidy.")
-	rules.SetChatRulesButton(chat.Id, "Read Rules")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, buttons := FormattingReplacer(
+				bot,
+				chat,
+				&gotgbot.User{Id: 5, FirstName: "Ada"},
+				tc.input,
+				tc.buttons,
+			)
+			if got != tc.want {
+				t.Fatalf("FormattingReplacer() = %q, want %q", got, tc.want)
+			}
+			if !reflect.DeepEqual(buttons, tc.buttons) {
+				t.Fatalf("buttons = %#v, want unchanged %#v", buttons, tc.buttons)
+			}
+		})
+	}
 
+	// User-provided text that merely contains the literal directive string
+	// must be passed through unchanged (it isn't itself a placeholder site).
 	got, buttons := FormattingReplacer(
 		bot,
 		chat,
@@ -140,40 +145,6 @@ func TestFormattingReplacerAddsRulesButtons(t *testing.T) {
 	)
 	if got != "{rules}" || len(buttons) != 0 {
 		t.Fatalf("user-provided directive text produced %q, %#v; want literal text and no button", got, buttons)
-	}
-
-	got, buttons = FormattingReplacer(
-		bot,
-		chat,
-		&gotgbot.User{Id: 5, FirstName: "Ada"},
-		"before {rules:up} after",
-		[]db.Button{{Name: "Existing", Url: "https://example.com"}},
-	)
-	if got != "before  after" {
-		t.Fatalf("result = %q, want rules placeholder removed", got)
-	}
-	if len(buttons) != 2 {
-		t.Fatalf("buttons = %#v, want rules plus existing", buttons)
-	}
-	if buttons[0].Name != "Read Rules" || buttons[0].SameLine {
-		t.Fatalf("rules button = %#v, want first non-sameline Read Rules button", buttons[0])
-	}
-	if buttons[0].Url != "https://t.me/FormatBot?start=rules_-100777" {
-		t.Fatalf("rules URL = %q", buttons[0].Url)
-	}
-
-	got, buttons = FormattingReplacer(
-		bot,
-		chat,
-		&gotgbot.User{Id: 5, FirstName: "Ada"},
-		"show {rules:same}",
-		nil,
-	)
-	if got != "show " {
-		t.Fatalf("same-line result = %q, want placeholder removed", got)
-	}
-	if len(buttons) != 1 || !buttons[0].SameLine {
-		t.Fatalf("same-line buttons = %#v, want one same-line rules button", buttons)
 	}
 }
 

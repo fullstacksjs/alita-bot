@@ -8,6 +8,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// ensureChatsInDb creates parent Chat rows for every chat ID so that
+// FK-constrained child inserts in these tests succeed.
+func ensureChatsInDb(t *testing.T, chatIDs ...int64) {
+	t.Helper()
+	for _, id := range chatIDs {
+		require.NoError(t, EnsureChatInDb(id, ""))
+	}
+	t.Cleanup(func() {
+		_ = DB.Where("chat_id IN ?", chatIDs).Delete(&Chat{}).Error
+	})
+}
+
 // TestWarnSettingsConstraint_PositiveLimit tests that warn_limit must be positive
 func TestWarnSettingsConstraint_PositiveLimit(t *testing.T) {
 	// This test verifies the database constraint is working
@@ -24,84 +36,26 @@ func TestAntifloodSettingsConstraint_ValidActions(t *testing.T) {
 	}
 }
 
-// TestCaptchaSettingsConstraint_TimeoutRange tests that timeout must be between 1 and 10
-func TestCaptchaSettingsConstraint_TimeoutRange(t *testing.T) {
-	// Test boundary values - valid range is 1-10 inclusive
-	validValues := []int{1, 5, 10}
-	for _, timeout := range validValues {
-		assert.True(t, timeout >= 1 && timeout <= 10, "Timeout %d should be valid", timeout)
-	}
-
-	// Test invalid values
-	invalidValues := []int{0, 11, -1, 100}
-	for _, timeout := range invalidValues {
-		assert.False(t, timeout >= 1 && timeout <= 10, "Timeout %d should be invalid", timeout)
-	}
-}
-
-// TestCaptchaAttemptsConstraint_Expiration tests that expires_at must be after created_at
-func TestCaptchaAttemptsConstraint_Expiration(t *testing.T) {
-	// Test temporal constraint logic
-	now := time.Now()
-
-	// Valid: expires_at is after created_at
-	expiresValid := now.Add(5 * time.Minute)
-	assert.True(t, expiresValid.After(now), "Expiration 5 minutes in future should be valid")
-
-	// Invalid: expires_at is before created_at
-	expiresInvalid := now.Add(-5 * time.Minute)
-	assert.False(t, expiresInvalid.After(now), "Expiration in past should be invalid")
-}
-
-// testIntRangeConstraint tests CHECK constraints for integer range fields
-func testIntRangeConstraint(t *testing.T, chatID int64, fieldName string, validValues []int, invalidValues []int, createFunc func(int64, int) error) {
-	t.Run(fieldName+"_Valid", func(t *testing.T) {
-		for _, val := range validValues {
-			err := createFunc(chatID+int64(val), val)
-			assert.NoError(t, err, "Creating with %s=%d should succeed", fieldName, val)
-		}
-	})
-
-	t.Run(fieldName+"_Invalid", func(t *testing.T) {
-		for _, val := range invalidValues {
-			err := createFunc(chatID+int64(val*1000), val)
-			assert.Error(t, err, "Creating with %s=%d should fail due to CHECK constraint", fieldName, val)
-		}
-	})
-}
-
-// TestWarnSettingsIntegration_PositiveLimit tests warn_limit constraint with database
+// TestWarnSettingsIntegration_PositiveLimit tests that a positive warn_limit
+// round-trips through the database. Range validation (1-100) for warn_limit
+// is enforced at the application layer (see modules.setWarnLimit), not via a
+// database CHECK constraint in the retained SQLite schema.
 func TestWarnSettingsIntegration_PositiveLimit(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
+	ensureChatsInDb(t, chatID)
 	t.Cleanup(func() {
 		_ = DB.Where("chat_id = ?", chatID).Delete(&WarnSettings{}).Error
 	})
 
-	// Test valid positive limit
 	settings := &WarnSettings{
 		ChatId:    chatID,
 		WarnLimit: 3,
 	}
 	err := CreateRecord(settings)
-	require.NoError(t, err, "Creating warn settings with positive limit should succeed")
+	assert.NoError(t, err, "Creating warn settings with positive limit should succeed")
 	assert.Greater(t, settings.WarnLimit, 0, "Warn limit should be positive")
-
-	// Test that zero limit violates constraint
-	err = DB.Model(&WarnSettings{}).Create(map[string]any{
-		"chat_id":    chatID + 1,
-		"warn_limit": 0,
-	}).Error
-	assert.Error(t, err, "Creating warn settings with zero limit should fail due to CHECK constraint")
-
-	// Test that negative limit violates constraint
-	invalidSettings2 := &WarnSettings{
-		ChatId:    chatID + 2,
-		WarnLimit: -1,
-	}
-	err = CreateRecord(invalidSettings2)
-	assert.Error(t, err, "Creating warn settings with negative limit should fail due to CHECK constraint")
 }
 
 // TestAntifloodSettingsConstraint_ValidActionsIntegration tests antiflood action constraint
@@ -109,11 +63,17 @@ func TestAntifloodSettingsConstraint_ValidActionsIntegration(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
+	validActions := []string{"mute", "ban", "kick", "warn", "tban", "tmute"}
+
+	chatIDs := make([]int64, 0, len(validActions)+1)
+	for _, action := range validActions {
+		chatIDs = append(chatIDs, chatID+int64(hashCode(action)))
+	}
+	chatIDs = append(chatIDs, chatID+99999)
+	ensureChatsInDb(t, chatIDs...)
 	t.Cleanup(func() {
 		_ = DB.Where("chat_id = ?", chatID).Delete(&AntifloodSettings{}).Error
 	})
-
-	validActions := []string{"mute", "ban", "kick", "warn", "tban", "tmute"}
 
 	for _, action := range validActions {
 		settings := &AntifloodSettings{
@@ -133,139 +93,6 @@ func TestAntifloodSettingsConstraint_ValidActionsIntegration(t *testing.T) {
 	}
 	err := CreateRecord(invalidSettings)
 	assert.Error(t, err, "Creating antiflood settings with invalid action should fail due to CHECK constraint")
-}
-
-// TestCaptchaSettingsConstraint_TimeoutRangeIntegration tests captcha timeout constraint
-func TestCaptchaSettingsConstraint_TimeoutRangeIntegration(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := time.Now().UnixNano()
-	t.Cleanup(func() {
-		_ = DB.Where("chat_id = ?", chatID).Delete(&CaptchaSettings{}).Error
-	})
-
-	testIntRangeConstraint(t, chatID, "timeout",
-		[]int{1, 5, 10},       // valid values
-		[]int{0, 11, -1, 100}, // invalid values
-		func(chatID int64, timeout int) error {
-			return DB.Model(&CaptchaSettings{}).Create(map[string]any{
-				"chat_id": chatID,
-				"timeout": timeout,
-			}).Error
-		},
-	)
-}
-
-// TestCaptchaSettingsConstraint_MaxAttemptsRange tests max_attempts constraint
-func TestCaptchaSettingsConstraint_MaxAttemptsRange(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := time.Now().UnixNano()
-	t.Cleanup(func() {
-		_ = DB.Where("chat_id = ?", chatID).Delete(&CaptchaSettings{}).Error
-	})
-
-	testIntRangeConstraint(t, chatID, "max_attempts",
-		[]int{1, 5, 10},       // valid values
-		[]int{0, 11, -1, 100}, // invalid values
-		func(chatID int64, attempts int) error {
-			return DB.Model(&CaptchaSettings{}).Create(map[string]any{
-				"chat_id":      chatID,
-				"max_attempts": attempts,
-			}).Error
-		},
-	)
-}
-
-// TestCaptchaSettingsConstraint_ValidModes tests captcha_mode constraint
-func TestCaptchaSettingsConstraint_ValidModes(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := time.Now().UnixNano()
-	t.Cleanup(func() {
-		_ = DB.Where("chat_id = ?", chatID).Delete(&CaptchaSettings{}).Error
-	})
-
-	validModes := []string{"math", "text"}
-	for _, mode := range validModes {
-		settings := &CaptchaSettings{
-			ChatID:      chatID + int64(hashCode(mode)),
-			CaptchaMode: mode,
-		}
-		err := CreateRecord(settings)
-		assert.NoError(t, err, "Creating captcha settings with mode '%s' should succeed", mode)
-	}
-
-	// Test invalid mode
-	invalidSettings := &CaptchaSettings{
-		ChatID:      chatID + 99999,
-		CaptchaMode: "invalid_mode",
-	}
-	err := CreateRecord(invalidSettings)
-	assert.Error(t, err, "Creating captcha settings with invalid mode should fail due to CHECK constraint")
-}
-
-// TestCaptchaSettingsConstraint_ValidFailureActions tests failure_action constraint
-func TestCaptchaSettingsConstraint_ValidFailureActions(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := time.Now().UnixNano()
-	t.Cleanup(func() {
-		_ = DB.Where("chat_id = ?", chatID).Delete(&CaptchaSettings{}).Error
-	})
-
-	validActions := []string{"kick", "ban", "mute"}
-	for _, action := range validActions {
-		settings := &CaptchaSettings{
-			ChatID:        chatID + int64(hashCode(action)),
-			FailureAction: action,
-		}
-		err := CreateRecord(settings)
-		assert.NoError(t, err, "Creating captcha settings with failure_action '%s' should succeed", action)
-	}
-
-	// Test invalid failure_action
-	invalidSettings := &CaptchaSettings{
-		ChatID:        chatID + 99999,
-		FailureAction: "delete",
-	}
-	err := CreateRecord(invalidSettings)
-	assert.Error(t, err, "Creating captcha settings with invalid failure_action should fail due to CHECK constraint")
-}
-
-// TestCaptchaAttemptsConstraint_ExpirationIntegration tests expires_at constraint
-func TestCaptchaAttemptsConstraint_ExpirationIntegration(t *testing.T) {
-	skipIfNoDb(t)
-
-	base := time.Now().UnixNano()
-	userID := base + 100
-	chatID := base + 101
-	t.Cleanup(func() {
-		_ = DB.Where("user_id = ? AND chat_id = ?", userID, chatID).Delete(&CaptchaAttempts{}).Error
-	})
-
-	// Test valid: expires_at is after created_at
-	expiresValid := time.Now().Add(5 * time.Minute)
-	attempt := &CaptchaAttempts{
-		UserID:    userID,
-		ChatID:    chatID,
-		Answer:    "42",
-		ExpiresAt: expiresValid,
-	}
-	err := CreateRecord(attempt)
-	require.NoError(t, err, "Creating captcha attempt with future expiration should succeed")
-	assert.True(t, attempt.ExpiresAt.After(attempt.CreatedAt) || attempt.ExpiresAt.Equal(attempt.CreatedAt.Add(2*time.Minute)),
-		"Expiration should be after creation time")
-
-	// Test invalid: expires_at is before created_at (will fail constraint)
-	invalidAttempt := &CaptchaAttempts{
-		UserID:    userID + 1,
-		ChatID:    chatID + 1,
-		Answer:    "42",
-		ExpiresAt: time.Now().Add(-5 * time.Minute), // Past expiration
-	}
-	err = CreateRecord(invalidAttempt)
-	assert.Error(t, err, "Creating captcha attempt with past expiration should fail due to CHECK constraint")
 }
 
 // TestWarnEvents_Creation tests creating normalized warn_events records
@@ -296,12 +123,19 @@ func TestAntifloodConstraint_NonNegativeFloodLimit(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
+	limits := []int{0, 1, 5, 10}
+	chatIDs := make([]int64, 0, len(limits)+1)
+	for _, limit := range limits {
+		chatIDs = append(chatIDs, chatID+int64(limit))
+	}
+	chatIDs = append(chatIDs, chatID+9999)
+	ensureChatsInDb(t, chatIDs...)
 	t.Cleanup(func() {
 		_ = DB.Where("chat_id = ?", chatID).Delete(&AntifloodSettings{}).Error
 	})
 
 	// Test valid non-negative values
-	for _, limit := range []int{0, 1, 5, 10} {
+	for _, limit := range limits {
 		settings := &AntifloodSettings{
 			ChatId: chatID + int64(limit),
 			Limit:  limit,
@@ -324,11 +158,17 @@ func TestBlacklistConstraint_ValidActions(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
+	validActions := []string{"warn", "mute", "ban", "kick", "tban", "tmute", "delete"}
+	chatIDs := make([]int64, 0, len(validActions)+1)
+	for _, action := range validActions {
+		chatIDs = append(chatIDs, chatID+int64(hashCode(action)))
+	}
+	chatIDs = append(chatIDs, chatID+99999)
+	ensureChatsInDb(t, chatIDs...)
 	t.Cleanup(func() {
 		_ = DB.Where("chat_id = ?", chatID).Delete(&BlacklistSettings{}).Error
 	})
 
-	validActions := []string{"warn", "mute", "ban", "kick", "tban", "tmute", "delete"}
 	for _, action := range validActions {
 		settings := &BlacklistSettings{
 			ChatId: chatID + int64(hashCode(action)),
@@ -354,12 +194,18 @@ func TestAntifloodActionConstraint_ValidActions(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
+	validActions := []string{"mute", "ban", "kick", "warn", "tban", "tmute"}
+	chatIDs := make([]int64, 0, len(validActions)+1)
+	for _, action := range validActions {
+		chatIDs = append(chatIDs, chatID+int64(hashCode(action)))
+	}
+	chatIDs = append(chatIDs, chatID+99999)
+	ensureChatsInDb(t, chatIDs...)
 	t.Cleanup(func() {
 		_ = DB.Where("chat_id = ?", chatID).Delete(&AntifloodSettings{}).Error
 	})
 
 	// Test valid actions
-	validActions := []string{"mute", "ban", "kick", "warn", "tban", "tmute"}
 	for _, action := range validActions {
 		settings := &AntifloodSettings{
 			ChatId: chatID + int64(hashCode(action)),

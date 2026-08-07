@@ -10,6 +10,8 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 
 	"github.com/divkix/Alita_Robot/alita/db"
+	"github.com/divkix/Alita_Robot/alita/db/chats"
+	"github.com/divkix/Alita_Robot/alita/db/user"
 	"github.com/divkix/Alita_Robot/alita/db/warns"
 )
 
@@ -36,6 +38,9 @@ func TestWarnSettingsCommandsUpdateAndDisplay(t *testing.T) {
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Warn Chat"}
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
+	if err := chats.EnsureChatInDb(chat.Id, chat.Title); err != nil {
+		t.Fatalf("EnsureChatInDb() error = %v", err)
+	}
 
 	limitCtx := newModuleMessageContext(bot, chat, admin, "/setwarnlimit 5")
 	if err := warnsModule.setWarnLimit(bot, limitCtx); err != ext.EndGroups {
@@ -165,6 +170,12 @@ func TestWarnsListsCountWhenReasonsAreEmpty(t *testing.T) {
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Warn Chat"}
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
+	if err := chats.EnsureChatInDb(chat.Id, chat.Title); err != nil {
+		t.Fatalf("EnsureChatInDb() error = %v", err)
+	}
+	if err := user.EnsureUserInDb(42, "", "Member"); err != nil {
+		t.Fatalf("EnsureUserInDb() error = %v", err)
+	}
 
 	if err := db.DB.Create(&db.WarnEvent{
 		UserId: 42,
@@ -196,6 +207,9 @@ func TestWarnLimitPunishesAndResetsWarnings(t *testing.T) {
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Warn Chat"}
 	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 	target := gotgbot.User{Id: 42, FirstName: "Member"}
+	if err := chats.EnsureChatInDb(chat.Id, chat.Title); err != nil {
+		t.Fatalf("EnsureChatInDb() error = %v", err)
+	}
 	if err := warns.SetWarnLimit(chat.Id, 1); err != nil {
 		t.Fatalf("SetWarnLimit() error = %v", err)
 	}
@@ -330,6 +344,9 @@ func TestWarnThisUserPropagatesGotgbotRequestErrors(t *testing.T) {
 			client.errors[tt.method] = requestErr
 			chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Warn Chat"}
 			if tt.method == "banChatMember" {
+				if err := chats.EnsureChatInDb(chat.Id, chat.Title); err != nil {
+					t.Fatalf("EnsureChatInDb() error = %v", err)
+				}
 				if err := warns.SetWarnLimit(chat.Id, 1); err != nil {
 					t.Fatalf("SetWarnLimit() error = %v", err)
 				}

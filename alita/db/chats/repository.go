@@ -3,7 +3,6 @@ package chats
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/divkix/Alita_Robot/alita/config"
@@ -71,17 +70,9 @@ func EnsureChatInDb(chatId int64, chatName string) error {
 		onConflict.DoUpdates = clause.AssignmentColumns([]string{"chat_name", "updated_at"})
 	}
 	var err error
-	for attempt := 0; attempt < 5; attempt++ {
-		err = db.DB.Clauses(onConflict).Create(chatUpdate).Error
-		if err == nil {
-			break
-		}
-		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(err.Error(), "locked") {
-			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
-			continue
-		}
-		break
-	}
+	err = db.RetryOnLock(func() error {
+		return db.DB.Clauses(onConflict).Create(chatUpdate).Error
+	})
 	if err != nil {
 		log.Errorf("[Database] EnsureChatInDb: %v", err)
 		return fmt.Errorf("failed to ensure chat %d in database: %w", chatId, err)
@@ -110,21 +101,12 @@ func UpdateChat(chatId int64, chatname string, userid int64) error {
 	}
 
 	var err error
-	for attempt := 0; attempt < 5; attempt++ {
-		err = db.DB.Clauses(clause.OnConflict{
+	err = db.RetryOnLock(func() error {
+		return db.DB.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "chat_id"}},
 			DoUpdates: clause.AssignmentColumns(columns),
 		}).Create(chat).Error
-		if err == nil {
-			break
-		}
-		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(err.Error(), "locked") {
-			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
-			continue
-		}
-		log.Errorf("[Database] UpdateChat upsert failed for chat %d: %v", chatId, err)
-		return err
-	}
+	})
 	if err != nil {
 		log.Errorf("[Database] UpdateChat upsert failed for chat %d: %v", chatId, err)
 		return err
@@ -132,28 +114,15 @@ func UpdateChat(chatId int64, chatname string, userid int64) error {
 	defer cache.DeleteCache(cache.CacheKey("chat", chatId))
 
 	// Atomically append userid only if not already present in the JSON array
-	for attempt := 0; attempt < 5; attempt++ {
-		var result *gorm.DB
-		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" {
-			result = db.DB.Exec(
-				`UPDATE chats SET users = json_insert(COALESCE(NULLIF(CAST(users AS TEXT), ''), '[]'), '$[#]', ?) WHERE chat_id = ? AND NOT EXISTS (SELECT 1 FROM json_each(COALESCE(NULLIF(CAST(users AS TEXT), ''), '[]')) WHERE value = ?)`,
-				userid, chatId, userid,
-			)
-		} else {
-			result = db.DB.Exec(
-				`UPDATE chats SET users = users || to_jsonb(?::bigint) WHERE chat_id = ? AND NOT (users @> to_jsonb(?::bigint))`,
-				userid, chatId, userid,
-			)
-		}
-		if result.Error == nil {
-			break
-		}
-		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(result.Error.Error(), "locked") {
-			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
-			continue
-		}
-		log.Errorf("[Database] UpdateChat atomic append failed for chat %d user %d: %v", chatId, userid, result.Error)
-		return result.Error
+	err = db.RetryOnLock(func() error {
+		return db.DB.Exec(
+			`UPDATE chats SET users = json_insert(COALESCE(NULLIF(CAST(users AS TEXT), ''), '[]'), '$[#]', ?) WHERE chat_id = ? AND NOT EXISTS (SELECT 1 FROM json_each(COALESCE(NULLIF(CAST(users AS TEXT), ''), '[]')) WHERE value = ?)`,
+			userid, chatId, userid,
+		).Error
+	})
+	if err != nil {
+		log.Errorf("[Database] UpdateChat atomic append failed for chat %d user %d: %v", chatId, userid, err)
+		return err
 	}
 
 	log.Debugf("[Database] UpdateChat: %d", chatId)
@@ -240,4 +209,3 @@ func LoadActivityStats() (dag, wag, mag int64) {
 
 	return dag, wag, mag
 }
-

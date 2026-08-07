@@ -49,9 +49,13 @@ func TestUpdateRecordWithZeroValuesUpdatesZeroValues(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
+	if err := EnsureChatInDb(chatID, ""); err != nil {
+		t.Fatalf("failed to ensure parent chat: %v", err)
+	}
 
 	t.Cleanup(func() {
 		_ = DB.Where("chat_id = ?", chatID).Delete(&AntifloodSettings{}).Error
+		_ = DB.Where("chat_id = ?", chatID).Delete(&Chat{}).Error
 	})
 
 	// Create a record with Limit=5
@@ -82,9 +86,13 @@ func TestUpdateRecordSucceedsWhenRowsAffected(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
+	if err := EnsureChatInDb(chatID, ""); err != nil {
+		t.Fatalf("failed to ensure parent chat: %v", err)
+	}
 
 	t.Cleanup(func() {
 		_ = DB.Where("chat_id = ?", chatID).Delete(&AntifloodSettings{}).Error
+		_ = DB.Where("chat_id = ?", chatID).Delete(&Chat{}).Error
 	})
 
 	// Create a record

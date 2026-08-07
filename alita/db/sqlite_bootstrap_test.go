@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -20,7 +19,7 @@ func createTempSQLiteDB(t *testing.T) (*gorm.DB, string) {
 	t.Helper()
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test_sqlite.db")
-	dsn := formatSQLiteDSN(dbPath)
+	dsn := FormatSQLiteDSN(dbPath)
 
 	database, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err, "failed to open SQLite database")
@@ -205,13 +204,9 @@ func TestSQLiteBootstrap_HealthReadiness(t *testing.T) {
 func TestSQLiteBootstrap_NoExternalMigrationDirectoryRequired(t *testing.T) {
 	// Verify NewSQLiteMigrationRunner works regardless of working directory
 	dir := t.TempDir()
-	oldWd, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(dir))
-	t.Cleanup(func() { _ = os.Chdir(oldWd) })
 
 	dbPath := filepath.Join(dir, "no_ext_dir.db")
-	database, err := gorm.Open(sqlite.Open(formatSQLiteDSN(dbPath)), &gorm.Config{})
+	database, err := gorm.Open(sqlite.Open(FormatSQLiteDSN(dbPath)), &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, _ := database.DB()
 	t.Cleanup(func() { _ = sqlDB.Close() })
@@ -221,47 +216,69 @@ func TestSQLiteBootstrap_NoExternalMigrationDirectoryRequired(t *testing.T) {
 	require.NoError(t, err, "migration runner must execute embedded migrations without requiring external directory")
 }
 
-// setDatabaseURL points both configuration sources at dsn for the duration of a
-// subtest. IsSQLiteMode prefers the loaded config over the environment, because
-// configuration is read once at startup, so setting only the environment
-// variable leaves a already-loaded config in place and the test would assert
-// against whatever DSN the surrounding environment happened to supply.
-func setDatabaseURL(t *testing.T, dsn string) {
-	t.Helper()
+// ---------------------------------------------------------------------------
+// ResolveSQLitePath
+// ---------------------------------------------------------------------------
 
-	t.Setenv("DATABASE_URL", dsn)
-	if config.AppConfig == nil {
-		return
-	}
-	original := config.AppConfig.DatabaseURL
-	config.AppConfig.DatabaseURL = dsn
-	t.Cleanup(func() {
-		config.AppConfig.DatabaseURL = original
+func TestResolveSQLitePath(t *testing.T) {
+	originalConfig := config.AppConfig
+	t.Cleanup(func() { config.AppConfig = originalConfig })
+
+	t.Run("defaults to /data/alita.db when unset", func(t *testing.T) {
+		t.Setenv("SQLITE_PATH", "")
+		config.AppConfig = &config.Config{}
+
+		assert.Equal(t, "/data/alita.db", ResolveSQLitePath())
+	})
+
+	t.Run("SQLITE_PATH env var wins when config is empty", func(t *testing.T) {
+		t.Setenv("SQLITE_PATH", "/tmp/env-path.db")
+		config.AppConfig = &config.Config{}
+
+		assert.Equal(t, "/tmp/env-path.db", ResolveSQLitePath())
+	})
+
+	t.Run("config.SQLitePath takes precedence over env var", func(t *testing.T) {
+		t.Setenv("SQLITE_PATH", "/tmp/env-path.db")
+		config.AppConfig = &config.Config{SQLitePath: "/tmp/config-path.db"}
+
+		assert.Equal(t, "/tmp/config-path.db", ResolveSQLitePath())
+	})
+
+	t.Run("nil AppConfig falls back to env var", func(t *testing.T) {
+		t.Setenv("SQLITE_PATH", "/tmp/env-path.db")
+		config.AppConfig = nil
+
+		assert.Equal(t, "/tmp/env-path.db", ResolveSQLitePath())
 	})
 }
 
-func TestSQLiteModeDetection(t *testing.T) {
-	t.Run("SQLITE_PATH set", func(t *testing.T) {
-		t.Setenv("SQLITE_PATH", "/data/bot.db")
-		setDatabaseURL(t, "")
-		assert.True(t, IsSQLiteMode())
+// ---------------------------------------------------------------------------
+// FormatSQLiteDSN
+// ---------------------------------------------------------------------------
+
+func TestFormatSQLiteDSN(t *testing.T) {
+	t.Run("plain path gets default pragmas appended", func(t *testing.T) {
+		dsn := FormatSQLiteDSN("/data/alita.db")
+		assert.Contains(t, dsn, "_busy_timeout=")
+		assert.Contains(t, dsn, "_journal_mode=WAL")
+		assert.Contains(t, dsn, "_foreign_keys=ON")
 	})
 
-	t.Run("DATABASE_URL with sqlite prefix", func(t *testing.T) {
-		t.Setenv("SQLITE_PATH", "")
-		setDatabaseURL(t, "sqlite:///data/bot.db")
-		assert.True(t, IsSQLiteMode())
+	t.Run("sqlite:// prefix is stripped", func(t *testing.T) {
+		dsn := FormatSQLiteDSN("sqlite:///data/alita.db")
+		assert.NotContains(t, dsn, "sqlite://")
 	})
 
-	t.Run("DATABASE_URL with .db extension", func(t *testing.T) {
-		t.Setenv("SQLITE_PATH", "")
-		setDatabaseURL(t, "mydata.db")
-		assert.True(t, IsSQLiteMode())
+	t.Run("sqlite: prefix is stripped", func(t *testing.T) {
+		dsn := FormatSQLiteDSN("sqlite:/data/alita.db")
+		assert.NotContains(t, dsn, "sqlite:")
 	})
 
-	t.Run("PostgreSQL DSN", func(t *testing.T) {
-		t.Setenv("SQLITE_PATH", "")
-		setDatabaseURL(t, "postgres://user:pass@localhost:5432/dbname")
-		assert.False(t, IsSQLiteMode())
+	t.Run("existing query params are preserved and merged", func(t *testing.T) {
+		dsn := FormatSQLiteDSN("/data/alita.db?_busy_timeout=5000")
+		assert.Contains(t, dsn, "_busy_timeout=5000")
+		assert.Contains(t, dsn, "_journal_mode=WAL")
+		assert.Contains(t, dsn, "_foreign_keys=ON")
 	})
 }

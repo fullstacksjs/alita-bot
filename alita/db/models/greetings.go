@@ -10,7 +10,7 @@ type WelcomeSettings struct {
 	WelcomeText   string      `gorm:"column:text" json:"welcome_text,omitempty"`
 	FileID        string      `gorm:"column:file_id" json:"file_id,omitempty"`
 	WelcomeType   int         `gorm:"column:type;default:1" json:"welcome_type,omitempty"`
-	Button        ButtonArray `gorm:"column:btns;type:jsonb" json:"btns,omitempty"`
+	Button        ButtonArray `gorm:"column:btns;type:text" json:"btns,omitempty"`
 }
 
 // GreetingSettings represents greeting settings for a chat

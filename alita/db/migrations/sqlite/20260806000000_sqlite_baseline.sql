@@ -85,6 +85,9 @@ CREATE TABLE IF NOT EXISTS blacklists (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_blacklists_chat_word ON blacklists (chat_id, word);
 
 -- Channel Settings table
+-- chat_id stores the channel's own Telegram ID for identification, not a
+-- reference to a row in the chats table: Telegram channels are not stored
+-- there (only groups/supergroups are), so no FK to chats is valid here.
 CREATE TABLE IF NOT EXISTS channels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id BIGINT NOT NULL,
@@ -92,8 +95,7 @@ CREATE TABLE IF NOT EXISTS channels (
     channel_name TEXT,
     username TEXT,
     created_at DATETIME,
-    updated_at DATETIME,
-    FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
+    updated_at DATETIME
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_chat_id ON channels (chat_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_username ON channels (LOWER(username)) WHERE username IS NOT NULL AND username <> '';

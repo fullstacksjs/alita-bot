@@ -17,7 +17,7 @@ func validBaseConfig() *Config {
 		BotToken:    "test-token",
 		OwnerId:     1,
 		MessageDump: 1,
-		DatabaseURL: "postgres://localhost/test",
+		SQLitePath:  "/data/alita.db",
 		HTTPPort:    8080,
 	}
 }
@@ -53,8 +53,8 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "empty DatabaseURL returns error",
-			setup:   func(c *Config) { c.DatabaseURL = "" },
+			name:    "empty SQLitePath returns error",
+			setup:   func(c *Config) { c.SQLitePath = "" },
 			wantErr: true,
 		},
 
@@ -132,37 +132,6 @@ func TestValidateConfig(t *testing.T) {
 			setup:   func(c *Config) { c.DispatcherMaxRoutines = 1000 },
 			wantErr: false,
 		},
-		// DB pool optional field validation
-		{
-			name:    "DBMaxIdleConns 101 returns error",
-			setup:   func(c *Config) { c.DBMaxIdleConns = 101 },
-			wantErr: true,
-		},
-		{
-			name:    "DBMaxIdleConns 0 is allowed (optional field)",
-			setup:   func(c *Config) { c.DBMaxIdleConns = 0 },
-			wantErr: false,
-		},
-		{
-			name:    "DBMaxIdleConns 100 succeeds",
-			setup:   func(c *Config) { c.DBMaxIdleConns = 100 },
-			wantErr: false,
-		},
-		{
-			name:    "DBMaxOpenConns 1001 returns error",
-			setup:   func(c *Config) { c.DBMaxOpenConns = 1001 },
-			wantErr: true,
-		},
-		{
-			name:    "DBMaxOpenConns 0 is allowed (optional field)",
-			setup:   func(c *Config) { c.DBMaxOpenConns = 0 },
-			wantErr: false,
-		},
-		{
-			name:    "DBMaxOpenConns 1000 succeeds",
-			setup:   func(c *Config) { c.DBMaxOpenConns = 1000 },
-			wantErr: false,
-		},
 	}
 
 	for _, tc := range tests {
@@ -199,20 +168,8 @@ func TestSetDefaults(t *testing.T) {
 		if cfg.HTTPPort != 8080 {
 			t.Errorf("HTTPPort: got %d, want %d", cfg.HTTPPort, 8080)
 		}
-		if cfg.DBMaxIdleConns != 50 {
-			t.Errorf("DBMaxIdleConns: got %d, want %d", cfg.DBMaxIdleConns, 50)
-		}
-		if cfg.DBMaxOpenConns != 200 {
-			t.Errorf("DBMaxOpenConns: got %d, want %d", cfg.DBMaxOpenConns, 200)
-		}
-		if cfg.DBConnMaxLifetimeMin != 240 {
-			t.Errorf("DBConnMaxLifetimeMin: got %d, want %d", cfg.DBConnMaxLifetimeMin, 240)
-		}
-		if cfg.DBConnMaxIdleTimeMin != 60 {
-			t.Errorf("DBConnMaxIdleTimeMin: got %d, want %d", cfg.DBConnMaxIdleTimeMin, 60)
-		}
-		if cfg.MigrationsPath != "migrations" {
-			t.Errorf("MigrationsPath: got %q, want %q", cfg.MigrationsPath, "migrations")
+		if cfg.SQLitePath != "/data/alita.db" {
+			t.Errorf("SQLitePath: got %q, want %q", cfg.SQLitePath, "/data/alita.db")
 		}
 		if cfg.DispatcherMaxRoutines != 200 {
 			t.Errorf("DispatcherMaxRoutines: got %d, want %d", cfg.DispatcherMaxRoutines, 200)
@@ -239,7 +196,16 @@ func TestSetDefaults(t *testing.T) {
 		}
 	})
 
+	t.Run("pre-set SQLitePath preserved", func(t *testing.T) {
+		t.Parallel()
 
+		cfg := &Config{SQLitePath: "/tmp/custom.db"}
+		cfg.setDefaults()
+
+		if cfg.SQLitePath != "/tmp/custom.db" {
+			t.Errorf("SQLitePath: got %q, want %q", cfg.SQLitePath, "/tmp/custom.db")
+		}
+	})
 
 	t.Run("pre-set HTTPPort preserved", func(t *testing.T) {
 		t.Parallel()
@@ -252,8 +218,6 @@ func TestSetDefaults(t *testing.T) {
 		}
 	})
 }
-
-
 
 func TestGetHTTPPort(t *testing.T) {
 	t.Run("HTTP_PORT wins", func(t *testing.T) {
@@ -271,5 +235,3 @@ func TestGetHTTPPort(t *testing.T) {
 		}
 	})
 }
-
-

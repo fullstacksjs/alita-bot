@@ -7,6 +7,10 @@ services:
     dockerContext: .
     healthCheckPath: /health
     autoDeploy: false
+    disk:
+      name: alita-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: BOT_TOKEN
         sync: false
@@ -14,27 +18,7 @@ services:
         sync: false
       - key: MESSAGE_DUMP
         sync: false
-      - key: DATABASE_URL
-        fromDatabase:
-          name: alita-db
-          property: connectionString
-      - key: REDIS_ADDRESS
-        fromService:
-          type: redis
-          name: alita-redis
-          property: hostport
-      - key: AUTO_MIGRATE
-        value: "true"
+      - key: SQLITE_PATH
+        value: "/data/alita.db"
       - key: HTTP_PORT
         value: "10000"
-  # Redis service
-  - type: redis
-    name: alita-redis
-    plan: free
-    maxmemoryPolicy: noeviction
-    ipAllowList: [] # Allow all internal services
-
-databases:
-  - name: alita-db
-    plan: free
-    databaseName: alita_robot

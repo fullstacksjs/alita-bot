@@ -358,7 +358,7 @@ func TestExportFiltersData(t *testing.T) {
 	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
 
 	// Empty filters → returns empty backup
-	backup, err := exportFiltersData(chatID)
+	backup, err := exportFiltersData(db.DB, chatID)
 	require.NoError(t, err)
 	require.NotNil(t, backup)
 	assert.Empty(t, backup.Filters)
@@ -367,7 +367,7 @@ func TestExportFiltersData(t *testing.T) {
 	require.NoError(t, filters.AddFilter(chatID, "hello", "hi there", "", nil, db.TEXT))
 	require.NoError(t, filters.AddFilter(chatID, "bye", "see ya", "", nil, db.TEXT))
 
-	backup, err = exportFiltersData(chatID)
+	backup, err = exportFiltersData(db.DB, chatID)
 	require.NoError(t, err)
 	require.NotNil(t, backup)
 	assert.Len(t, backup.Filters, 2)
@@ -441,7 +441,7 @@ func TestExportImportNotesRoundTrip(t *testing.T) {
 	require.NoError(t, notes.AddNote(srcChat, "rules", "Follow the rules", "", nil, db.TEXT, false, false, false, true, false, false))
 
 	// Export
-	exported, err := exportNotesData(srcChat)
+	exported, err := exportNotesData(db.DB, srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
 	assert.Len(t, exported.Notes, 2)
@@ -478,7 +478,7 @@ func TestExportImportWarningsRoundTrip(t *testing.T) {
 
 	require.NoError(t, warns.SetWarnLimit(srcChat, 5))
 
-	exported, err := exportWarningsData(srcChat)
+	exported, err := exportWarningsData(db.DB, srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
 	require.NotNil(t, exported.Settings)
@@ -514,7 +514,7 @@ func TestExportImportBlacklistsRoundTrip(t *testing.T) {
 	require.NoError(t, blacklists.AddBlacklist(srcChat, "scam"))
 	require.NoError(t, blacklists.SetBlacklistAction(srcChat, "ban"))
 
-	exported, err := exportBlacklistsData(srcChat)
+	exported, err := exportBlacklistsData(db.DB, srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
 	assert.Len(t, exported.Entries, 2)
@@ -551,7 +551,7 @@ func TestExportImportConnectionsRoundTrip(t *testing.T) {
 
 	require.NoError(t, connections.ConnectId(userID, srcChat))
 
-	exported, err := exportConnectionsData(srcChat)
+	exported, err := exportConnectionsData(db.DB, srcChat)
 	require.NoError(t, err)
 	require.Len(t, exported.Connections, 1)
 	assert.Equal(t, userID, exported.Connections[0].UserId)
@@ -579,7 +579,7 @@ func TestExportImportAntifloodRoundTrip(t *testing.T) {
 	require.NoError(t, antiflood.SetFloodMode(srcChat, "mute"))
 	require.NoError(t, antiflood.SetFloodMsgDel(srcChat, true))
 
-	exported, err := exportAntifloodData(srcChat)
+	exported, err := exportAntifloodData(db.DB, srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
 	require.NotNil(t, exported.Settings)
@@ -620,7 +620,7 @@ func TestExportImportWelcomeRoundTrip(t *testing.T) {
 	require.NoError(t, greetings.SetWelcomeText(srcChat, "Hello {first}!", "", nil, db.TEXT))
 	require.NoError(t, greetings.SetWelcomeToggle(srcChat, true))
 
-	exported, err := exportWelcomeData(srcChat)
+	exported, err := exportWelcomeData(db.DB, srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
 	require.NotNil(t, exported.Settings)
@@ -880,7 +880,7 @@ func TestAntiraidBackupRoundTrip(t *testing.T) {
 	require.NoError(t, antiraid.SetAutoAntiRaidThreshold(srcChat, 10))
 
 	// Export
-	exported, err := exportAntiraidData(srcChat)
+	exported, err := exportAntiraidData(db.DB, srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
 	require.NotNil(t, exported.Settings)
@@ -921,7 +921,7 @@ func TestAntiraidBackupExcludesRaidWindow(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, enabled)
 
-	exported, err := exportAntiraidData(srcChat)
+	exported, err := exportAntiraidData(db.DB, srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported.Settings)
 
@@ -955,7 +955,7 @@ func TestApprovalsBackupRoundTrip(t *testing.T) {
 	require.NoError(t, approvals.AddApprovedUser(srcChat, userB, approverID, "reason B"))
 
 	// Export
-	exported, err := exportApprovalsData(srcChat)
+	exported, err := exportApprovalsData(db.DB, srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
 	assert.Len(t, exported.ApprovedUsers, 2)
@@ -1003,13 +1003,13 @@ func TestReactionsBackupRoundTrip(t *testing.T) {
 
 	require.NoError(t, db.DB.Create(&models.Reactions{ChatID: srcChat, Keyword: "gg", Emoji: "🔥"}).Error)
 
-	exported, err := exportReactionsData(srcChat)
+	exported, err := exportReactionsData(db.DB, srcChat)
 	require.NoError(t, err)
 	require.Len(t, exported.Reactions, 1)
 
 	require.NoError(t, ImportDomainData(dstChat, DomainReactions, payloadFor(t, exported)))
 
-	restored, err := exportReactionsData(dstChat)
+	restored, err := exportReactionsData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.Len(t, restored.Reactions, 1)
 	assert.Equal(t, "gg", restored.Reactions[0].Keyword)

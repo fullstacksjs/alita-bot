@@ -19,31 +19,6 @@ func readRepoFile(t *testing.T, parts ...string) string {
 	return string(data)
 }
 
-func TestMigrationsCreateDisableChatSettingsTable(t *testing.T) {
-	t.Parallel()
-
-	files, err := filepath.Glob(filepath.Join("..", "..", "migrations", "*.sql"))
-	if err != nil {
-		t.Fatalf("failed to list migration files: %v", err)
-	}
-	if len(files) == 0 {
-		t.Fatal("expected migration files to exist")
-	}
-
-	createTable := regexp.MustCompile(`(?is)create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?disable_chat_settings\b`)
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatalf("failed to read migration %s: %v", file, err)
-		}
-		if createTable.Match(data) {
-			return
-		}
-	}
-
-	t.Fatal("disable_chat_settings model has no CREATE TABLE statement in SQL migrations")
-}
-
 func TestPollingLoadsModulesBeforeStartingPolling(t *testing.T) {
 	t.Parallel()
 

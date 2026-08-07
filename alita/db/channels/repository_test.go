@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/models"
 
 	"gorm.io/driver/sqlite"
@@ -23,9 +22,6 @@ func skipIfNoDb(t *testing.T) {
 
 func withChannelSQLite(t *testing.T) {
 	t.Helper()
-	if db.DB != nil && db.DB.Name() == "postgres" {
-		return
-	}
 
 	originalDB := db.DB
 	testDB, err := gorm.Open(
@@ -203,19 +199,6 @@ func TestUpdateChannelClearsAndReassignsNormalizedUsername(t *testing.T) {
 		secondChannelID = int64(-1000000000002)
 		thirdChannelID  = int64(-1000000000003)
 	)
-	if db.DB.Name() == "postgres" {
-		for _, chatID := range []int64{firstChannelID, secondChannelID, thirdChannelID} {
-			if err := chats.EnsureChatInDb(chatID, "channel ownership test"); err != nil {
-				t.Fatalf("EnsureChatInDb(%d) error = %v", chatID, err)
-			}
-		}
-		t.Cleanup(func() {
-			_ = db.DB.Where("chat_id IN ?", []int64{firstChannelID, secondChannelID, thirdChannelID}).
-				Delete(&models.ChannelSettings{}).Error
-			_ = db.DB.Where("chat_id IN ?", []int64{firstChannelID, secondChannelID, thirdChannelID}).
-				Delete(&models.Chat{}).Error
-		})
-	}
 	if err := UpdateChannel(firstChannelID, "First", "@NewsRoom"); err != nil {
 		t.Fatalf("UpdateChannel(first) error = %v", err)
 	}

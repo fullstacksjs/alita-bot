@@ -1,44 +1,47 @@
 # Multi-stage build for production Docker images
-# Uses cross-compilation to avoid QEMU emulation issues with Alpine on ARM64
+# CGO is required for the mattn/go-sqlite3 driver.
 
-# Stage 1: Build using native platform, cross-compile for target
 FROM --platform=$BUILDPLATFORM golang:alpine AS builder
 
-# Build arguments for cross-compilation
 ARG TARGETOS
 ARG TARGETARCH
 
+RUN apk add --no-cache build-base sqlite-dev
+
 WORKDIR /app
 
-# Copy go mod files first for better layer caching
 COPY go.mod go.sum ./
 
-# Download dependencies - runs on native platform, cached unless go.mod/go.sum change
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go mod download && go mod verify
 
-# Copy source code
 COPY . .
 
-# Cross-compile the binary for target platform (no QEMU needed - Go handles this natively)
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -trimpath \
     -ldflags="-s -w" \
     -o alita_robot .
 
-# Stage 2: Minimal runtime image
-FROM gcr.io/distroless/static-debian12
-USER 65532:65532
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates tzdata sqlite-libs && \
+    addgroup -g 65532 -S alita && \
+    adduser -u 65532 -S alita -G alita && \
+    mkdir -p /data && \
+    chown -R alita:alita /data
+
 WORKDIR /app
 COPY --from=builder /app/alita_robot /app/alita_robot
-COPY --from=builder /app/migrations /app/migrations
+RUN chown alita:alita /app/alita_robot
+
+USER alita:alita
+VOLUME ["/data"]
 EXPOSE 8080
 ENTRYPOINT ["/app/alita_robot"]
 
-# Metadata
 LABEL org.opencontainers.image.authors="Divanshu Chauhan <divkix@divkix.me>"
 LABEL org.opencontainers.image.url="https://divkix.me"
 LABEL org.opencontainers.image.source="https://github.com/divkix/Alita_Robot"
