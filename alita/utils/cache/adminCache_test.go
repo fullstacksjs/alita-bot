@@ -9,14 +9,19 @@ import (
 	"testing"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
+
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
+// The admin cache lives in the in-process state store, so it must keep working
+// with no Redis marshaler configured, and must still report a miss when empty.
 func TestAdminCacheHelpersHandleNilMarshal(t *testing.T) {
 	originalMarshal := GetMarshal()
 	SetMarshal(nil)
 	t.Cleanup(func() {
 		SetMarshal(originalMarshal)
 	})
+	state.SimulateRestart()
 
 	found, adminCache := GetAdminCacheList(-100123)
 	if found {
@@ -67,6 +72,7 @@ func (c *adminCacheBotClient) FileURL(token string, path string, _ *gotgbot.Requ
 
 func TestLoadAdminCacheFetchesAndStoresAdminMap(t *testing.T) {
 	withMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	client := &adminCacheBotClient{responses: map[string]json.RawMessage{
 		"getChatMember:999": json.RawMessage(
@@ -94,6 +100,7 @@ func TestLoadAdminCacheFetchesAndStoresAdminMap(t *testing.T) {
 
 func TestLoadAdminCacheHandlesNilBotNonAdminBotAndEmptyAdminList(t *testing.T) {
 	withMemoryMarshaler(t)
+	state.SimulateRestart()
 
 	if got := LoadAdminCache(nil, -100123); got.Cached || len(got.UserInfo) != 0 {
 		t.Fatalf("LoadAdminCache(nil) = %+v, want empty uncached result", got)

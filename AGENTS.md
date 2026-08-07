@@ -14,8 +14,9 @@ easy to discover from code, tests, `sample.env`, or workflow files.
   shutdown wiring.
 - `alita/modules/`: Telegram commands, callbacks, watchers, and module registry.
 - `alita/db/models/`: GORM models; `alita/db/<domain>/`: domain repositories.
-- `alita/db/cache/`: repository read-through cache; `alita/utils/cache/`: Redis
-  connection and shared operational caches.
+- `alita/db/cache/`: repository read-through cache; `alita/utils/cache/`: admin
+  cache plus the Redis connection and remaining operational caches;
+  `alita/utils/state/`: the in-process TTL store both build on.
 - `alita/i18n/` and `locales/`: embedded English strings and command metadata.
 - `migrations/`: authoritative PostgreSQL schema and forward-only migrations.
 - `internal/repo_checks/`: source-structure assertions that may need updates after
@@ -121,17 +122,25 @@ and exact CI versions.
 
 ## Redis and cache behavior
 
-- Production caching is Redis-only; helpers must tolerate a nil marshaler and
-  fall back to the database where applicable. Access it through
-  `cache.GetMarshal()`/`SetMarshal()` rather than shared state directly.
+- Retained repository caching (`alita/db/cache`) and the Telegram administrator
+  cache live in the in-process TTL store (`alita/utils/state`). They never
+  serialize through Redis, so cached values are shared between callers: treat
+  reads as read-only, or return a copy as `AdminCache` does.
+- Redis remains for the operational caches that still need it (restricted-chat
+  probes, greeting locks, the `/db_metrics` health probe). Those helpers must
+  tolerate a nil marshaler and fall back safely.
 - `ClearAllCaches` flushes the entire selected Redis database. The deployment
   assumes that database is dedicated to this bot.
-- Do not bypass repository `DeleteCache`: its invalidation generation prevents an
-  in-flight read from restoring stale data.
+- Do not bypass repository `DeleteCache` or `InvalidateAdminCache`: both bump an
+  invalidation generation that prevents an in-flight load from restoring stale
+  data, and `InvalidateAdminCache` also forgets the in-flight singleflight load.
 - Keep independent named caches for filters and blacklists. Sharing them causes
   cross-module eviction.
-- One-use confirmation payloads use Redis `GETDEL`; preserve user binding, TTLs,
-  and replay protection.
+- One-use confirmation payloads use the state store's consume-once
+  `GetAndDelete`; preserve user binding, TTLs, and replay protection.
+- Tests that must observe the database directly disable repository caching with
+  `dbcache.SetEnabled(false)` and reset in-process entries with
+  `state.SimulateRestart()`; a nil marshaler no longer disables caching.
 
 ## Locale and message content
 

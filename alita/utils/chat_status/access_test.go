@@ -8,7 +8,16 @@ import (
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
+
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
+
+// coldAdminCache clears the in-process state store so a test sees the Telegram
+// fixtures instead of an administrator list cached by an earlier test.
+func coldAdminCache(t *testing.T) {
+	t.Helper()
+	state.SimulateRestart()
+}
 
 type chatStatusBotClient struct{}
 
@@ -287,6 +296,7 @@ func TestHasUserPermissionRejectsMissingContextOrChat(t *testing.T) {
 }
 
 func TestPermissionHelpersUseGotgbotMemberPermissions(t *testing.T) {
+	coldAdminCache(t)
 	bot := newChatStatusBot(999)
 	chat := &gotgbot.Chat{Id: -1001, Type: "supergroup", Title: "Permission Chat"}
 	ctx := makeCtxWithMessage("supergroup")
@@ -313,6 +323,7 @@ func TestPermissionHelpersUseGotgbotMemberPermissions(t *testing.T) {
 }
 
 func TestPermissionHelpersAllowCreatorWithoutSpecificFlags(t *testing.T) {
+	coldAdminCache(t)
 	bot := newChatStatusBot(999)
 	chat := &gotgbot.Chat{Id: -1001, Type: "supergroup", Title: "Permission Chat"}
 	ctx := makeCtxWithMessage("supergroup")
@@ -332,6 +343,7 @@ func TestPermissionHelpersAllowCreatorWithoutSpecificFlags(t *testing.T) {
 }
 
 func TestPermissionHelpersRejectMissingMemberPermissions(t *testing.T) {
+	coldAdminCache(t)
 	bot := newChatStatusBot(999)
 	chat := &gotgbot.Chat{Id: -1001, Type: "supergroup", Title: "Permission Chat"}
 	ctx := makeCtxWithMessage("supergroup")
@@ -358,6 +370,7 @@ func TestPermissionHelpersRejectMissingMemberPermissions(t *testing.T) {
 }
 
 func TestBotPermissionHelpersUseGotgbotMemberPermissions(t *testing.T) {
+	coldAdminCache(t)
 	chat := &gotgbot.Chat{Id: -1001, Type: "supergroup", Title: "Permission Chat"}
 	ctx := makeCtxWithMessage("supergroup")
 
@@ -401,6 +414,7 @@ func TestBotPermissionHelpersUseGotgbotMemberPermissions(t *testing.T) {
 }
 
 func TestGetChatRequestsTelegramAPI(t *testing.T) {
+	coldAdminCache(t)
 	bot := newChatStatusBot(999)
 
 	chat, err := GetChat(bot, "-1001")
@@ -413,6 +427,7 @@ func TestGetChatRequestsTelegramAPI(t *testing.T) {
 }
 
 func TestIsUserAdminLoadsTelegramAdminList(t *testing.T) {
+	coldAdminCache(t)
 	client := &recordingChatStatusClient{}
 	bot := newRecordingChatStatusBot(999, client)
 	chatID := int64(-1001)
@@ -423,8 +438,10 @@ func TestIsUserAdminLoadsTelegramAdminList(t *testing.T) {
 	if IsUserAdmin(bot, chatID, 42) {
 		t.Fatal("IsUserAdmin(member) = true, want false")
 	}
-	if got := client.callsFor("getChatAdministrators"); got != 2 {
-		t.Fatalf("getChatAdministrators calls = %d, want one lookup per non-service user", got)
+	// The second check is answered from the in-process admin cache filled by the
+	// first one, so Telegram is only asked for the administrator list once.
+	if got := client.callsFor("getChatAdministrators"); got != 1 {
+		t.Fatalf("getChatAdministrators calls = %d, want a single cached lookup", got)
 	}
 }
 
@@ -582,6 +599,7 @@ func TestSetAnonAdminCacheSkipsNilMessages(t *testing.T) {
 */
 
 func TestMembershipAndProtectionHelpers(t *testing.T) {
+	coldAdminCache(t)
 	bot := newChatStatusBot(999)
 	chat := &gotgbot.Chat{Id: -1001, Type: "supergroup", Title: "Permission Chat"}
 	ctx := makeCtxWithMessage("supergroup")
@@ -613,6 +631,7 @@ func TestMembershipAndProtectionHelpers(t *testing.T) {
 }
 
 func TestPermissionResponderSendsMessage(t *testing.T) {
+	coldAdminCache(t)
 	client := &recordingChatStatusClient{}
 	bot := newRecordingChatStatusBot(999, client)
 	ctx := makeCtxWithMessage("supergroup")
@@ -629,6 +648,7 @@ func TestPermissionResponderSendsMessage(t *testing.T) {
 }
 
 func TestRequireUserAdminUsesGotgbotAdminList(t *testing.T) {
+	coldAdminCache(t)
 	bot := newChatStatusBot(999)
 	chat := &gotgbot.Chat{Id: -1001, Type: "supergroup", Title: "Permission Chat"}
 	ctx := makeCtxWithMessage("supergroup")
@@ -718,6 +738,7 @@ func TestRequirePrivate_NilContextAndChat(t *testing.T) {
 }
 
 func TestIsBotAdmin_NilBot(t *testing.T) {
+	coldAdminCache(t)
 	ctx := makeCtxWithMessage("private")
 	// Private chats always return true from IsBotAdmin.
 	if !IsBotAdmin(nil, ctx, nil) {

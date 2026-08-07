@@ -45,6 +45,7 @@ func TestIsApproved(t *testing.T) {
 }
 
 func TestCanUserPromote(t *testing.T) {
+	coldAdminCache(t)
 	bot := newChatStatusBot(999)
 	chat := &gotgbot.Chat{Id: -1001, Type: "supergroup", Title: "Permission Chat"}
 	ctx := makeCtxWithMessage("supergroup")
@@ -58,6 +59,7 @@ func TestCanUserPromote(t *testing.T) {
 }
 
 func TestCanInvite(t *testing.T) {
+	coldAdminCache(t)
 	bot := newChatStatusBot(999)
 	chat := &gotgbot.Chat{Id: -1001, Type: "supergroup", Title: "Permission Chat"}
 
@@ -106,6 +108,7 @@ func TestCanInvite(t *testing.T) {
 }
 
 func TestOtherExportedFunctions(t *testing.T) {
+	coldAdminCache(t)
 	bot := newChatStatusBot(999)
 	chat := &gotgbot.Chat{Id: -1001, Type: "supergroup", Title: "Permission Chat"}
 	ctx := makeCtxWithMessage("supergroup")
@@ -356,6 +359,7 @@ func TestExtractAdminUpdateStatusChange(t *testing.T) {
 // back to a live getChatMember on a cache miss — the fake bot client simulates
 // both outcomes.
 func TestIsBotAdminUsesCacheAndStatus(t *testing.T) {
+	coldAdminCache(t)
 	chat := &gotgbot.Chat{Id: -1001, Type: "supergroup", Title: "Permission Chat"}
 
 	// Bot ID 999 → chatStatusBotClient returns status "administrator" → want true.
