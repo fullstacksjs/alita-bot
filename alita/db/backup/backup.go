@@ -12,44 +12,39 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ExportModuleData exports data for a specific module from a chat.
-func ExportModuleData(chatID int64, module string) (interface{}, error) {
-	switch module {
-	case BackupModuleAdmin:
-		return exportAdminData(chatID)
-	case BackupModuleAntiflood:
+// ExportDomainData exports data for a single retained domain from a chat.
+func ExportDomainData(chatID int64, domain string) (interface{}, error) {
+	switch domain {
+	case DomainAntiflood:
 		return exportAntifloodData(chatID)
-	case BackupModuleAntiraid:
+	case DomainAntiraid:
 		return exportAntiraidData(chatID)
-	case BackupModuleApprovals:
+	case DomainApprovals:
 		return exportApprovalsData(chatID)
-	case BackupModuleBlacklists:
+	case DomainBlacklists:
 		return exportBlacklistsData(chatID)
-	case BackupModuleConnections:
+	case DomainConnections:
 		return exportConnectionsData(chatID)
-	case BackupModuleDisabling:
-		return exportDisablingData(chatID)
-	case BackupModuleFilters:
+	case DomainFilters:
 		return exportFiltersData(chatID)
-	case BackupModuleGreetings:
-		return exportGreetingsData(chatID)
-	case BackupModuleNotes:
+	case DomainWelcome:
+		return exportWelcomeData(chatID)
+	case DomainNotes:
 		return exportNotesData(chatID)
-	case BackupModulePins:
-		return exportPinsData(chatID)
-	case BackupModuleReactions:
+	case DomainReactions:
 		return exportReactionsData(chatID)
-	case BackupModuleRules:
-		return exportRulesData(chatID)
-	case BackupModuleWarns:
-		return exportWarnsData(chatID)
+	case DomainWarnings:
+		return exportWarningsData(chatID)
 	default:
-		return nil, fmt.Errorf("unknown module: %s", module)
+		return nil, fmt.Errorf("unsupported domain: %s", domain)
 	}
 }
 
-// ImportModuleData imports one module atomically into a chat.
-func ImportModuleData(chatID int64, module string, data interface{}) error {
+// ImportDomainData imports one domain atomically into a chat.
+func ImportDomainData(chatID int64, domain string, data interface{}) error {
+	if !IsValidDomain(domain) {
+		return fmt.Errorf("unsupported domain: %s", domain)
+	}
 	database, err := backupDB()
 	if err != nil {
 		return err
@@ -58,7 +53,7 @@ func ImportModuleData(chatID int64, module string, data interface{}) error {
 	var keys []string
 	err = database.Transaction(func(tx *gorm.DB) error {
 		var importErr error
-		keys, importErr = importModuleData(tx, chatID, module, data, false)
+		keys, importErr = importDomainData(tx, chatID, domain, data)
 		return importErr
 	})
 	if err != nil {
@@ -68,8 +63,11 @@ func ImportModuleData(chatID int64, module string, data interface{}) error {
 	return nil
 }
 
-// ClearModuleData clears one module atomically from a chat.
-func ClearModuleData(chatID int64, module string) error {
+// ClearDomainData clears one domain atomically from a chat.
+func ClearDomainData(chatID int64, domain string) error {
+	if !IsValidDomain(domain) {
+		return fmt.Errorf("unsupported domain: %s", domain)
+	}
 	database, err := backupDB()
 	if err != nil {
 		return err
@@ -78,7 +76,7 @@ func ClearModuleData(chatID int64, module string) error {
 	var keys []string
 	err = database.Transaction(func(tx *gorm.DB) error {
 		var clearErr error
-		keys, clearErr = clearModuleData(tx, chatID, module)
+		keys, clearErr = clearDomainData(tx, chatID, domain)
 		return clearErr
 	})
 	if err != nil {
@@ -88,45 +86,47 @@ func ClearModuleData(chatID int64, module string) error {
 	return nil
 }
 
-// ExportChatData exports the selected modules. A failed module aborts the
+// ExportChatData exports the selected domains. A failed domain aborts the
 // export so callers never receive a backup that only looks complete.
-func ExportChatData(chatID int64, chatName string, exportedBy int64, modules []string) (*BackupFormat, error) {
-	modules, err := checkedModules(modules)
+func ExportChatData(chatID int64, chatName string, exportedBy int64, domains []string) (*BackupFormat, error) {
+	domains, err := checkedDomains(domains)
 	if err != nil {
 		return nil, err
 	}
 
-	backup := NewBackupFormat(chatID, chatName, exportedBy, modules)
-	for _, module := range modules {
-		data, err := ExportModuleData(chatID, module)
+	backup := NewBackupFormat(chatID, chatName, exportedBy, domains)
+	for _, domain := range domains {
+		data, err := ExportDomainData(chatID, domain)
 		if err != nil {
-			return nil, fmt.Errorf("failed to export module %s: %w", module, err)
+			return nil, fmt.Errorf("failed to export domain %s: %w", domain, err)
 		}
-		backup.Data[module] = data
+		backup.Data[domain] = data
 	}
 	return backup, nil
 }
 
-// ImportChatData imports every selected module in one transaction.
-func ImportChatData(chatID int64, backup *BackupFormat, modules []string) error {
+// ImportChatData imports every selected domain in one transaction. Unknown and
+// removed domain names are rejected before any row is written, and a failure in
+// any domain rolls back the changes made by the earlier ones.
+func ImportChatData(chatID int64, backup *BackupFormat, domains []string) error {
 	if backup == nil {
 		return fmt.Errorf("invalid backup: backup cannot be nil")
-	}
-	if err := backup.Validate(); err != nil {
-		return fmt.Errorf("invalid backup: %w", err)
 	}
 	if !backup.IsCompatibleVersion() {
 		return fmt.Errorf("unsupported backup version %q", backup.Version)
 	}
-	if len(modules) == 0 {
-		modules = backup.Modules
+	if err := backup.Validate(); err != nil {
+		return fmt.Errorf("invalid backup: %w", err)
 	}
-	for _, module := range modules {
-		if !IsValidModule(module) {
-			return fmt.Errorf("unknown module: %s", module)
+	if len(domains) == 0 {
+		domains = backup.Domains
+	}
+	for _, domain := range domains {
+		if !IsValidDomain(domain) {
+			return fmt.Errorf("unsupported domain: %s", domain)
 		}
-		if _, ok := backup.Data[module]; !ok {
-			return fmt.Errorf("missing data for module: %s", module)
+		if _, ok := backup.Data[domain]; !ok {
+			return fmt.Errorf("missing data for domain: %s", domain)
 		}
 	}
 
@@ -137,13 +137,13 @@ func ImportChatData(chatID int64, backup *BackupFormat, modules []string) error 
 
 	var keys []string
 	err = database.Transaction(func(tx *gorm.DB) error {
-		for _, module := range modules {
-			data := backup.Data[module]
-			moduleKeys, err := importModuleData(tx, chatID, module, data, backup.Version == legacyFormatVersion)
+		keys = nil
+		for _, domain := range domains {
+			domainKeys, err := importDomainData(tx, chatID, domain, backup.Data[domain])
 			if err != nil {
-				return fmt.Errorf("failed to import module %s: %w", module, err)
+				return fmt.Errorf("failed to import domain %s: %w", domain, err)
 			}
-			keys = append(keys, moduleKeys...)
+			keys = append(keys, domainKeys...)
 		}
 		return nil
 	})
@@ -154,9 +154,9 @@ func ImportChatData(chatID int64, backup *BackupFormat, modules []string) error 
 	return nil
 }
 
-// ClearChatData clears every selected module in one transaction.
-func ClearChatData(chatID int64, modules []string) error {
-	modules, err := checkedModules(modules)
+// ClearChatData clears every selected domain in one transaction.
+func ClearChatData(chatID int64, domains []string) error {
+	domains, err := checkedDomains(domains)
 	if err != nil {
 		return err
 	}
@@ -167,12 +167,13 @@ func ClearChatData(chatID int64, modules []string) error {
 
 	var keys []string
 	err = database.Transaction(func(tx *gorm.DB) error {
-		for _, module := range modules {
-			moduleKeys, err := clearModuleData(tx, chatID, module)
+		keys = nil
+		for _, domain := range domains {
+			domainKeys, err := clearDomainData(tx, chatID, domain)
 			if err != nil {
-				return fmt.Errorf("failed to clear module %s: %w", module, err)
+				return fmt.Errorf("failed to clear domain %s: %w", domain, err)
 			}
-			keys = append(keys, moduleKeys...)
+			keys = append(keys, domainKeys...)
 		}
 		return nil
 	})
@@ -183,16 +184,16 @@ func ClearChatData(chatID int64, modules []string) error {
 	return nil
 }
 
-func checkedModules(modules []string) ([]string, error) {
-	if len(modules) == 0 {
-		return AllExportableModules(), nil
+func checkedDomains(domains []string) ([]string, error) {
+	if len(domains) == 0 {
+		return AllDomains(), nil
 	}
-	for _, module := range modules {
-		if !IsValidModule(module) {
-			return nil, fmt.Errorf("unknown module: %s", module)
+	for _, domain := range domains {
+		if !IsValidDomain(domain) {
+			return nil, fmt.Errorf("unsupported domain: %s", domain)
 		}
 	}
-	return modules, nil
+	return domains, nil
 }
 
 func backupDB() (*gorm.DB, error) {
@@ -286,16 +287,16 @@ func replaceChatRows[T any](tx *gorm.DB, chatID int64, rows []T) error {
 	return nil
 }
 
-func decodeModuleData(data interface{}, module string, target interface{}) error {
+func decodeDomainData(data interface{}, domain string, target interface{}) error {
 	if _, ok := data.(map[string]interface{}); !ok {
-		return fmt.Errorf("invalid %s data format", module)
+		return fmt.Errorf("invalid %s data format", domain)
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {
-		return fmt.Errorf("invalid %s data format: %w", module, err)
+		return fmt.Errorf("invalid %s data format: %w", domain, err)
 	}
 	if err := json.Unmarshal(raw, target); err != nil {
-		return fmt.Errorf("failed to parse %s data: %w", module, err)
+		return fmt.Errorf("failed to parse %s data: %w", domain, err)
 	}
 	return nil
 }
@@ -306,35 +307,32 @@ func invalidate(keys ...string) {
 	}
 }
 
-func cacheKey(module string, chatID int64) string {
-	return dbcache.CacheKey(module, chatID)
+func cacheKey(domain string, chatID int64) string {
+	return dbcache.CacheKey(domain, chatID)
+}
+
+// ensureUsers creates placeholder user rows so imported rows that reference a
+// user satisfy the users foreign key.
+func ensureUsers(tx *gorm.DB, userIDs []int64) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(userIDs))
+	users := make([]models.User, 0, len(userIDs))
+	for _, userID := range userIDs {
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		users = append(users, models.User{UserId: userID})
+	}
+	return tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}},
+		DoNothing: true,
+	}).Create(&users).Error
 }
 
 // Exporters query complete rows instead of lossy summary getters.
-
-func exportAdminData(chatID int64) (*AdminBackup, error) {
-	adminSettings, err := findChatSetting[models.AdminSettings](chatID)
-	if err != nil {
-		return nil, fmt.Errorf("get admin settings: %w", err)
-	}
-	antifloodSettings, err := findChatSetting[models.AntifloodSettings](chatID)
-	if err != nil {
-		return nil, fmt.Errorf("get antiflood settings: %w", err)
-	}
-	blacklistEntries, err := findChatRows[models.BlacklistSettings](chatID)
-	if err != nil {
-		return nil, fmt.Errorf("get blacklist settings: %w", err)
-	}
-
-	result := &AdminBackup{
-		AdminSettings:     adminSettings,
-		AntifloodSettings: antifloodSettings,
-	}
-	if len(blacklistEntries) > 0 {
-		result.BlacklistMode = blacklistEntries[0].Action
-	}
-	return result, nil
-}
 
 func exportAntifloodData(chatID int64) (*AntifloodBackup, error) {
 	settings, err := findChatSetting[models.AntifloodSettings](chatID)
@@ -353,31 +351,12 @@ func exportApprovalsData(chatID int64) (*ApprovalsBackup, error) {
 
 func exportBlacklistsData(chatID int64) (*BlacklistsBackup, error) {
 	entries, err := findChatRows[models.BlacklistSettings](chatID)
-	if err != nil {
-		return nil, err
-	}
-	result := &BlacklistsBackup{Entries: entries}
-	if len(entries) > 0 {
-		result.BlacklistMode = entries[0].Action
-	}
-	return result, nil
+	return &BlacklistsBackup{Entries: entries}, err
 }
 
-func exportConnectionsData(_ int64) (*ConnectionsBackup, error) {
-	// Connection authorization settings were removed; active user connections are not exported.
-	return &ConnectionsBackup{}, nil
-}
-
-func exportDisablingData(chatID int64) (*DisablingBackup, error) {
-	settings, err := findChatSetting[models.DisableChatSettings](chatID)
-	if err != nil {
-		return nil, err
-	}
-	commands, err := findChatRows[models.DisableSettings](chatID)
-	if err != nil {
-		return nil, err
-	}
-	return &DisablingBackup{ChatSettings: settings, Commands: commands}, nil
+func exportConnectionsData(chatID int64) (*ConnectionsBackup, error) {
+	rows, err := findChatRows[models.ConnectionSettings](chatID)
+	return &ConnectionsBackup{Connections: rows}, err
 }
 
 func exportFiltersData(chatID int64) (*FiltersBackup, error) {
@@ -385,9 +364,9 @@ func exportFiltersData(chatID int64) (*FiltersBackup, error) {
 	return &FiltersBackup{Filters: rows}, err
 }
 
-func exportGreetingsData(chatID int64) (*GreetingsBackup, error) {
+func exportWelcomeData(chatID int64) (*WelcomeBackup, error) {
 	settings, err := findChatSetting[models.GreetingSettings](chatID)
-	return &GreetingsBackup{Settings: settings}, err
+	return &WelcomeBackup{Settings: settings}, err
 }
 
 func exportNotesData(chatID int64) (*NotesBackup, error) {
@@ -402,22 +381,12 @@ func exportNotesData(chatID int64) (*NotesBackup, error) {
 	return &NotesBackup{Settings: settings, Notes: rows}, nil
 }
 
-func exportPinsData(chatID int64) (*PinsBackup, error) {
-	settings, err := findChatSetting[models.PinSettings](chatID)
-	return &PinsBackup{Settings: settings}, err
-}
-
 func exportReactionsData(chatID int64) (*ReactionsBackup, error) {
 	rows, err := findChatRows[models.Reactions](chatID)
 	return &ReactionsBackup{Reactions: rows}, err
 }
 
-func exportRulesData(chatID int64) (*RulesBackup, error) {
-	settings, err := findChatSetting[models.RulesSettings](chatID)
-	return &RulesBackup{Settings: settings}, err
-}
-
-func exportWarnsData(chatID int64) (*WarnsBackup, error) {
+func exportWarningsData(chatID int64) (*WarningsBackup, error) {
 	settings, err := findChatSetting[models.WarnSettings](chatID)
 	if err != nil {
 		return nil, err
@@ -426,81 +395,42 @@ func exportWarnsData(chatID int64) (*WarnsBackup, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &WarnsBackup{WarnSettings: settings, Warns: rows}, nil
+	return &WarningsBackup{Settings: settings, Warns: rows}, nil
 }
 
-func importModuleData(tx *gorm.DB, chatID int64, module string, data interface{}, preserveLegacyOmissions bool) ([]string, error) {
+func importDomainData(tx *gorm.DB, chatID int64, domain string, data interface{}) ([]string, error) {
 	if err := ensureBackupChat(tx, chatID); err != nil {
 		return nil, err
 	}
-	switch module {
-	case BackupModuleAdmin:
-		return importAdmin(tx, chatID, data)
-	case BackupModuleAntiflood:
+	switch domain {
+	case DomainAntiflood:
 		return importAntiflood(tx, chatID, data)
-	case BackupModuleAntiraid:
+	case DomainAntiraid:
 		return importAntiraid(tx, chatID, data)
-	case BackupModuleApprovals:
+	case DomainApprovals:
 		return importApprovals(tx, chatID, data)
-	case BackupModuleBlacklists:
+	case DomainBlacklists:
 		return importBlacklists(tx, chatID, data)
-	case BackupModuleConnections:
+	case DomainConnections:
 		return importConnections(tx, chatID, data)
-	case BackupModuleDisabling:
-		return importDisabling(tx, chatID, data)
-	case BackupModuleFilters:
+	case DomainFilters:
 		return importFilters(tx, chatID, data)
-	case BackupModuleGreetings:
-		return importGreetings(tx, chatID, data)
-	case BackupModuleNotes:
-		return importNotes(tx, chatID, data, preserveLegacyOmissions)
-	case BackupModulePins:
-		return importPins(tx, chatID, data)
-	case BackupModuleReactions:
+	case DomainWelcome:
+		return importWelcome(tx, chatID, data)
+	case DomainNotes:
+		return importNotes(tx, chatID, data)
+	case DomainReactions:
 		return importReactions(tx, chatID, data)
-	case BackupModuleRules:
-		return importRules(tx, chatID, data)
-	case BackupModuleWarns:
-		return importWarns(tx, chatID, data, preserveLegacyOmissions)
+	case DomainWarnings:
+		return importWarnings(tx, chatID, data)
 	default:
-		return nil, fmt.Errorf("unknown module: %s", module)
+		return nil, fmt.Errorf("unsupported domain: %s", domain)
 	}
-}
-
-func importAdmin(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
-	var data AdminBackup
-	if err := decodeModuleData(payload, BackupModuleAdmin, &data); err != nil {
-		return nil, err
-	}
-	if data.AdminSettings != nil {
-		data.AdminSettings.ChatId = chatID
-	}
-	if data.AntifloodSettings != nil {
-		data.AntifloodSettings.ChatId = chatID
-	}
-
-	if err := replaceChatSetting(tx, chatID, data.AdminSettings); err != nil {
-		return nil, fmt.Errorf("restore admin settings: %w", err)
-	}
-	if err := replaceChatSetting(tx, chatID, data.AntifloodSettings); err != nil {
-		return nil, fmt.Errorf("restore antiflood settings: %w", err)
-	}
-	if data.BlacklistMode != "" {
-		if err := tx.Model(&models.BlacklistSettings{}).
-			Where("chat_id = ?", chatID).
-			Update("action", data.BlacklistMode).Error; err != nil {
-			return nil, fmt.Errorf("restore blacklist mode: %w", err)
-		}
-	}
-	return []string{
-		cacheKey("antiflood", chatID),
-		cacheKey("blacklist", chatID),
-	}, nil
 }
 
 func importAntiflood(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
 	var data AntifloodBackup
-	if err := decodeModuleData(payload, BackupModuleAntiflood, &data); err != nil {
+	if err := decodeDomainData(payload, DomainAntiflood, &data); err != nil {
 		return nil, err
 	}
 	if data.Settings != nil {
@@ -517,7 +447,7 @@ func importAntiflood(tx *gorm.DB, chatID int64, payload interface{}) ([]string, 
 
 func importAntiraid(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
 	var data AntiraidBackup
-	if err := decodeModuleData(payload, BackupModuleAntiraid, &data); err != nil {
+	if err := decodeDomainData(payload, DomainAntiraid, &data); err != nil {
 		return nil, err
 	}
 	if data.Settings != nil {
@@ -534,7 +464,7 @@ func importAntiraid(tx *gorm.DB, chatID int64, payload interface{}) ([]string, e
 
 func importApprovals(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
 	var data ApprovalsBackup
-	if err := decodeModuleData(payload, BackupModuleApprovals, &data); err != nil {
+	if err := decodeDomainData(payload, DomainApprovals, &data); err != nil {
 		return nil, err
 	}
 	for i := range data.ApprovedUsers {
@@ -549,22 +479,16 @@ func importApprovals(tx *gorm.DB, chatID int64, payload interface{}) ([]string, 
 	return []string{cacheKey("approvals", chatID)}, nil
 }
 
-func importBlacklists(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
+func importBlacklists(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) { //nolint:dupl // domain-specific schema
 	var data BlacklistsBackup
-	if err := decodeModuleData(payload, BackupModuleBlacklists, &data); err != nil {
+	if err := decodeDomainData(payload, DomainBlacklists, &data); err != nil {
 		return nil, err
-	}
-	if len(data.Entries) == 0 && data.Settings != nil {
-		data.Entries = []models.BlacklistSettings{*data.Settings}
 	}
 	for i := range data.Entries {
 		if data.Entries[i].Word == "" {
 			return nil, fmt.Errorf("invalid empty blacklist word")
 		}
 		data.Entries[i].ChatId = chatID
-		if data.Entries[i].Action == "" {
-			data.Entries[i].Action = data.BlacklistMode
-		}
 		if data.Entries[i].Action == "" {
 			data.Entries[i].Action = "warn"
 		}
@@ -575,40 +499,38 @@ func importBlacklists(tx *gorm.DB, chatID int64, payload interface{}) ([]string,
 	return []string{cacheKey("blacklist", chatID)}, nil
 }
 
-func importConnections(_ *gorm.DB, _ int64, payload interface{}) ([]string, error) {
-	// Accept empty payloads and ignore obsolete allow_connect settings from older exports.
-	if err := decodeModuleData(payload, BackupModuleConnections, &ConnectionsBackup{}); err != nil {
+func importConnections(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
+	var data ConnectionsBackup
+	if err := decodeDomainData(payload, DomainConnections, &data); err != nil {
+		return nil, err
+	}
+	userIDs := make([]int64, 0, len(data.Connections))
+	for i := range data.Connections {
+		if data.Connections[i].UserId == 0 {
+			return nil, fmt.Errorf("invalid connection user ID")
+		}
+		data.Connections[i].ChatId = chatID
+		userIDs = append(userIDs, data.Connections[i].UserId)
+	}
+	if err := ensureUsers(tx, userIDs); err != nil {
+		return nil, fmt.Errorf("ensure connected users: %w", err)
+	}
+	// A user may only hold one connection, so any connection an imported user
+	// already has to another chat is dropped before the chat rows are replaced.
+	if len(userIDs) > 0 {
+		if err := tx.Where("user_id IN ?", userIDs).Delete(&models.ConnectionSettings{}).Error; err != nil {
+			return nil, err
+		}
+	}
+	if err := replaceChatRows(tx, chatID, data.Connections); err != nil {
 		return nil, err
 	}
 	return nil, nil
 }
 
-func importDisabling(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) { //nolint:dupl // module-specific schema
-	var data DisablingBackup
-	if err := decodeModuleData(payload, BackupModuleDisabling, &data); err != nil {
-		return nil, err
-	}
-	if data.ChatSettings != nil {
-		data.ChatSettings.ChatId = chatID
-	}
-	for i := range data.Commands {
-		if data.Commands[i].Command == "" {
-			return nil, fmt.Errorf("invalid empty disabled command")
-		}
-		data.Commands[i].ChatId = chatID
-	}
-	if err := replaceChatSetting(tx, chatID, data.ChatSettings); err != nil {
-		return nil, err
-	}
-	if err := replaceChatRows(tx, chatID, data.Commands); err != nil {
-		return nil, err
-	}
-	return []string{cacheKey("disabled_cmds", chatID)}, nil
-}
-
-func importFilters(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) { //nolint:dupl // module-specific schema
+func importFilters(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) { //nolint:dupl // domain-specific schema
 	var data FiltersBackup
-	if err := decodeModuleData(payload, BackupModuleFilters, &data); err != nil {
+	if err := decodeDomainData(payload, DomainFilters, &data); err != nil {
 		return nil, err
 	}
 	for i := range data.Filters {
@@ -626,9 +548,9 @@ func importFilters(tx *gorm.DB, chatID int64, payload interface{}) ([]string, er
 	}, nil
 }
 
-func importGreetings(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
-	var data GreetingsBackup
-	if err := decodeModuleData(payload, BackupModuleGreetings, &data); err != nil {
+func importWelcome(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
+	var data WelcomeBackup
+	if err := decodeDomainData(payload, DomainWelcome, &data); err != nil {
 		return nil, err
 	}
 	if data.Settings != nil {
@@ -640,10 +562,9 @@ func importGreetings(tx *gorm.DB, chatID int64, payload interface{}) ([]string, 
 	return []string{cacheKey("greetings", chatID)}, nil
 }
 
-func importNotes(tx *gorm.DB, chatID int64, payload interface{}, preserveLegacyOmissions bool) ([]string, error) { //nolint:dupl // module-specific schema
-	restoreSettings := !preserveLegacyOmissions || moduleFieldPresent(payload, "settings")
+func importNotes(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
 	var data NotesBackup
-	if err := decodeModuleData(payload, BackupModuleNotes, &data); err != nil {
+	if err := decodeDomainData(payload, DomainNotes, &data); err != nil {
 		return nil, err
 	}
 	if data.Settings != nil {
@@ -655,10 +576,8 @@ func importNotes(tx *gorm.DB, chatID int64, payload interface{}, preserveLegacyO
 		}
 		data.Notes[i].ChatId = chatID
 	}
-	if restoreSettings {
-		if err := replaceChatSetting(tx, chatID, data.Settings); err != nil {
-			return nil, err
-		}
+	if err := replaceChatSetting(tx, chatID, data.Settings); err != nil {
+		return nil, err
 	}
 	if err := replaceChatRows(tx, chatID, data.Notes); err != nil {
 		return nil, err
@@ -666,20 +585,9 @@ func importNotes(tx *gorm.DB, chatID int64, payload interface{}, preserveLegacyO
 	return []string{cacheKey("notes_settings", chatID)}, nil
 }
 
-func importPins(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
-	var data PinsBackup
-	if err := decodeModuleData(payload, BackupModulePins, &data); err != nil {
-		return nil, err
-	}
-	if data.Settings != nil {
-		data.Settings.ChatId = chatID
-	}
-	return nil, replaceChatSetting(tx, chatID, data.Settings)
-}
-
 func importReactions(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
 	var data ReactionsBackup
-	if err := decodeModuleData(payload, BackupModuleReactions, &data); err != nil {
+	if err := decodeDomainData(payload, DomainReactions, &data); err != nil {
 		return nil, err
 	}
 	for i := range data.Reactions {
@@ -694,123 +602,77 @@ func importReactions(tx *gorm.DB, chatID int64, payload interface{}) ([]string, 
 	return []string{cacheKey("reactions", chatID)}, nil
 }
 
-func importRules(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
-	var data RulesBackup
-	if err := decodeModuleData(payload, BackupModuleRules, &data); err != nil {
+func importWarnings(tx *gorm.DB, chatID int64, payload interface{}) ([]string, error) {
+	var data WarningsBackup
+	if err := decodeDomainData(payload, DomainWarnings, &data); err != nil {
 		return nil, err
 	}
 	if data.Settings != nil {
 		data.Settings.ChatId = chatID
-	}
-	return nil, replaceChatSetting(tx, chatID, data.Settings)
-}
-
-func importWarns(tx *gorm.DB, chatID int64, payload interface{}, preserveLegacyOmissions bool) ([]string, error) {
-	restoreWarns := !preserveLegacyOmissions || moduleFieldPresent(payload, "warns")
-	var data WarnsBackup
-	if err := decodeModuleData(payload, BackupModuleWarns, &data); err != nil {
-		return nil, err
-	}
-	if data.WarnSettings != nil {
-		data.WarnSettings.ChatId = chatID
-		if data.WarnSettings.WarnLimit <= 0 {
-			return nil, fmt.Errorf("invalid warn limit %d", data.WarnSettings.WarnLimit)
+		if data.Settings.WarnLimit <= 0 {
+			return nil, fmt.Errorf("invalid warn limit %d", data.Settings.WarnLimit)
 		}
 	}
+	userIDs := make([]int64, 0, len(data.Warns))
 	for i := range data.Warns {
 		if data.Warns[i].UserId == 0 {
 			return nil, fmt.Errorf("invalid warn record")
 		}
 		data.Warns[i].ChatId = chatID
+		userIDs = append(userIDs, data.Warns[i].UserId)
 	}
-	if len(data.Warns) > 0 {
-		users := make([]models.User, len(data.Warns))
-		for i := range data.Warns {
-			users[i].UserId = data.Warns[i].UserId
-		}
-		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "user_id"}},
-			DoNothing: true,
-		}).Create(&users).Error; err != nil {
-			return nil, fmt.Errorf("ensure warned users: %w", err)
-		}
+	if err := ensureUsers(tx, userIDs); err != nil {
+		return nil, fmt.Errorf("ensure warned users: %w", err)
 	}
 
 	var oldUserIDs []int64
-	if restoreWarns {
-		if err := tx.Model(&models.Warns{}).Where("chat_id = ?", chatID).Pluck("user_id", &oldUserIDs).Error; err != nil {
-			return nil, err
-		}
-	}
-	if err := replaceChatSetting(tx, chatID, data.WarnSettings); err != nil {
+	if err := tx.Model(&models.Warns{}).Where("chat_id = ?", chatID).Pluck("user_id", &oldUserIDs).Error; err != nil {
 		return nil, err
 	}
-	if restoreWarns {
-		if err := replaceChatRows(tx, chatID, data.Warns); err != nil {
-			return nil, err
-		}
+	if err := replaceChatSetting(tx, chatID, data.Settings); err != nil {
+		return nil, err
+	}
+	if err := replaceChatRows(tx, chatID, data.Warns); err != nil {
+		return nil, err
 	}
 
 	keys := []string{cacheKey("warn_settings", chatID)}
 	for _, userID := range oldUserIDs {
 		keys = append(keys, dbcache.CacheKey("warns", userID, chatID))
 	}
-	if restoreWarns {
-		for _, row := range data.Warns {
-			keys = append(keys, dbcache.CacheKey("warns", row.UserId, chatID))
-		}
+	for _, row := range data.Warns {
+		keys = append(keys, dbcache.CacheKey("warns", row.UserId, chatID))
 	}
 	return keys, nil
 }
 
-func moduleFieldPresent(payload interface{}, field string) bool {
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return false
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return false
-	}
-	_, ok := fields[field]
-	return ok
-}
-
-func clearModuleData(tx *gorm.DB, chatID int64, module string) ([]string, error) {
+func clearDomainData(tx *gorm.DB, chatID int64, domain string) ([]string, error) {
 	if err := ensureBackupChat(tx, chatID); err != nil {
 		return nil, err
 	}
-	switch module {
-	case BackupModuleAdmin:
-		return clearAdmin(tx, chatID)
-	case BackupModuleAntiflood:
+	switch domain {
+	case DomainAntiflood:
 		return clearAntiflood(tx, chatID)
-	case BackupModuleAntiraid:
+	case DomainAntiraid:
 		return clearAntiraid(tx, chatID)
-	case BackupModuleApprovals:
+	case DomainApprovals:
 		return clearApprovals(tx, chatID)
-	case BackupModuleBlacklists:
+	case DomainBlacklists:
 		return clearBlacklists(tx, chatID)
-	case BackupModuleConnections:
+	case DomainConnections:
 		return clearConnections(tx, chatID)
-	case BackupModuleDisabling:
-		return clearDisabling(tx, chatID)
-	case BackupModuleFilters:
+	case DomainFilters:
 		return clearFilters(tx, chatID)
-	case BackupModuleGreetings:
-		return clearGreetings(tx, chatID)
-	case BackupModuleNotes:
+	case DomainWelcome:
+		return clearWelcome(tx, chatID)
+	case DomainNotes:
 		return clearNotes(tx, chatID)
-	case BackupModulePins:
-		return clearPins(tx, chatID)
-	case BackupModuleReactions:
+	case DomainReactions:
 		return clearReactions(tx, chatID)
-	case BackupModuleRules:
-		return clearRules(tx, chatID)
-	case BackupModuleWarns:
-		return clearWarns(tx, chatID)
+	case DomainWarnings:
+		return clearWarnings(tx, chatID)
 	default:
-		return nil, fmt.Errorf("unknown module: %s", module)
+		return nil, fmt.Errorf("unsupported domain: %s", domain)
 	}
 }
 
@@ -819,27 +681,6 @@ func ensureBackupChat(tx *gorm.DB, chatID int64) error {
 		Columns:   []clause.Column{{Name: "chat_id"}},
 		DoNothing: true,
 	}).Create(&models.Chat{ChatId: chatID}).Error
-}
-
-func clearAdmin(tx *gorm.DB, chatID int64) ([]string, error) {
-	if err := replaceChatSetting(tx, chatID, &models.AdminSettings{ChatId: chatID}); err != nil {
-		return nil, err
-	}
-	if _, err := clearAntiflood(tx, chatID); err != nil {
-		return nil, err
-	}
-	if _, err := clearConnections(tx, chatID); err != nil {
-		return nil, err
-	}
-	if err := tx.Model(&models.BlacklistSettings{}).
-		Where("chat_id = ?", chatID).
-		Update("action", "warn").Error; err != nil {
-		return nil, err
-	}
-	return []string{
-		cacheKey("antiflood", chatID),
-		cacheKey("blacklist", chatID),
-	}, nil
 }
 
 func clearAntiflood(tx *gorm.DB, chatID int64) ([]string, error) {
@@ -869,13 +710,6 @@ func clearConnections(tx *gorm.DB, chatID int64) ([]string, error) {
 	return nil, tx.Where("chat_id = ?", chatID).Delete(&models.ConnectionSettings{}).Error
 }
 
-func clearDisabling(tx *gorm.DB, chatID int64) ([]string, error) {
-	if err := replaceChatSetting(tx, chatID, &models.DisableChatSettings{ChatId: chatID}); err != nil {
-		return nil, err
-	}
-	return []string{cacheKey("disabled_cmds", chatID)}, replaceChatRows[models.DisableSettings](tx, chatID, nil)
-}
-
 func clearFilters(tx *gorm.DB, chatID int64) ([]string, error) {
 	return []string{
 		cacheKey("filter_list", chatID),
@@ -883,7 +717,7 @@ func clearFilters(tx *gorm.DB, chatID int64) ([]string, error) {
 	}, replaceChatRows[models.ChatFilters](tx, chatID, nil)
 }
 
-func clearGreetings(tx *gorm.DB, chatID int64) ([]string, error) {
+func clearWelcome(tx *gorm.DB, chatID int64) ([]string, error) {
 	settings := &models.GreetingSettings{
 		ChatID: chatID,
 		WelcomeSettings: &models.WelcomeSettings{
@@ -902,19 +736,11 @@ func clearNotes(tx *gorm.DB, chatID int64) ([]string, error) {
 	return []string{cacheKey("notes_settings", chatID)}, replaceChatRows[models.Notes](tx, chatID, nil)
 }
 
-func clearPins(tx *gorm.DB, chatID int64) ([]string, error) {
-	return nil, replaceChatSetting(tx, chatID, &models.PinSettings{ChatId: chatID})
-}
-
 func clearReactions(tx *gorm.DB, chatID int64) ([]string, error) {
 	return []string{cacheKey("reactions", chatID)}, replaceChatRows[models.Reactions](tx, chatID, nil)
 }
 
-func clearRules(tx *gorm.DB, chatID int64) ([]string, error) {
-	return nil, replaceChatSetting(tx, chatID, &models.RulesSettings{ChatId: chatID})
-}
-
-func clearWarns(tx *gorm.DB, chatID int64) ([]string, error) {
+func clearWarnings(tx *gorm.DB, chatID int64) ([]string, error) {
 	var userIDs []int64
 	if err := tx.Model(&models.Warns{}).Where("chat_id = ?", chatID).Pluck("user_id", &userIDs).Error; err != nil {
 		return nil, err

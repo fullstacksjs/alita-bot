@@ -16,9 +16,9 @@ func TestNewBackupFormat(t *testing.T) {
 	chatID := int64(123456)
 	chatName := "Test Chat"
 	exportedBy := int64(789)
-	modules := []string{"admin", "filters"}
+	domains := []string{DomainNotes, DomainFilters}
 
-	bf := NewBackupFormat(chatID, chatName, exportedBy, modules)
+	bf := NewBackupFormat(chatID, chatName, exportedBy, domains)
 
 	if bf.Version != BackupFormatVersion {
 		t.Fatalf("Version = %q, want %q", bf.Version, BackupFormatVersion)
@@ -35,8 +35,8 @@ func TestNewBackupFormat(t *testing.T) {
 	if bf.ExportedBy != exportedBy {
 		t.Fatalf("ExportedBy = %d, want %d", bf.ExportedBy, exportedBy)
 	}
-	if len(bf.Modules) != len(modules) {
-		t.Fatalf("Modules len = %d, want %d", len(bf.Modules), len(modules))
+	if len(bf.Domains) != len(domains) {
+		t.Fatalf("Domains len = %d, want %d", len(bf.Domains), len(domains))
 	}
 	if bf.Data == nil {
 		t.Fatal("Data should be initialized to non-nil map")
@@ -62,37 +62,66 @@ func TestBackupFormat_Validate(t *testing.T) {
 				Version:    BackupFormatVersion,
 				BotName:    "AlitaRobot",
 				ChatID:     123,
-				Modules:    []string{"admin"},
-				Data:       map[string]interface{}{"admin": map[string]interface{}{}},
+				Domains:    []string{DomainNotes},
+				Data:       map[string]interface{}{DomainNotes: map[string]interface{}{}},
 				ExportedAt: now,
 			},
 			wantErr: false,
 		},
 		{
-			name: "current format requires every module payload",
+			name: "missing domain payload returns error",
 			bf: &BackupFormat{
 				Version:    BackupFormatVersion,
 				BotName:    "AlitaRobot",
 				ChatID:     123,
-				Modules:    []string{"admin"},
+				Domains:    []string{DomainNotes},
 				Data:       make(map[string]interface{}),
 				ExportedAt: now,
 			},
 			wantErr: true,
-			errMsg:  "missing data for module: admin",
+			errMsg:  "missing data for domain: notes",
 		},
 		{
-			name: "legacy format requires every module payload",
+			name: "removed domain in domain list returns error",
 			bf: &BackupFormat{
-				Version:    legacyFormatVersion,
+				Version:    BackupFormatVersion,
 				BotName:    "AlitaRobot",
 				ChatID:     123,
-				Modules:    []string{"admin"},
-				Data:       make(map[string]interface{}),
+				Domains:    []string{"rules"},
+				Data:       map[string]interface{}{"rules": map[string]interface{}{}},
 				ExportedAt: now,
 			},
 			wantErr: true,
-			errMsg:  "missing data for module: admin",
+			errMsg:  "unsupported domain: rules",
+		},
+		{
+			name: "removed domain payload returns error",
+			bf: &BackupFormat{
+				Version: BackupFormatVersion,
+				BotName: "AlitaRobot",
+				ChatID:  123,
+				Domains: []string{DomainNotes},
+				Data: map[string]interface{}{
+					DomainNotes: map[string]interface{}{},
+					"admin":     map[string]interface{}{},
+				},
+				ExportedAt: now,
+			},
+			wantErr: true,
+			errMsg:  "unsupported domain: admin",
+		},
+		{
+			name: "unknown domain returns error",
+			bf: &BackupFormat{
+				Version:    BackupFormatVersion,
+				BotName:    "AlitaRobot",
+				ChatID:     123,
+				Domains:    []string{"nonexistent"},
+				Data:       map[string]interface{}{"nonexistent": map[string]interface{}{}},
+				ExportedAt: now,
+			},
+			wantErr: true,
+			errMsg:  "unsupported domain: nonexistent",
 		},
 		{
 			name: "empty version returns error",
@@ -100,7 +129,7 @@ func TestBackupFormat_Validate(t *testing.T) {
 				Version:    "",
 				BotName:    "AlitaRobot",
 				ChatID:     123,
-				Modules:    []string{"admin"},
+				Domains:    []string{DomainNotes},
 				Data:       make(map[string]interface{}),
 				ExportedAt: now,
 			},
@@ -113,7 +142,7 @@ func TestBackupFormat_Validate(t *testing.T) {
 				Version:    BackupFormatVersion,
 				BotName:    "",
 				ChatID:     123,
-				Modules:    []string{"admin"},
+				Domains:    []string{DomainNotes},
 				Data:       make(map[string]interface{}),
 				ExportedAt: now,
 			},
@@ -126,7 +155,7 @@ func TestBackupFormat_Validate(t *testing.T) {
 				Version:    BackupFormatVersion,
 				BotName:    "AlitaRobot",
 				ChatID:     0,
-				Modules:    []string{"admin"},
+				Domains:    []string{DomainNotes},
 				Data:       make(map[string]interface{}),
 				ExportedAt: now,
 			},
@@ -134,17 +163,17 @@ func TestBackupFormat_Validate(t *testing.T) {
 			errMsg:  "chat ID is required",
 		},
 		{
-			name: "empty modules returns error",
+			name: "empty domains returns error",
 			bf: &BackupFormat{
 				Version:    BackupFormatVersion,
 				BotName:    "AlitaRobot",
 				ChatID:     123,
-				Modules:    []string{},
+				Domains:    []string{},
 				Data:       make(map[string]interface{}),
 				ExportedAt: now,
 			},
 			wantErr: true,
-			errMsg:  "at least one module must be specified",
+			errMsg:  "at least one domain must be specified",
 		},
 		{
 			name: "nil data returns error",
@@ -152,7 +181,7 @@ func TestBackupFormat_Validate(t *testing.T) {
 				Version:    BackupFormatVersion,
 				BotName:    "AlitaRobot",
 				ChatID:     123,
-				Modules:    []string{"admin"},
+				Domains:    []string{DomainNotes},
 				Data:       nil,
 				ExportedAt: now,
 			},
@@ -194,8 +223,13 @@ func TestBackupFormat_IsCompatibleVersion(t *testing.T) {
 			want:    true,
 		},
 		{
-			name:    "different version returns false",
-			version: "2.0",
+			name:    "historical 1.0 export is rejected",
+			version: "1.0",
+			want:    false,
+		},
+		{
+			name:    "historical 1.1 export is rejected",
+			version: "1.1",
 			want:    false,
 		},
 		{
@@ -204,13 +238,8 @@ func TestBackupFormat_IsCompatibleVersion(t *testing.T) {
 			want:    false,
 		},
 		{
-			name:    "legacy version remains compatible",
-			version: legacyFormatVersion,
-			want:    true,
-		},
-		{
-			name:    "unsupported older version returns false",
-			version: "0.9",
+			name:    "future version returns false",
+			version: "3",
 			want:    false,
 		},
 	}
@@ -222,7 +251,7 @@ func TestBackupFormat_IsCompatibleVersion(t *testing.T) {
 				Version:    tc.version,
 				BotName:    "AlitaRobot",
 				ChatID:     123,
-				Modules:    []string{"admin"},
+				Domains:    []string{DomainNotes},
 				Data:       make(map[string]interface{}),
 				ExportedAt: time.Now().UTC(),
 			}
@@ -236,8 +265,8 @@ func TestBackupFormat_IsCompatibleVersion(t *testing.T) {
 
 func TestBackupFormat_ToJSON(t *testing.T) {
 
-	bf := NewBackupFormat(123, "Test", 456, []string{"admin"})
-	bf.Data["admin"] = map[string]interface{}{"anon_admin": true}
+	bf := NewBackupFormat(123, "Test", 456, []string{DomainNotes})
+	bf.Data[DomainNotes] = map[string]interface{}{"notes": []interface{}{}}
 
 	data, err := bf.ToJSON()
 	if err != nil {
@@ -260,6 +289,14 @@ func TestBackupFormat_ToJSON(t *testing.T) {
 	if parsed["chat_id"] != float64(123) {
 		t.Fatalf("JSON chat_id = %v, want 123", parsed["chat_id"])
 	}
+	// The domain list is published under "domains"; "modules" belonged to the
+	// historical format and must not reappear.
+	if _, ok := parsed["domains"]; !ok {
+		t.Fatalf("JSON missing domains field: %v", parsed)
+	}
+	if _, ok := parsed["modules"]; ok {
+		t.Fatalf("JSON still exposes legacy modules field: %v", parsed)
+	}
 
 	// Verify indent formatting (contains newlines for readability)
 	if !strings.Contains(string(data), "\n") {
@@ -278,9 +315,9 @@ func TestBackupFormatFromJSON(t *testing.T) {
 	}{
 		{
 			name:    "valid JSON parses correctly",
-			input:   `{"version":"1.0","bot_name":"AlitaRobot","chat_id":123,"chat_name":"Test","exported_by":456,"modules":["admin"],"data":{"admin":true},"exported_at":"2024-01-01T00:00:00Z"}`,
+			input:   `{"version":"2","bot_name":"AlitaRobot","chat_id":123,"chat_name":"Test","exported_by":456,"domains":["notes"],"data":{"notes":{}},"exported_at":"2024-01-01T00:00:00Z"}`,
 			wantErr: false,
-			wantVer: "1.0",
+			wantVer: "2",
 			wantID:  123,
 		},
 		{
@@ -295,14 +332,14 @@ func TestBackupFormatFromJSON(t *testing.T) {
 		},
 		{
 			name:    "trailing JSON returns error",
-			input:   `{"version":"1.0"} {}`,
+			input:   `{"version":"2"} {}`,
 			wantErr: true,
 		},
 		{
-			name:    "minimal valid JSON parses",
-			input:   `{"version":"2.0","bot_name":"TestBot","chat_id":789,"exported_by":0,"modules":["filters"],"data":{},"exported_at":"2024-06-01T12:00:00Z"}`,
+			name:    "historical version still parses so it can be reported",
+			input:   `{"version":"1.1","bot_name":"TestBot","chat_id":789,"exported_by":0,"modules":["filters"],"data":{},"exported_at":"2024-06-01T12:00:00Z"}`,
 			wantErr: false,
-			wantVer: "2.0",
+			wantVer: "1.1",
 			wantID:  789,
 		},
 	}
@@ -330,157 +367,80 @@ func TestBackupFormatFromJSON(t *testing.T) {
 	}
 
 	const largeID = "9007199254740993"
-	bf, err := BackupFormatFromJSON([]byte(`{"data":{"warns":[{"user_id":` + largeID + `}]}}`))
+	bf, err := BackupFormatFromJSON([]byte(`{"data":{"warnings":[{"user_id":` + largeID + `}]}}`))
 	if err != nil {
 		t.Fatalf("large nested integer parse: %v", err)
 	}
-	got := bf.Data["warns"].([]any)[0].(map[string]any)["user_id"]
+	got := bf.Data[DomainWarnings].([]any)[0].(map[string]any)["user_id"]
 	if got != json.Number(largeID) {
 		t.Fatalf("nested user_id = %v (%T), want exact json.Number(%s)", got, got, largeID)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Backup module helpers
+// Domain helpers
 // ---------------------------------------------------------------------------
 
-func TestAllExportableModules(t *testing.T) {
+func TestAllDomains(t *testing.T) {
 
-	modules := AllExportableModules()
-	if len(modules) == 0 {
-		t.Fatal("AllExportableModules() returned empty slice")
-	}
+	domains := AllDomains()
 
 	expected := []string{
-		BackupModuleAdmin,
-		BackupModuleAntiflood,
-		BackupModuleAntiraid,
-		BackupModuleApprovals,
-		BackupModuleBlacklists,
-		BackupModuleConnections,
-		BackupModuleDisabling,
-		BackupModuleFilters,
-		BackupModuleGreetings,
-		BackupModuleNotes,
-		BackupModulePins,
-		BackupModuleReactions,
-		BackupModuleRules,
-		BackupModuleWarns,
+		DomainAntiflood,
+		DomainAntiraid,
+		DomainApprovals,
+		DomainBlacklists,
+		DomainConnections,
+		DomainFilters,
+		DomainWelcome,
+		DomainNotes,
+		DomainReactions,
+		DomainWarnings,
 	}
 
-	if len(modules) != len(expected) {
-		t.Fatalf("AllExportableModules() len = %d, want %d", len(modules), len(expected))
+	if len(domains) != len(expected) {
+		t.Fatalf("AllDomains() = %v, want %v", domains, expected)
 	}
-
-	gotSet := make(map[string]bool, len(modules))
-	for _, m := range modules {
-		gotSet[m] = true
-	}
-	for _, e := range expected {
-		if !gotSet[e] {
-			t.Fatalf("AllExportableModules() missing expected module %q", e)
+	for i, want := range expected {
+		if domains[i] != want {
+			t.Fatalf("AllDomains()[%d] = %q, want %q", i, domains[i], want)
 		}
+	}
+
+	// The returned slice must not alias the package-level set.
+	domains[0] = "mutated"
+	if AllDomains()[0] != DomainAntiflood {
+		t.Fatal("AllDomains() returned an aliased slice")
 	}
 }
 
-func TestIsValidModule(t *testing.T) {
+func TestIsValidDomain(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		module string
+		domain string
 		want   bool
 	}{
-		{
-			name:   "valid module admin returns true",
-			module: BackupModuleAdmin,
-			want:   true,
-		},
-		{
-			name:   "valid module filters returns true",
-			module: BackupModuleFilters,
-			want:   true,
-		},
-		{
-			name:   "valid module warns returns true",
-			module: BackupModuleWarns,
-			want:   true,
-		},
-		{
-			name:   "invalid module returns false",
-			module: "nonexistent",
-			want:   false,
-		},
-		{
-			name:   "empty string returns false",
-			module: "",
-			want:   false,
-		},
-		{
-			name:   "case-sensitive mismatch returns false",
-			module: "Admin",
-			want:   false,
-		},
+		{name: "retained domain filters", domain: DomainFilters, want: true},
+		{name: "retained domain warnings", domain: DomainWarnings, want: true},
+		{name: "retained domain welcome", domain: DomainWelcome, want: true},
+		{name: "retained domain connections", domain: DomainConnections, want: true},
+		{name: "removed domain admin", domain: "admin", want: false},
+		{name: "removed domain disabling", domain: "disabling", want: false},
+		{name: "removed domain pins", domain: "pins", want: false},
+		{name: "removed domain rules", domain: "rules", want: false},
+		{name: "renamed domain greetings", domain: "greetings", want: false},
+		{name: "renamed domain warns", domain: "warns", want: false},
+		{name: "unknown domain", domain: "nonexistent", want: false},
+		{name: "empty string", domain: "", want: false},
+		{name: "case-sensitive mismatch", domain: "Notes", want: false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := IsValidModule(tc.module)
+			got := IsValidDomain(tc.domain)
 			if got != tc.want {
-				t.Fatalf("IsValidModule(%q) = %v, want %v", tc.module, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestFilterValidModules(t *testing.T) {
-
-	tests := []struct {
-		name     string
-		input    []string
-		expected []string
-	}{
-		{
-			name:     "all valid modules returned as-is",
-			input:    []string{"admin", "filters", "warns"},
-			expected: []string{"admin", "filters", "warns"},
-		},
-		{
-			name:     "invalid modules filtered out",
-			input:    []string{"admin", "invalid", "filters", "bogus"},
-			expected: []string{"admin", "filters"},
-		},
-		{
-			name:     "all invalid returns empty",
-			input:    []string{"foo", "bar"},
-			expected: []string{},
-		},
-		{
-			name:     "empty input returns empty",
-			input:    []string{},
-			expected: []string{},
-		},
-		{
-			name:     "nil input returns empty",
-			input:    nil,
-			expected: []string{},
-		},
-		{
-			name:     "mixed case filtered correctly",
-			input:    []string{"admin", "Admin", "ADMIN"},
-			expected: []string{"admin"},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := FilterValidModules(tc.input)
-			if len(got) != len(tc.expected) {
-				t.Fatalf("FilterValidModules() len = %d, want %d; got %v", len(got), len(tc.expected), got)
-			}
-			for i, v := range tc.expected {
-				if got[i] != v {
-					t.Fatalf("FilterValidModules()[%d] = %q, want %q", i, got[i], v)
-				}
+				t.Fatalf("IsValidDomain(%q) = %v, want %v", tc.domain, got, tc.want)
 			}
 		})
 	}

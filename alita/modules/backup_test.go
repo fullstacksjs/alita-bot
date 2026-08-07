@@ -25,7 +25,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/backup"
 	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/notes"
-	"github.com/divkix/Alita_Robot/alita/db/rules"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 )
 
@@ -154,24 +153,24 @@ func TestParseImportModules(t *testing.T) {
 
 	t.Run("all invalid returns error", func(t *testing.T) {
 		got, err := parseImportModules("/import foo bar", backupData)
-		require.ErrorIs(t, err, errNoValidModule)
+		require.ErrorIs(t, err, errNoValidDomain)
 		assert.Nil(t, got)
 	})
 }
 
-func TestParseModuleArgs(t *testing.T) {
+func TestParseDomainArgs(t *testing.T) {
 	t.Parallel()
 
 	valid := func(module string) bool {
 		return module == "notes" || module == "filters"
 	}
 
-	got, err := parseModuleArgs([]string{"NOTES", "invalid", "filters", "notes", ""}, valid)
+	got, err := parseDomainArgs([]string{"NOTES", "invalid", "filters", "notes", ""}, valid)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"notes", "filters"}, got)
 
-	_, err = parseModuleArgs([]string{"invalid", ""}, valid)
-	require.ErrorIs(t, err, errNoValidModule)
+	_, err = parseDomainArgs([]string{"invalid", ""}, valid)
+	require.ErrorIs(t, err, errNoValidDomain)
 }
 
 func TestDownloadBackupFileRejectsInvalidDocumentBeforeNetwork(t *testing.T) {
@@ -310,13 +309,15 @@ func TestDownloadBackupFileReportsHTTPStatusFailure(t *testing.T) {
 func TestImportHandlerStoresDownloadedBackupForConfirmation(t *testing.T) {
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Backup Chat"}
 	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	backup := backup.NewBackupFormat(chat.Id, chat.Title, owner.Id, []string{"rules", "notes"})
-	backup.Data["rules"] = map[string]interface{}{
-		"settings": map[string]interface{}{"rules": "imported rules"},
+	backup := backup.NewBackupFormat(chat.Id, chat.Title, owner.Id, []string{"filters", "notes"})
+	backup.Data["filters"] = map[string]interface{}{
+		"filters": []interface{}{
+			map[string]interface{}{"keyword": "spam", "filter_reply": "no spam"},
+		},
 	}
 	backup.Data["notes"] = map[string]interface{}{
 		"notes": []interface{}{
-			map[string]interface{}{"keyword": "welcome", "reply": "hello"},
+			map[string]interface{}{"note_name": "welcome", "note_content": "hello"},
 		},
 	}
 	backupData, err := backup.ToJSON()
@@ -343,7 +344,7 @@ func TestImportHandlerStoresDownloadedBackupForConfirmation(t *testing.T) {
 		`{"file_id":"backup-file-id","file_path":"backups/chat.json"}`,
 	)
 	bot := newModuleTestBot(client)
-	ctx := newModuleMessageContext(bot, chat, owner, "/import rules invalid rules")
+	ctx := newModuleMessageContext(bot, chat, owner, "/import filters invalid filters")
 	ctx.EffectiveMessage.ReplyToMessage = &gotgbot.Message{
 		MessageId: 333,
 		Date:      1,
@@ -359,7 +360,7 @@ func TestImportHandlerStoresDownloadedBackupForConfirmation(t *testing.T) {
 	require.Equal(t, ext.EndGroups, err)
 	gotBackup, gotModules, ok := getPendingImport(chat.Id)
 	require.True(t, ok)
-	assert.Equal(t, []string{"rules"}, gotModules)
+	assert.Equal(t, []string{"filters"}, gotModules)
 	assert.Equal(t, backup.Version, gotBackup.Version)
 	assert.Contains(t, gotBackup.Data, "notes")
 	assert.Len(t, client.callsFor("getFile"), 1)
@@ -369,8 +370,8 @@ func TestImportHandlerStoresDownloadedBackupForConfirmation(t *testing.T) {
 func TestImportHandlerClearsPendingWhenConfirmationFails(t *testing.T) {
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Backup Chat"}
 	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	bkp := backup.NewBackupFormat(chat.Id, chat.Title, owner.Id, []string{"rules"})
-	bkp.Data["rules"] = map[string]interface{}{"settings": map[string]interface{}{"rules": "test"}}
+	bkp := backup.NewBackupFormat(chat.Id, chat.Title, owner.Id, []string{"notes"})
+	bkp.Data["notes"] = map[string]interface{}{"notes": []interface{}{map[string]interface{}{"note_name": "test"}}}
 	backupData, err := bkp.ToJSON()
 	require.NoError(t, err)
 
@@ -532,7 +533,7 @@ func TestPendingImportRejectsStaleTokenAndConsumesOnce(t *testing.T) {
 	chatID := uniqueModuleChatID()
 	t.Cleanup(func() { clearPendingImport(chatID) })
 
-	oldToken, err := storePendingImport(chatID, &backup.BackupFormat{}, []string{"rules"})
+	oldToken, err := storePendingImport(chatID, &backup.BackupFormat{}, []string{"filters"})
 	require.NoError(t, err)
 	current := &backup.BackupFormat{}
 	currentToken, err := storePendingImport(chatID, current, []string{"notes"})
@@ -574,7 +575,7 @@ func TestPendingResetRejectsStaleAndExpiredTokens(t *testing.T) {
 	chatID := uniqueModuleChatID()
 	t.Cleanup(func() { clearPendingReset(chatID) })
 
-	oldToken, err := storePendingReset(chatID, []string{"rules"})
+	oldToken, err := storePendingReset(chatID, []string{"filters"})
 	require.NoError(t, err)
 	currentToken, err := storePendingReset(chatID, []string{"notes"})
 	require.NoError(t, err)
@@ -702,7 +703,7 @@ func TestResetHandlerStoresPendingModulesAndRepliesWithConfirmation(t *testing.T
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Backup Chat"}
 	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	ctx := newModuleMessageContext(bot, chat, owner, "/reset rules notes invalid rules")
+	ctx := newModuleMessageContext(bot, chat, owner, "/reset filters notes invalid filters")
 	t.Cleanup(func() {
 		clearPendingReset(chat.Id)
 	})
@@ -711,7 +712,7 @@ func TestResetHandlerStoresPendingModulesAndRepliesWithConfirmation(t *testing.T
 	assert.Equal(t, ext.EndGroups, err)
 	gotModules, ok := getPendingReset(chat.Id)
 	assert.True(t, ok)
-	assert.Equal(t, []string{"rules", "notes"}, gotModules)
+	assert.Equal(t, []string{"filters", "notes"}, gotModules)
 	assert.Len(t, client.callsFor("sendMessage"), 1)
 }
 
@@ -721,7 +722,7 @@ func TestResetHandlerClearsPendingWhenConfirmationFails(t *testing.T) {
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Backup Chat"}
 	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	ctx := newModuleMessageContext(bot, chat, owner, "/reset rules")
+	ctx := newModuleMessageContext(bot, chat, owner, "/reset filters")
 	t.Cleanup(func() { clearPendingReset(chat.Id) })
 
 	err := backupModule.resetHandler(bot, ctx)
@@ -739,16 +740,17 @@ func TestBackupCallbackHandlerConfirmsPendingImport(t *testing.T) {
 	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 	require.NoError(t, chats.EnsureChatInDb(chat.Id, chat.Title))
 
-	backup := backup.NewBackupFormat(chat.Id, chat.Title, owner.Id, []string{"rules"})
-	backup.Data["rules"] = map[string]interface{}{
-		"settings": map[string]interface{}{
-			"chat_id":   chat.Id,
-			"rules":     "imported rules",
-			"rules_btn": "Read rules",
-			"private":   true,
+	backup := backup.NewBackupFormat(chat.Id, chat.Title, owner.Id, []string{"notes"})
+	backup.Data["notes"] = map[string]interface{}{
+		"notes": []interface{}{
+			map[string]interface{}{
+				"chat_id":      chat.Id,
+				"note_name":    "imported",
+				"note_content": "imported note",
+			},
 		},
 	}
-	token, err := storePendingImport(chat.Id, backup, []string{"rules"})
+	token, err := storePendingImport(chat.Id, backup, []string{"notes"})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		clearPendingImport(chat.Id)
@@ -763,7 +765,7 @@ func TestBackupCallbackHandlerConfirmsPendingImport(t *testing.T) {
 	assert.Equal(t, ext.EndGroups, err)
 	_, _, ok := getPendingImport(chat.Id)
 	assert.False(t, ok)
-	assert.Equal(t, "imported rules", rules.GetChatRulesInfo(chat.Id).Rules)
+	assert.Equal(t, "imported note", notes.GetNote(chat.Id, "imported").NoteContent)
 	assert.Len(t, client.callsFor("sendMessage"), 1)
 }
 
@@ -773,8 +775,8 @@ func TestBackupCallbackHandlerConfirmsPendingReset(t *testing.T) {
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Backup Chat"}
 	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 	require.NoError(t, chats.EnsureChatInDb(chat.Id, chat.Title))
-	rules.SetChatRules(chat.Id, "rules before reset")
-	token, err := storePendingReset(chat.Id, []string{"rules"})
+	require.NoError(t, notes.AddNote(chat.Id, "before", "note before reset", "", nil, db.TEXT, false, false, false, true, false, false))
+	token, err := storePendingReset(chat.Id, []string{"notes"})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		clearPendingReset(chat.Id)
@@ -789,7 +791,65 @@ func TestBackupCallbackHandlerConfirmsPendingReset(t *testing.T) {
 	assert.Equal(t, ext.EndGroups, err)
 	_, ok := getPendingReset(chat.Id)
 	assert.False(t, ok)
-	assert.Empty(t, rules.GetChatRulesInfo(chat.Id).Rules)
+	assert.Empty(t, notes.GetNotesList(chat.Id, true))
+	assert.Len(t, client.callsFor("sendMessage"), 1)
+}
+
+// A failed import rolls the transaction back, so the confirmation must survive
+// for a retry instead of being spent.
+func TestBackupCallbackHandlerKeepsPendingImportWhenTransactionFails(t *testing.T) {
+	client := newModuleBotClient()
+	bot := newModuleTestBot(client)
+	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Backup Chat"}
+	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
+	require.NoError(t, chats.EnsureChatInDb(chat.Id, chat.Title))
+
+	bkp := backup.NewBackupFormat(chat.Id, chat.Title, owner.Id, []string{"notes"})
+	bkp.Data["notes"] = "not a notes payload"
+	token, err := storePendingImport(chat.Id, bkp, []string{"notes"})
+	require.NoError(t, err)
+	t.Cleanup(func() { clearPendingImport(chat.Id) })
+
+	callback := encodeCallbackData(
+		"backup",
+		map[string]string{"a": backupActionConfirmImport, "c": strconv.FormatInt(chat.Id, 10), "t": token},
+	)
+	ctx := newModuleCallbackContext(bot, chat, owner, callback)
+	err = backupModule.backupCallbackHandler(bot, ctx)
+	assert.Equal(t, ext.EndGroups, err)
+
+	gotBackup, gotModules, ok := getPendingImport(chat.Id)
+	require.True(t, ok, "a rolled-back import must not spend the confirmation")
+	assert.Same(t, bkp, gotBackup)
+	assert.Equal(t, []string{"notes"}, gotModules)
+	assert.Len(t, client.callsFor("sendMessage"), 1)
+}
+
+func TestBackupCallbackHandlerKeepsPendingResetWhenTransactionFails(t *testing.T) {
+	client := newModuleBotClient()
+	bot := newModuleTestBot(client)
+	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Backup Chat"}
+	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
+	require.NoError(t, chats.EnsureChatInDb(chat.Id, chat.Title))
+	require.NoError(t, notes.AddNote(chat.Id, "keep", "keep", "", nil, db.TEXT, false, false, false, true, false, false))
+
+	// "rules" is no longer a supported domain, so the reset transaction fails.
+	token, err := storePendingReset(chat.Id, []string{"notes", "rules"})
+	require.NoError(t, err)
+	t.Cleanup(func() { clearPendingReset(chat.Id) })
+
+	callback := encodeCallbackData(
+		"backup",
+		map[string]string{"a": backupActionConfirmReset, "c": strconv.FormatInt(chat.Id, 10), "t": token},
+	)
+	ctx := newModuleCallbackContext(bot, chat, owner, callback)
+	err = backupModule.backupCallbackHandler(bot, ctx)
+	assert.Equal(t, ext.EndGroups, err)
+
+	gotModules, ok := getPendingReset(chat.Id)
+	require.True(t, ok, "a rejected reset must not spend the confirmation")
+	assert.Equal(t, []string{"notes", "rules"}, gotModules)
+	assert.Len(t, notes.GetNotesList(chat.Id, true), 1)
 	assert.Len(t, client.callsFor("sendMessage"), 1)
 }
 
@@ -798,7 +858,7 @@ func TestBackupCallbackHandlerIgnoresWrongChatConfirmation(t *testing.T) {
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Backup Chat"}
 	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
-	token, err := storePendingReset(chat.Id, []string{"rules"})
+	token, err := storePendingReset(chat.Id, []string{"notes"})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		clearPendingReset(chat.Id)
@@ -871,7 +931,7 @@ func TestBackupCallbackCancelImportAndResetCleanup(t *testing.T) {
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Backup Chat"}
 	owner := gotgbot.User{Id: 777000, FirstName: "Telegram"}
 
-	importToken, err := storePendingImport(chat.Id, backup.NewBackupFormat(chat.Id, chat.Title, owner.Id, []string{"rules"}), []string{"rules"})
+	importToken, err := storePendingImport(chat.Id, backup.NewBackupFormat(chat.Id, chat.Title, owner.Id, []string{"notes"}), []string{"notes"})
 	require.NoError(t, err)
 	cancelImport := encodeCallbackData(
 		"backup",
@@ -883,7 +943,7 @@ func TestBackupCallbackCancelImportAndResetCleanup(t *testing.T) {
 	_, _, ok := getPendingImport(chat.Id)
 	assert.False(t, ok)
 
-	resetToken, err := storePendingReset(chat.Id, []string{"rules"})
+	resetToken, err := storePendingReset(chat.Id, []string{"notes"})
 	require.NoError(t, err)
 	cancelReset := encodeCallbackData(
 		"backup",
@@ -898,26 +958,25 @@ func TestBackupCallbackCancelImportAndResetCleanup(t *testing.T) {
 	assert.Len(t, client.callsFor("answerCallbackQuery"), 2)
 }
 
-func TestModuleNames(t *testing.T) {
-	t.Run("all module names are lowercase", func(t *testing.T) {
-		modules := []string{
-			backup.BackupModuleAdmin,
-			backup.BackupModuleAntiflood,
-			backup.BackupModuleAntiraid,
-			backup.BackupModuleApprovals,
-			backup.BackupModuleBlacklists,
-			backup.BackupModuleConnections,
-			backup.BackupModuleDisabling,
-			backup.BackupModuleFilters,
-			backup.BackupModuleGreetings,
-			backup.BackupModuleNotes,
-			backup.BackupModulePins,
-			backup.BackupModuleRules,
-			backup.BackupModuleWarns,
-		}
+func TestDomainNames(t *testing.T) {
+	t.Run("the retained domain set is exposed to the command layer", func(t *testing.T) {
+		assert.Equal(t, []string{
+			backup.DomainAntiflood,
+			backup.DomainAntiraid,
+			backup.DomainApprovals,
+			backup.DomainBlacklists,
+			backup.DomainConnections,
+			backup.DomainFilters,
+			backup.DomainWelcome,
+			backup.DomainNotes,
+			backup.DomainReactions,
+			backup.DomainWarnings,
+		}, backup.AllDomains())
+	})
 
-		for _, module := range modules {
-			assert.Equal(t, module, module) // Just checking they exist
+	t.Run("removed domains are rejected as command arguments", func(t *testing.T) {
+		for _, removed := range []string{"admin", "disabling", "pins", "rules", "greetings", "warns", "captcha"} {
+			assert.Falsef(t, backup.IsValidDomain(removed), "domain %q must be rejected", removed)
 		}
 	})
 }

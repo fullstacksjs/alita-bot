@@ -14,25 +14,26 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/user"
 )
 
-func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
+func TestAllDomainsRoundTripEveryMeaningfulField(t *testing.T) {
 	skipIfNoDb(t)
 
 	srcChat := time.Now().UnixNano()
 	dstChat := srcChat + 1
 	warnUserID := srcChat + 2
 	staleWarnUserID := srcChat + 3
+	connectedUserID := srcChat + 4
 	require.NoError(t, chats.EnsureChatInDb(srcChat, "backup_source"))
 	require.NoError(t, chats.EnsureChatInDb(dstChat, "backup_destination"))
 	require.NoError(t, user.EnsureUserInDb(warnUserID, "", ""))
 	require.NoError(t, user.EnsureUserInDb(staleWarnUserID, "", ""))
+	require.NoError(t, user.EnsureUserInDb(connectedUserID, "", ""))
 	t.Cleanup(func() {
 		cleanupBackupChat(t, srcChat)
 		cleanupBackupChat(t, dstChat)
-		require.NoError(t, db.DB.Where("user_id IN ?", []int64{warnUserID, staleWarnUserID}).Delete(&models.User{}).Error)
+		require.NoError(t, db.DB.Where("user_id IN ?", []int64{warnUserID, staleWarnUserID, connectedUserID}).Delete(&models.User{}).Error)
 	})
 
 	buttons := models.ButtonArray{{Name: "docs", Url: "https://example.com", SameLine: true}}
-	require.NoError(t, db.DB.Create(&models.AdminSettings{ChatId: srcChat, AnonAdmin: true}).Error)
 	require.NoError(t, db.DB.Create(&models.AntifloodSettings{
 		ChatId:                 srcChat,
 		Limit:                  9,
@@ -51,15 +52,9 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, db.DB.Create(&models.BlacklistSettings{
 		ChatId: srcChat, Word: "scam", Action: "tban", Reason: "custom reason",
 	}).Error)
-	require.NoError(t, db.DB.Create(&models.DisableChatSettings{
-		ChatId: srcChat, DeleteCommands: true,
+	require.NoError(t, db.DB.Create(&models.ConnectionSettings{
+		UserId: connectedUserID, ChatId: srcChat, Connected: true,
 	}).Error)
-	require.NoError(t, db.DB.Create(&models.DisableSettings{
-		ChatId: srcChat, Command: "ban", Disabled: true,
-	}).Error)
-	require.NoError(t, db.DB.Model(&models.DisableSettings{}).
-		Where("chat_id = ?", srcChat).
-		Update("disabled", false).Error)
 	require.NoError(t, db.DB.Create(&models.ChatFilters{
 		ChatId: srcChat, KeyWord: "hello", FilterReply: "world", MsgType: 2,
 		FileID: "filter-file", NoNotif: true, Buttons: buttons,
@@ -84,14 +79,8 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, db.DB.Model(&models.Notes{}).
 		Where("chat_id = ?", srcChat).
 		Update("web_preview", false).Error)
-	require.NoError(t, db.DB.Create(&models.PinSettings{
-		ChatId: srcChat, MsgId: 4242, CleanLinked: true, AntiChannelPin: true,
-	}).Error)
 	require.NoError(t, db.DB.Create(&models.Reactions{
 		ChatID: srcChat, Keyword: "nice", Emoji: "🔥",
-	}).Error)
-	require.NoError(t, db.DB.Create(&models.RulesSettings{
-		ChatId: srcChat, Rules: "be kind", RulesBtn: "Read", Private: true,
 	}).Error)
 	require.NoError(t, db.DB.Create(&models.WarnSettings{
 		ChatId: srcChat, WarnLimit: 7,
@@ -116,18 +105,15 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 
 	exported, err := ExportChatData(srcChat, "source", 42, nil)
 	require.NoError(t, err)
-	require.Len(t, exported.Data, len(AllExportableModules()))
+	require.Len(t, exported.Data, len(AllDomains()))
+	assert.Equal(t, AllDomains(), exported.Domains)
+	assert.Equal(t, BackupFormatVersion, exported.Version)
 
 	raw, err := exported.ToJSON()
 	require.NoError(t, err)
 	decoded, err := BackupFormatFromJSON(raw)
 	require.NoError(t, err)
 	require.NoError(t, ImportChatData(dstChat, decoded, nil))
-
-	adminData, err := exportAdminData(dstChat)
-	require.NoError(t, err)
-	require.NotNil(t, adminData.AdminSettings)
-	assert.True(t, adminData.AdminSettings.AnonAdmin)
 
 	antifloodData, err := exportAntifloodData(dstChat)
 	require.NoError(t, err)
@@ -159,15 +145,9 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 
 	connectionsData, err := exportConnectionsData(dstChat)
 	require.NoError(t, err)
-	require.NotNil(t, connectionsData)
-
-	disablingData, err := exportDisablingData(dstChat)
-	require.NoError(t, err)
-	require.NotNil(t, disablingData.ChatSettings)
-	assert.True(t, disablingData.ChatSettings.DeleteCommands)
-	require.Len(t, disablingData.Commands, 1)
-	assert.Equal(t, "ban", disablingData.Commands[0].Command)
-	assert.False(t, disablingData.Commands[0].Disabled)
+	require.Len(t, connectionsData.Connections, 1)
+	assert.Equal(t, connectedUserID, connectionsData.Connections[0].UserId)
+	assert.True(t, connectionsData.Connections[0].Connected)
 
 	filtersData, err := exportFiltersData(dstChat)
 	require.NoError(t, err)
@@ -179,18 +159,18 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	assert.True(t, filtersData.Filters[0].NoNotif)
 	assert.Equal(t, buttons, filtersData.Filters[0].Buttons)
 
-	greetingsData, err := exportGreetingsData(dstChat)
+	welcomeData, err := exportWelcomeData(dstChat)
 	require.NoError(t, err)
-	require.NotNil(t, greetingsData.Settings)
-	assert.True(t, greetingsData.Settings.ShouldCleanService)
-	require.NotNil(t, greetingsData.Settings.WelcomeSettings)
-	assert.True(t, greetingsData.Settings.WelcomeSettings.CleanWelcome)
-	assert.Equal(t, int64(111), greetingsData.Settings.WelcomeSettings.LastMsgId)
-	assert.False(t, greetingsData.Settings.WelcomeSettings.ShouldWelcome)
-	assert.Equal(t, "welcome", greetingsData.Settings.WelcomeSettings.WelcomeText)
-	assert.Equal(t, "welcome-file", greetingsData.Settings.WelcomeSettings.FileID)
-	assert.Equal(t, 2, greetingsData.Settings.WelcomeSettings.WelcomeType)
-	assert.Equal(t, buttons, greetingsData.Settings.WelcomeSettings.Button)
+	require.NotNil(t, welcomeData.Settings)
+	assert.True(t, welcomeData.Settings.ShouldCleanService)
+	require.NotNil(t, welcomeData.Settings.WelcomeSettings)
+	assert.True(t, welcomeData.Settings.WelcomeSettings.CleanWelcome)
+	assert.Equal(t, int64(111), welcomeData.Settings.WelcomeSettings.LastMsgId)
+	assert.False(t, welcomeData.Settings.WelcomeSettings.ShouldWelcome)
+	assert.Equal(t, "welcome", welcomeData.Settings.WelcomeSettings.WelcomeText)
+	assert.Equal(t, "welcome-file", welcomeData.Settings.WelcomeSettings.FileID)
+	assert.Equal(t, 2, welcomeData.Settings.WelcomeSettings.WelcomeType)
+	assert.Equal(t, buttons, welcomeData.Settings.WelcomeSettings.Button)
 
 	notesData, err := exportNotesData(dstChat)
 	require.NoError(t, err)
@@ -210,34 +190,20 @@ func TestAllModulesRoundTripEveryMeaningfulField(t *testing.T) {
 	assert.True(t, note.IsProtected)
 	assert.True(t, note.NoNotif)
 
-	pinsData, err := exportPinsData(dstChat)
-	require.NoError(t, err)
-	require.NotNil(t, pinsData.Settings)
-	assert.Equal(t, int64(4242), pinsData.Settings.MsgId)
-	assert.True(t, pinsData.Settings.CleanLinked)
-	assert.True(t, pinsData.Settings.AntiChannelPin)
-
 	reactionsData, err := exportReactionsData(dstChat)
 	require.NoError(t, err)
 	require.Len(t, reactionsData.Reactions, 1)
 	assert.Equal(t, "nice", reactionsData.Reactions[0].Keyword)
 	assert.Equal(t, "🔥", reactionsData.Reactions[0].Emoji)
 
-	rulesData, err := exportRulesData(dstChat)
+	warningsData, err := exportWarningsData(dstChat)
 	require.NoError(t, err)
-	require.NotNil(t, rulesData.Settings)
-	assert.Equal(t, "be kind", rulesData.Settings.Rules)
-	assert.Equal(t, "Read", rulesData.Settings.RulesBtn)
-	assert.True(t, rulesData.Settings.Private)
-
-	warnsData, err := exportWarnsData(dstChat)
-	require.NoError(t, err)
-	require.NotNil(t, warnsData.WarnSettings)
-	assert.Equal(t, 7, warnsData.WarnSettings.WarnLimit)
-	require.Len(t, warnsData.Warns, 2)
-	assert.Equal(t, warnUserID, warnsData.Warns[0].UserId)
-	assert.Equal(t, "one", warnsData.Warns[0].Reason)
-	assert.Equal(t, "two", warnsData.Warns[1].Reason)
+	require.NotNil(t, warningsData.Settings)
+	assert.Equal(t, 7, warningsData.Settings.WarnLimit)
+	require.Len(t, warningsData.Warns, 2)
+	assert.Equal(t, warnUserID, warningsData.Warns[0].UserId)
+	assert.Equal(t, "one", warningsData.Warns[0].Reason)
+	assert.Equal(t, "two", warningsData.Warns[1].Reason)
 }
 
 func TestExportChatDataReturnsDatabaseErrors(t *testing.T) {
@@ -245,34 +211,111 @@ func TestExportChatDataReturnsDatabaseErrors(t *testing.T) {
 	db.DB = nil
 	t.Cleanup(func() { db.DB = original })
 
-	_, err := ExportChatData(1, "chat", 2, []string{BackupModuleFilters})
+	_, err := ExportChatData(1, "chat", 2, []string{DomainFilters})
 	require.ErrorContains(t, err, "database not initialized")
 }
 
-func TestImportChatDataRollsBackEarlierModules(t *testing.T) {
+func TestExportChatDataRejectsRemovedDomains(t *testing.T) {
+	for _, domain := range []string{"admin", "disabling", "pins", "rules", "greetings", "warns", "bogus"} {
+		_, err := ExportChatData(1, "chat", 2, []string{domain})
+		require.ErrorContains(t, err, "unsupported domain: "+domain)
+	}
+}
+
+func TestClearChatDataRejectsRemovedDomains(t *testing.T) {
+	for _, domain := range []string{"admin", "disabling", "pins", "rules", "bogus"} {
+		require.ErrorContains(t, ClearChatData(1, []string{domain}), "unsupported domain: "+domain)
+	}
+}
+
+func TestImportChatDataRejectsHistoricalVersions(t *testing.T) {
+	skipIfNoDb(t)
+
+	chatID := time.Now().UnixNano()
+	raw := fmt.Sprintf(`{
+		"version":"1.1",
+		"bot_name":"AlitaRobot",
+		"chat_id":%d,
+		"modules":["notes"],
+		"data":{"notes":{"notes":[{"note_name":"new"}]}}
+	}`, chatID)
+	legacy, err := BackupFormatFromJSON([]byte(raw))
+	require.NoError(t, err)
+
+	require.ErrorContains(t, ImportChatData(chatID, legacy, nil), `unsupported backup version "1.1"`)
+
+	var count int64
+	require.NoError(t, db.DB.Model(&models.Notes{}).Where("chat_id = ?", chatID).Count(&count).Error)
+	assert.Zero(t, count, "a rejected import must not write any row")
+}
+
+func TestImportChatDataRejectsRemovedDomainsBeforeMutation(t *testing.T) {
+	skipIfNoDb(t)
+
+	chatID := time.Now().UnixNano()
+	require.NoError(t, chats.EnsureChatInDb(chatID, "backup_removed_domain"))
+	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
+	require.NoError(t, db.DB.Create(&models.Notes{
+		ChatId: chatID, NoteName: "keep", NoteContent: "keep",
+	}).Error)
+
+	bkp := NewBackupFormat(chatID, "chat", 1, []string{DomainNotes, "rules"})
+	bkp.Data[DomainNotes] = map[string]interface{}{
+		"notes": []interface{}{map[string]interface{}{"note_name": "replacement"}},
+	}
+	bkp.Data["rules"] = map[string]interface{}{"settings": map[string]interface{}{"rules": "nope"}}
+
+	require.ErrorContains(t, ImportChatData(chatID, bkp, nil), "unsupported domain: rules")
+
+	notes, err := findChatRows[models.Notes](chatID)
+	require.NoError(t, err)
+	require.Len(t, notes, 1)
+	assert.Equal(t, "keep", notes[0].NoteName, "rejection must happen before any domain is written")
+}
+
+func TestImportChatDataRollsBackEarlierDomains(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
 	require.NoError(t, chats.EnsureChatInDb(chatID, "backup_atomicity"))
 	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
-	require.NoError(t, db.DB.Create(&models.RulesSettings{
-		ChatId: chatID, Rules: "original",
+	require.NoError(t, db.DB.Create(&models.Notes{
+		ChatId: chatID, NoteName: "original", NoteContent: "original",
 	}).Error)
 
-	backup := NewBackupFormat(chatID, "chat", 1, []string{BackupModuleRules, BackupModuleAntiflood})
-	backup.Data[BackupModuleRules] = map[string]interface{}{
-		"settings": map[string]interface{}{"rules": "replacement"},
+	backup := NewBackupFormat(chatID, "chat", 1, []string{DomainNotes, DomainAntiflood})
+	backup.Data[DomainNotes] = map[string]interface{}{
+		"notes": []interface{}{map[string]interface{}{"note_name": "replacement"}},
 	}
-	backup.Data[BackupModuleAntiflood] = "invalid_payload_type"
+	backup.Data[DomainAntiflood] = "invalid_payload_type"
 
 	require.Error(t, ImportChatData(chatID, backup, nil))
-	settings, err := findChatSetting[models.RulesSettings](chatID)
+	notes, err := findChatRows[models.Notes](chatID)
 	require.NoError(t, err)
-	require.NotNil(t, settings)
-	assert.Equal(t, "original", settings.Rules)
+	require.Len(t, notes, 1)
+	assert.Equal(t, "original", notes[0].NoteName)
 }
 
-func TestImportWarnsCreatesMissingParents(t *testing.T) {
+func TestClearChatDataRollsBackEarlierDomains(t *testing.T) {
+	skipIfNoDb(t)
+
+	chatID := time.Now().UnixNano()
+	require.NoError(t, chats.EnsureChatInDb(chatID, "backup_reset_atomicity"))
+	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
+	require.NoError(t, db.DB.Create(&models.Notes{
+		ChatId: chatID, NoteName: "keep", NoteContent: "keep",
+	}).Error)
+
+	// The unknown domain aborts the transaction, so the notes cleared first must
+	// come back.
+	require.Error(t, ClearChatData(chatID, []string{DomainNotes, "rules"}))
+	notes, err := findChatRows[models.Notes](chatID)
+	require.NoError(t, err)
+	require.Len(t, notes, 1)
+	assert.Equal(t, "keep", notes[0].NoteName)
+}
+
+func TestImportWarningsCreatesMissingParents(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
@@ -282,9 +325,9 @@ func TestImportWarnsCreatesMissingParents(t *testing.T) {
 		require.NoError(t, db.DB.Where("user_id = ?", userID).Delete(&models.User{}).Error)
 	})
 
-	bkp := NewBackupFormat(chatID, "fresh", 1, []string{BackupModuleWarns})
-	bkp.Data[BackupModuleWarns] = map[string]interface{}{
-		"warn_settings": map[string]interface{}{"warn_limit": 3},
+	bkp := NewBackupFormat(chatID, "fresh", 1, []string{DomainWarnings})
+	bkp.Data[DomainWarnings] = map[string]interface{}{
+		"settings": map[string]interface{}{"warn_limit": 3},
 		"warns": []interface{}{
 			map[string]interface{}{"user_id": userID, "reason": "reason"},
 		},
@@ -296,57 +339,39 @@ func TestImportWarnsCreatesMissingParents(t *testing.T) {
 	require.NoError(t, db.DB.Where("chat_id = ? AND user_id = ?", chatID, userID).Take(&models.WarnEvent{}).Error)
 }
 
-func TestLegacyBackupPreservesFieldsThatVersionDidNotExport(t *testing.T) {
+func TestImportConnectionsMovesAnExistingConnection(t *testing.T) {
 	skipIfNoDb(t)
 
-	chatID := time.Now().UnixNano()
-	warnUserID := chatID + 1
-	require.NoError(t, chats.EnsureChatInDb(chatID, "legacy_backup"))
-	require.NoError(t, user.EnsureUserInDb(warnUserID, "", ""))
+	otherChat := time.Now().UnixNano()
+	chatID := otherChat + 1
+	userID := otherChat + 2
+	require.NoError(t, chats.EnsureChatInDb(otherChat, "backup_conn_other"))
+	require.NoError(t, chats.EnsureChatInDb(chatID, "backup_conn_target"))
+	require.NoError(t, user.EnsureUserInDb(userID, "", ""))
 	t.Cleanup(func() {
+		cleanupBackupChat(t, otherChat)
 		cleanupBackupChat(t, chatID)
-		require.NoError(t, db.DB.Where("user_id = ?", warnUserID).Delete(&models.User{}).Error)
+		require.NoError(t, db.DB.Where("user_id = ?", userID).Delete(&models.User{}).Error)
 	})
-	require.NoError(t, db.DB.Create(&models.NotesSettings{ChatId: chatID, Private: true}).Error)
-	require.NoError(t, db.DB.Create(&models.Notes{
-		ChatId: chatID, NoteName: "old", NoteContent: "old",
-	}).Error)
-	require.NoError(t, db.DB.Create(&models.WarnSettings{
-		ChatId: chatID, WarnLimit: 3,
-	}).Error)
-	require.NoError(t, db.DB.Create(&models.WarnEvent{
-		ChatId: chatID, UserId: warnUserID, Reason: "one",
+	require.NoError(t, db.DB.Create(&models.ConnectionSettings{
+		UserId: userID, ChatId: otherChat, Connected: true,
 	}).Error)
 
-	raw := fmt.Sprintf(`{
-		"version":"1.0",
-		"bot_name":"AlitaRobot",
-		"chat_id":%d,
-		"modules":["notes","warns"],
-		"data":{
-			"notes":{"notes":[{"note_name":"new","note_content":"new"}]},
-			"warns":{"warn_settings":{"warn_limit":7}}
-		}
-	}`, chatID)
-	legacy, err := BackupFormatFromJSON([]byte(raw))
-	require.NoError(t, err)
-	require.NoError(t, ImportChatData(chatID, legacy, nil))
+	bkp := NewBackupFormat(chatID, "chat", 1, []string{DomainConnections})
+	bkp.Data[DomainConnections] = map[string]interface{}{
+		"connections": []interface{}{
+			map[string]interface{}{"user_id": userID, "connected": true},
+		},
+	}
+	require.NoError(t, ImportChatData(chatID, bkp, nil))
 
-	noteSettings, err := findChatSetting[models.NotesSettings](chatID)
+	rows, err := findChatRows[models.ConnectionSettings](chatID)
 	require.NoError(t, err)
-	require.NotNil(t, noteSettings)
-	assert.True(t, noteSettings.Private)
-	notes, err := findChatRows[models.Notes](chatID)
-	require.NoError(t, err)
-	require.Len(t, notes, 1)
-	assert.Equal(t, "new", notes[0].NoteName)
+	require.Len(t, rows, 1)
+	assert.Equal(t, userID, rows[0].UserId)
+	assert.True(t, rows[0].Connected)
 
-	warnSettings, err := findChatSetting[models.WarnSettings](chatID)
+	stale, err := findChatRows[models.ConnectionSettings](otherChat)
 	require.NoError(t, err)
-	require.NotNil(t, warnSettings)
-	assert.Equal(t, 7, warnSettings.WarnLimit)
-	warnRows, err := findChatRows[models.Warns](chatID)
-	require.NoError(t, err)
-	require.Len(t, warnRows, 1)
-	assert.Equal(t, warnUserID, warnRows[0].UserId)
+	assert.Empty(t, stale)
 }
