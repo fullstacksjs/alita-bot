@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
 )
 
 func TestFilterOverwriteCacheKeysAndToken(t *testing.T) {
@@ -36,21 +35,21 @@ func TestFilterOverwriteCacheNoCacheFallbacks(t *testing.T) {
 		DataType: 1,
 	}}
 
-	if err := setFilterOverwriteCache("token", data); err == nil {
-		t.Fatal("setFilterOverwriteCache() error = nil, want cache not initialized")
+	if err := setFilterOverwriteCache("token", data); err != nil {
+		t.Fatalf("setFilterOverwriteCache() error = %v, want nil", err)
 	}
-	if _, err := getFilterOverwriteCache("token"); err == nil {
-		t.Fatal("getFilterOverwriteCache() error = nil, want cache not initialized")
+	got, err := getFilterOverwriteCache("token")
+	if err != nil {
+		t.Fatalf("getFilterOverwriteCache() error = %v, want nil", err)
+	}
+	if got.ChatID != data.ChatID || got.Text != data.Text {
+		t.Fatalf("getFilterOverwriteCache() = %+v, want %+v", got, data)
 	}
 
 	deleteFilterOverwriteCache("token")
 }
 
 func TestFilterOverwriteCacheRoundTripsCurrentData(t *testing.T) {
-	if cache.GetMarshal() == nil {
-		t.Skip("requires cache marshal")
-	}
-
 	current := overwriteFilter{overwriteBase: overwriteBase{
 		ChatID:   -100123,
 		ItemName: "hello",

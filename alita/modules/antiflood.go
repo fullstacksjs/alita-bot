@@ -22,6 +22,7 @@ import (
 	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 	"github.com/divkix/Alita_Robot/alita/utils/helpers"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 // Concurrency limits for flood protection operations
@@ -35,6 +36,10 @@ const (
 type floodKey struct {
 	chatId int64
 	userId int64
+}
+
+func antifloodStateKey(chatId, userId int64) string {
+	return fmt.Sprintf("alita:antiflood:%d:%d", chatId, userId)
 }
 
 type antifloodStruct struct {
@@ -85,6 +90,9 @@ func (a *antifloodStruct) cleanupOnce(now int64) {
 			if now-floodData.lastActivity > 600 {
 				a.syncHelperMap.Delete(key)
 				floodMu.Delete(key)
+				if fk, ok := key.(floodKey); ok {
+					state.Delete(context.Background(), antifloodStateKey(fk.chatId, fk.userId))
+				}
 			}
 		}
 		return true
@@ -128,8 +136,14 @@ func (a *antifloodStruct) updateFlood(chatId, userId, msgId int64) (shouldPunish
 		mu.Lock()
 		defer mu.Unlock()
 
-		tmpInterface, valExists := a.syncHelperMap.Load(key)
-		if valExists && tmpInterface != nil {
+		ctx := context.Background()
+		stateKey := antifloodStateKey(chatId, userId)
+		if existing, ok := state.Get[floodControl](ctx, stateKey); ok {
+			floodCrc = existing
+			if currentTime-floodCrc.lastActivity > 60 {
+				floodCrc = floodControl{}
+			}
+		} else if tmpInterface, valExists := a.syncHelperMap.Load(key); valExists && tmpInterface != nil {
 			floodCrc = tmpInterface.(floodControl)
 
 			// Clean up old entries (older than 1 minute)
@@ -161,17 +175,18 @@ func (a *antifloodStruct) updateFlood(chatId, userId, msgId int64) (shouldPunish
 		}
 
 		if floodCrc.messageCount > floodSettings.Limit {
-			a.syncHelperMap.Store(key,
-				floodControl{
-					userId:       0,
-					messageCount: 0,
-					messageIDs:   make([]int64, 0),
-					lastActivity: currentTime,
-				},
-			)
+			resetVal := floodControl{
+				userId:       0,
+				messageCount: 0,
+				messageIDs:   make([]int64, 0),
+				lastActivity: currentTime,
+			}
+			a.syncHelperMap.Store(key, resetVal)
+			state.Set(ctx, stateKey, resetVal, 10*time.Minute)
 			shouldPunish = true
 		} else {
 			a.syncHelperMap.Store(key, floodCrc)
+			state.Set(ctx, stateKey, floodCrc, 10*time.Minute)
 		}
 	}
 

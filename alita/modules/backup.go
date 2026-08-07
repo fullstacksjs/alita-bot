@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
@@ -26,6 +25,7 @@ import (
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 	"github.com/divkix/Alita_Robot/alita/utils/ratelimit"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 // Module instance
@@ -46,12 +46,7 @@ type pendingResetState struct {
 	expiresAt time.Time
 }
 
-// Pending backup operations are stored in memory per chat. The callback token
-// prevents an older confirmation button from acting on newer pending state.
 var (
-	pendingMu        sync.Mutex
-	pendingImports   = make(map[int64]pendingImportState)
-	pendingResets    = make(map[int64]pendingResetState)
 	errNoValidDomain = errors.New("no valid domains in arguments")
 
 	backupDownloadBaseURL    = "https://api.telegram.org/file/bot"
@@ -77,29 +72,33 @@ func newPendingToken() (string, error) {
 	return hex.EncodeToString(value[:]), nil
 }
 
+func pendingImportKey(chatID int64) string {
+	return fmt.Sprintf("alita:backup:pending_import:%d", chatID)
+}
+
+func pendingResetKey(chatID int64) string {
+	return fmt.Sprintf("alita:backup:pending_reset:%d", chatID)
+}
+
 func storePendingImport(chatID int64, bkp *backup.BackupFormat, modules []string) (string, error) {
 	token, err := newPendingToken()
 	if err != nil {
 		return "", err
 	}
 
-	pendingMu.Lock()
-	defer pendingMu.Unlock()
-	pendingImports[chatID] = pendingImportState{
+	st := pendingImportState{
 		backup:    bkp,
 		modules:   modules,
 		token:     token,
 		expiresAt: time.Now().Add(pendingBackupTTL),
 	}
+	state.Set(context.Background(), pendingImportKey(chatID), st, pendingBackupTTL)
 	return token, nil
 }
 
 func getPendingImport(chatID int64) (*backup.BackupFormat, []string, bool) {
-	pendingMu.Lock()
-	defer pendingMu.Unlock()
-	pending, ok := pendingImports[chatID]
-	if !ok || !time.Now().Before(pending.expiresAt) {
-		delete(pendingImports, chatID)
+	pending, ok := state.Get[pendingImportState](context.Background(), pendingImportKey(chatID))
+	if !ok {
 		return nil, nil, false
 	}
 	return pending.backup, pending.modules, true
@@ -109,35 +108,30 @@ func getPendingImport(chatID int64) (*backup.BackupFormat, []string, bool) {
 // act on it. A caller that does not complete the work must hand the state back
 // with restorePendingImport.
 func claimPendingImport(chatID int64, token string) (pendingImportState, bool) {
-	pendingMu.Lock()
-	defer pendingMu.Unlock()
-	pending, ok := pendingImports[chatID]
+	key := pendingImportKey(chatID)
+	pending, ok := state.GetAndDelete[pendingImportState](context.Background(), key)
 	if !ok {
 		return pendingImportState{}, false
 	}
-	if !time.Now().Before(pending.expiresAt) {
-		delete(pendingImports, chatID)
-		return pendingImportState{}, false
-	}
 	if pending.token != token {
+		restorePendingImport(chatID, pending)
 		return pendingImportState{}, false
 	}
-	delete(pendingImports, chatID)
 	return pending, true
 }
 
 // restorePendingImport returns a claimed import to the pending map so the owner
 // can retry after a failed transaction. A newer pending import wins.
 func restorePendingImport(chatID int64, pending pendingImportState) {
-	pendingMu.Lock()
-	defer pendingMu.Unlock()
-	if _, ok := pendingImports[chatID]; ok {
+	remaining := time.Until(pending.expiresAt)
+	if remaining <= 0 {
 		return
 	}
-	if !time.Now().Before(pending.expiresAt) {
+	key := pendingImportKey(chatID)
+	if _, ok := state.Get[pendingImportState](context.Background(), key); ok {
 		return
 	}
-	pendingImports[chatID] = pending
+	state.Set(context.Background(), key, pending, remaining)
 }
 
 func consumePendingImport(chatID int64, token string) (*backup.BackupFormat, []string, bool) {
@@ -154,9 +148,7 @@ func discardPendingImport(chatID int64, token string) bool {
 }
 
 func clearPendingImport(chatID int64) {
-	pendingMu.Lock()
-	defer pendingMu.Unlock()
-	delete(pendingImports, chatID)
+	state.Delete(context.Background(), pendingImportKey(chatID))
 }
 
 func storePendingReset(chatID int64, modules []string) (string, error) {
@@ -165,22 +157,18 @@ func storePendingReset(chatID int64, modules []string) (string, error) {
 		return "", err
 	}
 
-	pendingMu.Lock()
-	defer pendingMu.Unlock()
-	pendingResets[chatID] = pendingResetState{
+	st := pendingResetState{
 		modules:   modules,
 		token:     token,
 		expiresAt: time.Now().Add(pendingBackupTTL),
 	}
+	state.Set(context.Background(), pendingResetKey(chatID), st, pendingBackupTTL)
 	return token, nil
 }
 
 func getPendingReset(chatID int64) ([]string, bool) {
-	pendingMu.Lock()
-	defer pendingMu.Unlock()
-	pending, ok := pendingResets[chatID]
-	if !ok || !time.Now().Before(pending.expiresAt) {
-		delete(pendingResets, chatID)
+	pending, ok := state.Get[pendingResetState](context.Background(), pendingResetKey(chatID))
+	if !ok {
 		return nil, false
 	}
 	return pending.modules, true
@@ -190,35 +178,30 @@ func getPendingReset(chatID int64) ([]string, bool) {
 // act on it. A caller that does not complete the work must hand the state back
 // with restorePendingReset.
 func claimPendingReset(chatID int64, token string) (pendingResetState, bool) {
-	pendingMu.Lock()
-	defer pendingMu.Unlock()
-	pending, ok := pendingResets[chatID]
+	key := pendingResetKey(chatID)
+	pending, ok := state.GetAndDelete[pendingResetState](context.Background(), key)
 	if !ok {
 		return pendingResetState{}, false
 	}
-	if !time.Now().Before(pending.expiresAt) {
-		delete(pendingResets, chatID)
-		return pendingResetState{}, false
-	}
 	if pending.token != token {
+		restorePendingReset(chatID, pending)
 		return pendingResetState{}, false
 	}
-	delete(pendingResets, chatID)
 	return pending, true
 }
 
 // restorePendingReset returns a claimed reset to the pending map so the owner
 // can retry after a failed transaction. A newer pending reset wins.
 func restorePendingReset(chatID int64, pending pendingResetState) {
-	pendingMu.Lock()
-	defer pendingMu.Unlock()
-	if _, ok := pendingResets[chatID]; ok {
+	remaining := time.Until(pending.expiresAt)
+	if remaining <= 0 {
 		return
 	}
-	if !time.Now().Before(pending.expiresAt) {
+	key := pendingResetKey(chatID)
+	if _, ok := state.Get[pendingResetState](context.Background(), key); ok {
 		return
 	}
-	pendingResets[chatID] = pending
+	state.Set(context.Background(), key, pending, remaining)
 }
 
 func consumePendingReset(chatID int64, token string) ([]string, bool) {
@@ -235,9 +218,7 @@ func discardPendingReset(chatID int64, token string) bool {
 }
 
 func clearPendingReset(chatID int64) {
-	pendingMu.Lock()
-	defer pendingMu.Unlock()
-	delete(pendingResets, chatID)
+	state.Delete(context.Background(), pendingResetKey(chatID))
 }
 
 // exportHandler handles the /export command

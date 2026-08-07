@@ -7,10 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eko/gocache/lib/v4/store"
-	log "github.com/sirupsen/logrus"
-
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 // BackupRateLimiter provides rate limiting for backup operations
@@ -96,16 +93,11 @@ func (r *BackupRateLimiter) AcquireReset(chatID int64) (bool, time.Duration) {
 }
 
 func (r *BackupRateLimiter) canOperate(cacheKey string, cooldown time.Duration) (bool, time.Duration) {
-	if client := cache.GetRedisClient(); client != nil {
-		remaining, err := client.TTL(cache.Context, cacheKey).Result()
-		if err != nil || remaining <= 0 {
-			return true, 0
-		}
-		return false, remaining
-	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
-	lastOperation, err := r.getLastOperation(cacheKey)
-	if err != nil {
+	lastOperation, ok := state.Get[time.Time](context.Background(), cacheKey)
+	if !ok {
 		return true, 0
 	}
 	elapsed := time.Since(lastOperation)
@@ -116,38 +108,16 @@ func (r *BackupRateLimiter) canOperate(cacheKey string, cooldown time.Duration) 
 }
 
 func (r *BackupRateLimiter) acquireOperation(cacheKey string, cooldown time.Duration) (bool, time.Duration) {
-	if client := cache.GetRedisClient(); client != nil {
-		acquired, err := client.SetNX(cache.Context, cacheKey, time.Now().Unix(), cooldown).Result()
-		if err != nil {
-			log.Debugf("[BackupRateLimit] Failed to reserve operation for key %s: %v", cacheKey, err)
-			return true, 0
-		}
-		if acquired {
-			return true, 0
-		}
-		remaining, err := client.TTL(cache.Context, cacheKey).Result()
-		if err != nil || remaining <= 0 {
-			return false, cooldown
-		}
-		return false, remaining
-	}
-
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	m := cache.GetMarshal()
-	if m == nil {
-		return true, 0
-	}
-	var timestamp time.Time
-	if _, err := m.Get(context.Background(), cacheKey, &timestamp); err == nil {
-		if remaining := cooldown - time.Since(timestamp); remaining > 0 {
-			return false, remaining
+
+	now := time.Now()
+	if lastOperation, ok := state.Get[time.Time](context.Background(), cacheKey); ok {
+		if elapsed := now.Sub(lastOperation); elapsed < cooldown {
+			return false, cooldown - elapsed
 		}
 	}
-	if err := m.Set(context.Background(), cacheKey, time.Now(), store.WithExpiration(cooldown)); err != nil {
-		log.Debugf("[BackupRateLimit] Failed to reserve operation for key %s: %v", cacheKey, err)
-		return true, 0
-	}
+	state.Set(context.Background(), cacheKey, now, cooldown)
 	return true, 0
 }
 
@@ -156,19 +126,11 @@ func (r *BackupRateLimiter) getLastOperation(cacheKey string) (time.Time, error)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	m := cache.GetMarshal()
-	if m == nil {
-		return time.Time{}, fmt.Errorf("cache not initialized")
+	ts, ok := state.Get[time.Time](context.Background(), cacheKey)
+	if !ok {
+		return time.Time{}, fmt.Errorf("no record found")
 	}
-
-	// Try to get from cache
-	var timestamp time.Time
-	_, err := m.Get(context.Background(), cacheKey, &timestamp)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("no record found: %w", err)
-	}
-
-	return timestamp, nil
+	return ts, nil
 }
 
 // recordOperation stores the current timestamp in cache
@@ -176,14 +138,7 @@ func (r *BackupRateLimiter) recordOperation(cacheKey string, ttl time.Duration) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	m := cache.GetMarshal()
-	if m == nil {
-		return
-	}
-
-	if err := m.Set(context.Background(), cacheKey, time.Now(), store.WithExpiration(ttl)); err != nil {
-		log.Debugf("[BackupRateLimit] Failed to record operation for key %s: %v", cacheKey, err)
-	}
+	state.Set(context.Background(), cacheKey, time.Now(), ttl)
 }
 
 // FormatCooldown formats a duration as a human-readable string

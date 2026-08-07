@@ -4,6 +4,7 @@ package modules
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/notes"
 	"github.com/divkix/Alita_Robot/alita/i18n"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 type backupRoundTripFunc func(*http.Request) (*http.Response, error)
@@ -522,10 +524,11 @@ func TestBuildResetKeyboard(t *testing.T) {
 }
 
 func TestPendingImportsMaps(t *testing.T) {
-	t.Run("pending imports maps exist", func(t *testing.T) {
-		// Just verify the maps are initialized
-		assert.NotNil(t, pendingImports)
-		assert.NotNil(t, pendingResets)
+	t.Run("pending imports state initialization", func(t *testing.T) {
+		chatID := uniqueModuleChatID()
+		_, err := storePendingImport(chatID, &backup.BackupFormat{}, []string{"filters"})
+		assert.NoError(t, err)
+		clearPendingImport(chatID)
 	})
 }
 
@@ -562,11 +565,11 @@ func TestPendingImportRejectsStaleTokenAndConsumesOnce(t *testing.T) {
 
 	expiredToken, err := storePendingImport(chatID, current, []string{"notes"})
 	require.NoError(t, err)
-	pendingMu.Lock()
-	expired := pendingImports[chatID]
-	expired.expiresAt = time.Now().Add(-time.Second)
-	pendingImports[chatID] = expired
-	pendingMu.Unlock()
+	key := pendingImportKey(chatID)
+	if expired, ok := state.Get[pendingImportState](context.Background(), key); ok {
+		expired.expiresAt = time.Now().Add(-time.Second)
+		state.Set(context.Background(), key, expired, -time.Second)
+	}
 	_, _, ok = consumePendingImport(chatID, expiredToken)
 	assert.False(t, ok)
 }
@@ -586,11 +589,11 @@ func TestPendingResetRejectsStaleAndExpiredTokens(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []string{"notes"}, modules)
 
-	pendingMu.Lock()
-	pending := pendingResets[chatID]
-	pending.expiresAt = time.Now().Add(-time.Second)
-	pendingResets[chatID] = pending
-	pendingMu.Unlock()
+	key := pendingResetKey(chatID)
+	if pending, ok := state.Get[pendingResetState](context.Background(), key); ok {
+		pending.expiresAt = time.Now().Add(-time.Second)
+		state.Set(context.Background(), key, pending, -time.Second)
+	}
 
 	_, ok = consumePendingReset(chatID, currentToken)
 	assert.False(t, ok)
