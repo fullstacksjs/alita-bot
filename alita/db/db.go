@@ -29,24 +29,14 @@ type (
 	GreetingSettings       = models.GreetingSettings
 	WelcomeSettings        = models.WelcomeSettings
 	ChatFilters            = models.ChatFilters
-	AdminSettings          = models.AdminSettings
 	BlacklistSettings      = models.BlacklistSettings
 	BlacklistSettingsSlice = models.BlacklistSettingsSlice
-	PinSettings            = models.PinSettings
-	DevSettings            = models.DevSettings
 	ChannelSettings        = models.ChannelSettings
 	AntifloodSettings      = models.AntifloodSettings
 	ConnectionSettings     = models.ConnectionSettings
-	DisableSettings        = models.DisableSettings
-	DisableChatSettings    = models.DisableChatSettings
-	RulesSettings          = models.RulesSettings
 	NotesSettings          = models.NotesSettings
 	Notes                  = models.Notes
 	ApprovedUsers          = models.ApprovedUsers
-	CaptchaSettings        = models.CaptchaSettings
-	CaptchaAttempts        = models.CaptchaAttempts
-	StoredMessages         = models.StoredMessages
-	CaptchaMutedUsers      = models.CaptchaMutedUsers
 	AntiRaidSettings       = models.AntiRaidSettings
 	Reactions              = models.Reactions
 )

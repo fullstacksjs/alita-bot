@@ -6,9 +6,9 @@ import (
 	"errors"
 )
 
-// jsonbBytes coerces a database driver value into the raw JSON bytes used by the
-// JSONB Scan implementations below.
-func jsonbBytes(value any) ([]byte, error) {
+// jsonBytes coerces a database driver value into the raw JSON bytes used by the
+// JSON Scan implementations below.
+func jsonBytes(value any) ([]byte, error) {
 	switch v := value.(type) {
 	case []byte:
 		return v, nil
@@ -26,7 +26,7 @@ type Button struct {
 	SameLine bool   `gorm:"column:btn_sameline;default:false" json:"btn_sameline" default:"false"`
 }
 
-// ButtonArray is a custom type for handling arrays of buttons as JSONB
+// ButtonArray is a custom type for handling arrays of buttons as JSON text.
 type ButtonArray []Button
 
 // Scan implements the Scanner interface for database deserialization of ButtonArray.
@@ -36,7 +36,7 @@ func (ba *ButtonArray) Scan(value any) error {
 		return nil
 	}
 
-	data, err := jsonbBytes(value)
+	data, err := jsonBytes(value)
 	if err != nil {
 		return err
 	}
@@ -52,7 +52,7 @@ func (ba ButtonArray) Value() (driver.Value, error) {
 	return json.Marshal(ba)
 }
 
-// StringArray is a custom type for handling arrays of strings as JSONB
+// StringArray is a custom type for handling arrays of strings as JSON text.
 type StringArray []string
 
 // Scan implements the Scanner interface for database deserialization of StringArray.
@@ -62,7 +62,7 @@ func (sa *StringArray) Scan(value any) error {
 		return nil
 	}
 
-	data, err := jsonbBytes(value)
+	data, err := jsonBytes(value)
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func (sa StringArray) Value() (driver.Value, error) {
 	return json.Marshal(sa)
 }
 
-// Int64Array is a custom type for handling arrays of int64 as JSONB
+// Int64Array is a custom type for handling arrays of int64 as JSON text.
 type Int64Array []int64
 
 // Scan implements the Scanner interface for database deserialization of Int64Array.
@@ -88,7 +88,7 @@ func (ia *Int64Array) Scan(value any) error {
 		return nil
 	}
 
-	data, err := jsonbBytes(value)
+	data, err := jsonBytes(value)
 	if err != nil {
 		return err
 	}

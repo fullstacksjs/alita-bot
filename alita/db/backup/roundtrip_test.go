@@ -22,15 +22,17 @@ func TestAllDomainsRoundTripEveryMeaningfulField(t *testing.T) {
 	warnUserID := srcChat + 2
 	staleWarnUserID := srcChat + 3
 	connectedUserID := srcChat + 4
+	approvedUserID := srcChat + 5
 	require.NoError(t, chats.EnsureChatInDb(srcChat, "backup_source"))
 	require.NoError(t, chats.EnsureChatInDb(dstChat, "backup_destination"))
 	require.NoError(t, user.EnsureUserInDb(warnUserID, "", ""))
 	require.NoError(t, user.EnsureUserInDb(staleWarnUserID, "", ""))
 	require.NoError(t, user.EnsureUserInDb(connectedUserID, "", ""))
+	require.NoError(t, user.EnsureUserInDb(approvedUserID, "", ""))
 	t.Cleanup(func() {
 		cleanupBackupChat(t, srcChat)
 		cleanupBackupChat(t, dstChat)
-		require.NoError(t, db.DB.Where("user_id IN ?", []int64{warnUserID, staleWarnUserID, connectedUserID}).Delete(&models.User{}).Error)
+		require.NoError(t, db.DB.Where("user_id IN ?", []int64{warnUserID, staleWarnUserID, connectedUserID, approvedUserID}).Delete(&models.User{}).Error)
 	})
 
 	buttons := models.ButtonArray{{Name: "docs", Url: "https://example.com", SameLine: true}}
@@ -47,7 +49,7 @@ func TestAllDomainsRoundTripEveryMeaningfulField(t *testing.T) {
 		AutoAntiRaidThreshold: 12,
 	}).Error)
 	require.NoError(t, db.DB.Create(&models.ApprovedUsers{
-		ChatID: srcChat, UserID: 101, ApprovedBy: 202, Reason: "trusted",
+		ChatID: srcChat, UserID: approvedUserID, ApprovedBy: 202, Reason: "trusted",
 	}).Error)
 	require.NoError(t, db.DB.Create(&models.BlacklistSettings{
 		ChatId: srcChat, Word: "scam", Action: "tban", Reason: "custom reason",
@@ -115,41 +117,41 @@ func TestAllDomainsRoundTripEveryMeaningfulField(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ImportChatData(dstChat, decoded, nil))
 
-	antifloodData, err := exportAntifloodData(dstChat)
+	antifloodData, err := exportAntifloodData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.NotNil(t, antifloodData.Settings)
 	assert.Equal(t, 9, antifloodData.Settings.Limit)
 	assert.Equal(t, "tmute", antifloodData.Settings.Action)
 	assert.True(t, antifloodData.Settings.DeleteAntifloodMessage)
 
-	antiraidData, err := exportAntiraidData(dstChat)
+	antiraidData, err := exportAntiraidData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.NotNil(t, antiraidData.Settings)
 	assert.Equal(t, 7777, antiraidData.Settings.RaidTime)
 	assert.Equal(t, 8888, antiraidData.Settings.RaidActionTime)
 	assert.Equal(t, 12, antiraidData.Settings.AutoAntiRaidThreshold)
 
-	approvalsData, err := exportApprovalsData(dstChat)
+	approvalsData, err := exportApprovalsData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.Len(t, approvalsData.ApprovedUsers, 1)
-	assert.Equal(t, int64(101), approvalsData.ApprovedUsers[0].UserID)
+	assert.Equal(t, approvedUserID, approvalsData.ApprovedUsers[0].UserID)
 	assert.Equal(t, int64(202), approvalsData.ApprovedUsers[0].ApprovedBy)
 	assert.Equal(t, "trusted", approvalsData.ApprovedUsers[0].Reason)
 
-	blacklistsData, err := exportBlacklistsData(dstChat)
+	blacklistsData, err := exportBlacklistsData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.Len(t, blacklistsData.Entries, 1)
 	assert.Equal(t, "scam", blacklistsData.Entries[0].Word)
 	assert.Equal(t, "tban", blacklistsData.Entries[0].Action)
 	assert.Equal(t, "custom reason", blacklistsData.Entries[0].Reason)
 
-	connectionsData, err := exportConnectionsData(dstChat)
+	connectionsData, err := exportConnectionsData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.Len(t, connectionsData.Connections, 1)
 	assert.Equal(t, connectedUserID, connectionsData.Connections[0].UserId)
 	assert.True(t, connectionsData.Connections[0].Connected)
 
-	filtersData, err := exportFiltersData(dstChat)
+	filtersData, err := exportFiltersData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.Len(t, filtersData.Filters, 1)
 	assert.Equal(t, "hello", filtersData.Filters[0].KeyWord)
@@ -159,7 +161,7 @@ func TestAllDomainsRoundTripEveryMeaningfulField(t *testing.T) {
 	assert.True(t, filtersData.Filters[0].NoNotif)
 	assert.Equal(t, buttons, filtersData.Filters[0].Buttons)
 
-	welcomeData, err := exportWelcomeData(dstChat)
+	welcomeData, err := exportWelcomeData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.NotNil(t, welcomeData.Settings)
 	assert.True(t, welcomeData.Settings.ShouldCleanService)
@@ -172,7 +174,7 @@ func TestAllDomainsRoundTripEveryMeaningfulField(t *testing.T) {
 	assert.Equal(t, 2, welcomeData.Settings.WelcomeSettings.WelcomeType)
 	assert.Equal(t, buttons, welcomeData.Settings.WelcomeSettings.Button)
 
-	notesData, err := exportNotesData(dstChat)
+	notesData, err := exportNotesData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.NotNil(t, notesData.Settings)
 	assert.True(t, notesData.Settings.Private)
@@ -190,13 +192,13 @@ func TestAllDomainsRoundTripEveryMeaningfulField(t *testing.T) {
 	assert.True(t, note.IsProtected)
 	assert.True(t, note.NoNotif)
 
-	reactionsData, err := exportReactionsData(dstChat)
+	reactionsData, err := exportReactionsData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.Len(t, reactionsData.Reactions, 1)
 	assert.Equal(t, "nice", reactionsData.Reactions[0].Keyword)
 	assert.Equal(t, "🔥", reactionsData.Reactions[0].Emoji)
 
-	warningsData, err := exportWarningsData(dstChat)
+	warningsData, err := exportWarningsData(db.DB, dstChat)
 	require.NoError(t, err)
 	require.NotNil(t, warningsData.Settings)
 	assert.Equal(t, 7, warningsData.Settings.WarnLimit)
@@ -267,7 +269,7 @@ func TestImportChatDataRejectsRemovedDomainsBeforeMutation(t *testing.T) {
 
 	require.ErrorContains(t, ImportChatData(chatID, bkp, nil), "unsupported domain: rules")
 
-	notes, err := findChatRows[models.Notes](chatID)
+	notes, err := findChatRows[models.Notes](db.DB, chatID)
 	require.NoError(t, err)
 	require.Len(t, notes, 1)
 	assert.Equal(t, "keep", notes[0].NoteName, "rejection must happen before any domain is written")
@@ -290,7 +292,7 @@ func TestImportChatDataRollsBackEarlierDomains(t *testing.T) {
 	backup.Data[DomainAntiflood] = "invalid_payload_type"
 
 	require.Error(t, ImportChatData(chatID, backup, nil))
-	notes, err := findChatRows[models.Notes](chatID)
+	notes, err := findChatRows[models.Notes](db.DB, chatID)
 	require.NoError(t, err)
 	require.Len(t, notes, 1)
 	assert.Equal(t, "original", notes[0].NoteName)
@@ -309,7 +311,7 @@ func TestClearChatDataRollsBackEarlierDomains(t *testing.T) {
 	// The unknown domain aborts the transaction, so the notes cleared first must
 	// come back.
 	require.Error(t, ClearChatData(chatID, []string{DomainNotes, "rules"}))
-	notes, err := findChatRows[models.Notes](chatID)
+	notes, err := findChatRows[models.Notes](db.DB, chatID)
 	require.NoError(t, err)
 	require.Len(t, notes, 1)
 	assert.Equal(t, "keep", notes[0].NoteName)
@@ -365,13 +367,13 @@ func TestImportConnectionsMovesAnExistingConnection(t *testing.T) {
 	}
 	require.NoError(t, ImportChatData(chatID, bkp, nil))
 
-	rows, err := findChatRows[models.ConnectionSettings](chatID)
+	rows, err := findChatRows[models.ConnectionSettings](db.DB, chatID)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, userID, rows[0].UserId)
 	assert.True(t, rows[0].Connected)
 
-	stale, err := findChatRows[models.ConnectionSettings](otherChat)
+	stale, err := findChatRows[models.ConnectionSettings](db.DB, otherChat)
 	require.NoError(t, err)
 	assert.Empty(t, stale)
 }

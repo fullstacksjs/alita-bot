@@ -1,56 +1,47 @@
 # Debug image with full shell access for troubleshooting
-# Multi-stage build to keep image size reasonable while preserving debug symbols
+# CGO is required for the mattn/go-sqlite3 driver.
 
-# Stage 1: Build using native platform
 FROM --platform=$BUILDPLATFORM golang:alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
 
-RUN apk add --no-cache curl wget gnupg git
+RUN apk add --no-cache curl wget gnupg git build-base sqlite-dev
 WORKDIR /app
 
-# Copy go mod files first for better layer caching
 COPY go.mod go.sum ./
 
-# Download dependencies - runs on native platform, cached unless go.mod/go.sum change
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go mod download && go mod verify
 
-# Copy source code
 COPY . .
 
-# Build the binary (debug mode - no optimization flags, preserves symbols)
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -trimpath \
     -o alita_robot .
 
-# Stage 2: Alpine runtime with shell access
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata sqlite-libs sqlite
 
 WORKDIR /app
 
-# Copy binary and migrations
 COPY --from=builder /app/alita_robot /app/alita_robot
-COPY --from=builder /app/migrations /app/migrations
 
-# Create non-root user
 RUN addgroup -g 65532 -S alita && \
     adduser -u 65532 -S alita -G alita && \
-    chown -R alita:alita /app
+    mkdir -p /data && \
+    chown -R alita:alita /app /data
 
 USER alita:alita
-
+VOLUME ["/data"]
 EXPOSE 8080
 
 ENTRYPOINT ["/app/alita_robot"]
 
-# Metadata
 LABEL org.opencontainers.image.authors="Divanshu Chauhan <divkix@divkix.me>"
 LABEL org.opencontainers.image.url="https://divkix.me"
 LABEL org.opencontainers.image.source="https://github.com/divkix/Alita_Robot"

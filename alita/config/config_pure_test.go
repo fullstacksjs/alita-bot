@@ -77,9 +77,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Setenv("BOT_TOKEN", "")
 		t.Setenv("OWNER_ID", "")
 		t.Setenv("MESSAGE_DUMP", "")
-		t.Setenv("DATABASE_URL", "")
-		t.Setenv("REDIS_ADDRESS", "")
-		t.Setenv("REDIS_URL", "")
+		t.Setenv("SQLITE_PATH", "")
 
 		_, err := LoadConfig()
 		if err == nil {
@@ -91,10 +89,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Setenv("BOT_TOKEN", "test-token")
 		t.Setenv("OWNER_ID", "12345")
 		t.Setenv("MESSAGE_DUMP", "67890")
-		t.Setenv("DATABASE_URL", "postgres://localhost/test")
-		t.Setenv("REDIS_ADDRESS", "redis:6379")
-		t.Setenv("REDIS_PASSWORD", "")
-		t.Setenv("REDIS_URL", "")
+		t.Setenv("SQLITE_PATH", "/tmp/test-alita.db")
 		t.Setenv("HTTP_PORT", "9090")
 
 		cfg, err := LoadConfig()
@@ -111,8 +106,8 @@ func TestLoadConfig(t *testing.T) {
 		if cfg.MessageDump != 67890 {
 			t.Errorf("MessageDump: got %d, want %d", cfg.MessageDump, 67890)
 		}
-		if cfg.DatabaseURL != "postgres://localhost/test" {
-			t.Errorf("DatabaseURL: got %q, want %q", cfg.DatabaseURL, "postgres://localhost/test")
+		if cfg.SQLitePath != "/tmp/test-alita.db" {
+			t.Errorf("SQLitePath: got %q, want %q", cfg.SQLitePath, "/tmp/test-alita.db")
 		}
 		if cfg.HTTPPort != 9090 {
 			t.Errorf("HTTPPort: got %d, want %d", cfg.HTTPPort, 9090)
@@ -130,12 +125,27 @@ func TestLoadConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("SQLITE_PATH defaults when unset", func(t *testing.T) {
+		t.Setenv("BOT_TOKEN", "tk")
+		t.Setenv("OWNER_ID", "1")
+		t.Setenv("MESSAGE_DUMP", "1")
+		t.Setenv("SQLITE_PATH", "")
+		t.Setenv("HTTP_PORT", "8080")
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.SQLitePath != "/data/alita.db" {
+			t.Errorf("SQLitePath: got %q, want %q", cfg.SQLitePath, "/data/alita.db")
+		}
+	})
+
 	t.Run("webhook config loaded correctly", func(t *testing.T) {
 		t.Setenv("BOT_TOKEN", "tk")
 		t.Setenv("OWNER_ID", "1")
 		t.Setenv("MESSAGE_DUMP", "1")
-		t.Setenv("DATABASE_URL", "postgres://localhost/test")
-		t.Setenv("REDIS_ADDRESS", "localhost:6379")
+		t.Setenv("SQLITE_PATH", "/tmp/test-alita.db")
 		t.Setenv("USE_WEBHOOKS", "true")
 		t.Setenv("WEBHOOK_DOMAIN", "example.com")
 		t.Setenv("WEBHOOK_SECRET", "shh")
@@ -161,8 +171,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Setenv("BOT_TOKEN", "tk")
 		t.Setenv("OWNER_ID", "1")
 		t.Setenv("MESSAGE_DUMP", "1")
-		t.Setenv("DATABASE_URL", "postgres://localhost/test")
-		t.Setenv("REDIS_ADDRESS", "localhost:6379")
+		t.Setenv("SQLITE_PATH", "/tmp/test-alita.db")
 		t.Setenv("ENABLE_PPROF", "yes")
 		t.Setenv("HTTP_PORT", "8080")
 
@@ -201,9 +210,9 @@ func TestValidateConfigPure(t *testing.T) {
 			wantErr: "MESSAGE_DUMP is required",
 		},
 		{
-			name:    "missing database URL",
-			setup:   func(c *Config) { c.DatabaseURL = "" },
-			wantErr: "DATABASE_URL is required",
+			name:    "missing sqlite path",
+			setup:   func(c *Config) { c.SQLitePath = "" },
+			wantErr: "SQLITE_PATH is required",
 		},
 
 		{
@@ -234,26 +243,6 @@ func TestValidateConfigPure(t *testing.T) {
 			setup:   func(c *Config) { c.DispatcherMaxRoutines = 1001 },
 			wantErr: "DISPATCHER_MAX_ROUTINES must be between 1 and 1000",
 		},
-		{
-			name:    "invalid idle connections",
-			setup:   func(c *Config) { c.DBMaxIdleConns = 101 },
-			wantErr: "DB_MAX_IDLE_CONNS must be between 1 and 100",
-		},
-		{
-			name:    "invalid open connections",
-			setup:   func(c *Config) { c.DBMaxOpenConns = 1001 },
-			wantErr: "DB_MAX_OPEN_CONNS must be between 1 and 1000",
-		},
-		{
-			name:    "invalid connection lifetime",
-			setup:   func(c *Config) { c.DBConnMaxLifetimeMin = 1441 },
-			wantErr: "DB_CONN_MAX_LIFETIME_MIN must be between 1 and 1440 minutes",
-		},
-		{
-			name:    "invalid idle time",
-			setup:   func(c *Config) { c.DBConnMaxIdleTimeMin = 61 },
-			wantErr: "DB_CONN_MAX_IDLE_TIME_MIN must be between 1 and 60 minutes",
-		},
 	}
 
 	for _, tc := range tests {
@@ -263,10 +252,6 @@ func TestValidateConfigPure(t *testing.T) {
 
 			cfg := validBaseConfig()
 			cfg.DispatcherMaxRoutines = 200
-			cfg.DBMaxIdleConns = 50
-			cfg.DBMaxOpenConns = 200
-			cfg.DBConnMaxLifetimeMin = 240
-			cfg.DBConnMaxIdleTimeMin = 60
 			tc.setup(cfg)
 
 			err := ValidateConfig(cfg)

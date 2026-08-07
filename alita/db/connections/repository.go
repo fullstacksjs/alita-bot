@@ -3,8 +3,6 @@ package connections
 import (
 	"errors"
 	"fmt"
-	"strings"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -17,19 +15,7 @@ import (
 )
 
 func retryOnLock(fn func() error) error {
-	var err error
-	for attempt := 0; attempt < 5; attempt++ {
-		err = fn()
-		if err == nil {
-			return nil
-		}
-		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(err.Error(), "locked") {
-			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
-			continue
-		}
-		break
-	}
-	return err
+	return db.RetryOnLock(fn)
 }
 
 // getUserConnectionSetting retrieves connection settings for a user.

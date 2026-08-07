@@ -11,7 +11,7 @@ type ChatFilters struct {
 	MsgType     int         `gorm:"column:msgtype" json:"msgtype,omitempty"`
 	FileID      string      `gorm:"column:fileid" json:"fileid,omitempty"`
 	NoNotif     bool        `gorm:"column:nonotif;default:false" json:"nonotif,omitempty"`
-	Buttons     ButtonArray `gorm:"column:filter_buttons;type:jsonb" json:"filter_buttons,omitempty"`
+	Buttons     ButtonArray `gorm:"column:filter_buttons;type:text" json:"filter_buttons,omitempty"`
 	CreatedAt   time.Time   `gorm:"column:created_at" json:"created_at,omitempty"`
 	UpdatedAt   time.Time   `gorm:"column:updated_at" json:"updated_at,omitempty"`
 }

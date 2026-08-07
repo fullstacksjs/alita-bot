@@ -3,7 +3,6 @@ package user
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
@@ -71,17 +70,9 @@ func EnsureUserInDb(userId int64, username, firstName string) error {
 		onConflict.DoUpdates = clause.AssignmentColumns(columns)
 	}
 	var err error
-	for attempt := 0; attempt < 5; attempt++ {
-		err = db.DB.Clauses(onConflict).Create(userUpdate).Error
-		if err == nil {
-			break
-		}
-		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(err.Error(), "locked") {
-			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
-			continue
-		}
-		break
-	}
+	err = db.RetryOnLock(func() error {
+		return db.DB.Clauses(onConflict).Create(userUpdate).Error
+	})
 	if err != nil {
 		log.Errorf("[Database] EnsureUserInDb: %v", err)
 		return fmt.Errorf("failed to ensure user %d in database: %w", userId, err)
@@ -115,23 +106,14 @@ func UpdateUser(userId int64, username, name string) error {
 		LastActivity: now,
 	}
 	var err error
-	for attempt := 0; attempt < 5; attempt++ {
-		err = db.DB.Clauses(clause.OnConflict{
+	err = db.RetryOnLock(func() error {
+		return db.DB.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "user_id"}},
 			DoUpdates: clause.AssignmentColumns(
 				[]string{"username", "name", "last_activity", "updated_at"},
 			),
 		}).Create(userRecord).Error
-		if err == nil {
-			break
-		}
-		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(err.Error(), "locked") {
-			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
-			continue
-		}
-		log.Errorf("[Database] UpdateUser: %v - %d", err, userId)
-		return err
-	}
+	})
 	if err != nil {
 		log.Errorf("[Database] UpdateUser: %v - %d", err, userId)
 		return err

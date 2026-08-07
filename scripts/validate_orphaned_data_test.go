@@ -25,11 +25,11 @@ func TestFindOrphanReportsCleanDatabase(t *testing.T) {
 
 func TestFindOrphanReportsIncludesCleanupSQL(t *testing.T) {
 	gdb := newValidationTestDB(t)
-	if err := gdb.Exec("INSERT INTO admin (chat_id) VALUES (?)", int64(999)).Error; err != nil {
-		t.Fatalf("insert orphan admin: %v", err)
+	if err := gdb.Exec("INSERT INTO blacklists (chat_id) VALUES (?)", int64(999)).Error; err != nil {
+		t.Fatalf("insert orphan blacklist: %v", err)
 	}
-	if err := gdb.Exec("INSERT INTO devs (user_id) VALUES (?)", int64(888)).Error; err != nil {
-		t.Fatalf("insert orphan dev: %v", err)
+	if err := gdb.Exec("INSERT INTO warn_events (chat_id, user_id) VALUES (?, ?)", int64(1), int64(888)).Error; err != nil {
+		t.Fatalf("insert orphan warn_events: %v", err)
 	}
 
 	reports, err := findOrphanReports(gdb, defaultOrphanChecks())
@@ -45,8 +45,8 @@ func TestFindOrphanReportsIncludesCleanupSQL(t *testing.T) {
 		got[report.Table] = report
 	}
 	for table, sqlSnippet := range map[string]string{
-		"admin": "DELETE FROM admin",
-		"devs":  "DELETE FROM devs",
+		"blacklists":  "DELETE FROM blacklists",
+		"warn_events": "DELETE FROM warn_events",
 	} {
 		report, ok := got[table]
 		if !ok {
@@ -72,14 +72,14 @@ func TestRunOrphanValidationWritesCleanAndDirtyResults(t *testing.T) {
 	}
 
 	dirtyDB := newValidationTestDB(t)
-	if err := dirtyDB.Exec("INSERT INTO admin (chat_id) VALUES (?)", int64(999)).Error; err != nil {
-		t.Fatalf("insert orphan admin: %v", err)
+	if err := dirtyDB.Exec("INSERT INTO blacklists (chat_id) VALUES (?)", int64(999)).Error; err != nil {
+		t.Fatalf("insert orphan blacklist: %v", err)
 	}
 	var dirtyOut bytes.Buffer
 	if code := runOrphanValidation(dirtyDB, &dirtyOut); code != 1 {
 		t.Fatalf("runOrphanValidation(dirty) code = %d, want 1", code)
 	}
-	for _, want := range []string{"Found 1 types of orphaned records", "DELETE FROM admin"} {
+	for _, want := range []string{"Found 1 types of orphaned records", "DELETE FROM blacklists"} {
 		if !strings.Contains(dirtyOut.String(), want) {
 			t.Fatalf("dirty output missing %q: %q", want, dirtyOut.String())
 		}
@@ -155,12 +155,8 @@ func newValidationTestDB(t *testing.T) *gorm.DB {
 	for _, check := range defaultOrphanChecks() {
 		columns := "chat_id INTEGER"
 		switch check.table {
-		case "devs":
-			columns = "user_id INTEGER"
-		case "chat_users", "connection", "warn_events":
+		case "approved_users", "connection", "warn_events":
 			columns = "chat_id INTEGER, user_id INTEGER"
-		case "channels":
-			columns = "chat_id INTEGER, channel_id INTEGER"
 		}
 		if err := gdb.Exec("CREATE TABLE IF NOT EXISTS " + check.table + " (" + columns + ")").Error; err != nil {
 			t.Fatalf("create %s: %v", check.table, err)

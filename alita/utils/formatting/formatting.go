@@ -12,10 +12,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/db/rules"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 )
 
@@ -28,7 +26,8 @@ const (
 
 // precompiled regexes and replacer for ReverseHTML2MD.
 var (
-	linkRegex = regexp.MustCompile(`<a href="(.*?)">(.*?)</a>`)
+	linkRegex               = regexp.MustCompile(`<a href="(.*?)">(.*?)</a>`)
+	rulesPlaceholderPattern = regexp.MustCompile(`(?s)\{rules(:(same|up))?\}`)
 	// htmlToMdReplacer efficiently replaces HTML tags with Markdown in a single pass.
 	htmlToMdReplacer = strings.NewReplacer(
 		"<b>", "*",
@@ -168,15 +167,14 @@ func ReverseHTML2MD(text string) string {
 
 // FormattingReplacer processes message text and replaces placeholders with actual user/chat data.
 // Handles variables like {first}, {last}, {username}, {mention}, {count}, {chatname}, {id}.
-// Also processes rules button insertion with various positioning options.
+// Legacy {rules} placeholders are stripped; the rules module is no longer retained.
 func FormattingReplacer(b *gotgbot.Bot, chat *gotgbot.Chat, user *gotgbot.User, oldMsg string, buttons []db.Button) (res string, btns []db.Button) {
 	var (
-		firstName     string
-		lastName      string
-		fullName      string
-		username      string
-		userId        int64
-		rulesBtnRegex = `(?s){rules(:(same|up))?}`
+		firstName string
+		lastName  string
+		fullName  string
+		username  string
+		userId    int64
 	)
 
 	if user == nil {
@@ -230,50 +228,8 @@ func FormattingReplacer(b *gotgbot.Bot, chat *gotgbot.Chat, user *gotgbot.User, 
 		"{id}", strconv.Itoa(int(userId)),
 	)
 
-	pattern, err := regexp.Compile(rulesBtnRegex)
-	if err != nil {
-		log.Error(err)
-		return r.Replace(oldMsg), buttons
-	}
-	response := pattern.FindStringSubmatch(oldMsg)
-	if response == nil {
-		return r.Replace(oldMsg), buttons
-	}
-
-	res = r.Replace(pattern.ReplaceAllString(oldMsg, ""))
-	btns = buttons
-
-	rulesDb := rules.GetChatRulesInfo(chat.Id)
-	if rulesDb.Rules == "" {
-		return res, btns
-	}
-
-	rulesBtnText := rulesDb.RulesBtn
-	if rulesBtnText == "" {
-		tr := i18n.English()
-		defaultRulesText, _ := tr.GetString("button_rules_default")
-		if defaultRulesText == "" {
-			defaultRulesText = "Rules"
-		}
-		rulesBtnText = defaultRulesText
-	}
-
-	sameline := response[2] == "same"
-	rulesButton := db.Button{
-		Name:     rulesBtnText,
-		Url:      fmt.Sprintf("https://t.me/%s?start=rules_%d", b.Username, chat.Id),
-		SameLine: sameline,
-	}
-
-	if response[2] == "up" {
-		btns = []db.Button{rulesButton}
-		btns = append(btns, buttons...)
-	} else {
-		btns = buttons
-		btns = append(btns, rulesButton)
-	}
-
-	return res, btns
+	cleaned := rulesPlaceholderPattern.ReplaceAllString(oldMsg, "")
+	return r.Replace(cleaned), buttons
 }
 
 // GetFullName combines first name and last name into a full name.

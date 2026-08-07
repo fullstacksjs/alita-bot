@@ -10,8 +10,7 @@ services:
     container_name: alita-robot
     restart: always
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alita}:${POSTGRES_PASSWORD:-alita}@postgres:5432/${POSTGRES_DB:-alita}
-      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
+      SQLITE_PATH: ${SQLITE_PATH:-/data/alita.db}
       USE_WEBHOOKS: ${USE_WEBHOOKS:-false}
       HTTP_PORT: ${HTTP_PORT:-8080}
       DROP_PENDING_UPDATES: ${DROP_PENDING_UPDATES:-true}
@@ -22,9 +21,8 @@ services:
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
     ports:
       - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    volumes:
+      - alita_data:/data
     healthcheck:
       test: ["CMD", "/app/alita_robot", "--health"]
       interval: 30s
@@ -39,29 +37,5 @@ services:
           memory: 256M
           cpus: "0.25"
 
-  postgres:
-    image: postgres:17-alpine
-    container_name: alita-postgres
-    restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-alita}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alita}
-      POSTGRES_DB: ${POSTGRES_DB:-alita}
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alita} -d ${POSTGRES_DB:-alita}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "0.5"
-
 volumes:
-  postgres_data:
+  alita_data:

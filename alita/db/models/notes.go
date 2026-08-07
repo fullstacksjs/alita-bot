@@ -28,7 +28,7 @@ type Notes struct {
 	NoteContent string      `gorm:"column:note_content;type:text" json:"note_content,omitempty"`
 	FileID      string      `gorm:"column:file_id" json:"file_id,omitempty"`
 	MsgType     int         `gorm:"column:msg_type" json:"msg_type,omitempty"`
-	Buttons     ButtonArray `gorm:"column:buttons;type:jsonb" json:"buttons,omitempty"`
+	Buttons     ButtonArray `gorm:"column:buttons;type:text" json:"buttons,omitempty"`
 	AdminOnly   bool        `gorm:"column:admin_only;default:false" json:"admin_only,omitempty"`
 	PrivateOnly bool        `gorm:"column:private_only;default:false" json:"private_only,omitempty"`
 	GroupOnly   bool        `gorm:"column:group_only;default:false" json:"group_only,omitempty"`

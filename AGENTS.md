@@ -15,10 +15,10 @@ easy to discover from code, tests, `sample.env`, or workflow files.
 - `alita/modules/`: Telegram commands, callbacks, watchers, and module registry.
 - `alita/db/models/`: GORM models; `alita/db/<domain>/`: domain repositories.
 - `alita/db/cache/`: repository read-through cache; `alita/utils/cache/`: admin
-  cache plus the Redis connection and remaining operational caches;
-  `alita/utils/state/`: the in-process TTL store both build on.
+  cache; `alita/utils/state/`: the in-process TTL store both build on.
 - `alita/i18n/` and `locales/`: embedded English strings and command metadata.
-- `migrations/`: authoritative PostgreSQL schema and forward-only migrations.
+- `alita/db/migrations/sqlite/`: embedded SQLite baseline and forward-only
+  migrations.
 - `internal/repo_checks/`: source-structure assertions that may need updates after
   renames or refactors.
 - `scripts/check_translations/`: separate Go module for locale validation.
@@ -30,7 +30,6 @@ make run
 make build
 make lint
 make test
-make test-postgres-integrity   # requires DATABASE_URL
 make check-translations
 make check-duplicates
 make tidy
@@ -39,28 +38,25 @@ make tidy
 go test -v -run TestXxx ./path/to/package
 
 # Database tooling
-make psql-migrate
-make psql-status
 make validate-db
-make backup-db
 
 # Release version bump
 make bump-version TAG=vX.Y.Z
 ```
 
-The normal test suite uses SQLite and miniredis. Race tests require CGO and a C
-toolchain. CI also verifies the complete migration chain and PostgreSQL-specific
-integrity tests; consult `.github/workflows/ci.yml` for the current coverage gate
-and exact CI versions.
+The normal test suite uses temporary SQLite files via the embedded baseline.
+Race tests require CGO and a C toolchain. Consult `.github/workflows/ci.yml` for
+the current coverage gate and exact CI versions.
 
 ## Architecture and startup
 
 - Importing `alita/config` loads and validates global configuration; importing
-  `alita/db` opens PostgreSQL. Both happen in package `init()` and short-circuit
-  for supported CLI flags or missing test configuration. Do not move them into
+  `alita/db` opens SQLite at `SQLITE_PATH` (default `/data/alita.db`) and applies
+  embedded migrations. Both happen in package `init()` and short-circuit for
+  supported CLI flags or missing test configuration. Do not move them into
   `main()` without redesigning all import-time behavior.
-- `main()` initializes Redis before locales and modules, then tracing, the bot,
-  DB anchors, dispatcher, monitors, shutdown, and polling or webhook delivery.
+- `main()` initializes locales and modules, then tracing, the bot, DB anchors,
+  dispatcher, monitors, shutdown, and polling or webhook delivery.
 - Modules self-register in `init()` and load by ascending priority. Help is
   deliberately loaded last so all module metadata is available.
 - Handler groups define update flow: negative groups are early interceptors,
@@ -86,7 +82,8 @@ and exact CI versions.
   content must also re-check admin status.
 - Use `alita/utils/callbackcodec` for callback data. Telegram limits it to 64
   bytes. Never parse raw callback data with `strings.Split`; store large or
-  user-controlled payloads in Redis behind a short, user-bound token.
+  user-controlled payloads in the in-process TTL store behind a short,
+  user-bound token.
 - Permission helpers may already answer callback queries. Do not answer a second
   time after a failed check.
 - State changes that gate a confirmation or success response must complete
@@ -96,41 +93,30 @@ and exact CI versions.
 
 ## Database and migrations
 
-- Raw SQL in `migrations/*.sql` is the production schema source of truth; GORM
-  `AutoMigrate` is test-only. For schema changes, update the migration, model,
-  optimized query columns, repository behavior, and the SQLite AutoMigrate list
-  in `testmain_test.go`.
-- Applied migrations are immutable because the runners verify SHA-256 checksums
-  of raw bytes. Always add a newer timestamped migration. Do not use
-  `CREATE INDEX CONCURRENTLY`, because each migration runs in a transaction.
-- Keep runtime migration cleaning/splitting and `scripts/migrate_psql.sh`
-  behavior aligned.
+- Embedded SQL in `alita/db/migrations/sqlite/*.sql` is the production schema
+  source of truth. For schema changes, add a newer timestamped embedded
+  migration, update the model, optimized query columns, and repository behavior.
+- Applied migrations are immutable because the runner verifies SHA-256 checksums
+  of raw bytes. Always add a newer timestamped migration.
 - Models use surrogate `ID` primary keys; Telegram IDs are separate unique
   columns. Confirm each model's `TableName()` and actual migration columns before
   writing raw SQL.
 - GORM struct updates omit zero values. Persist `false`, `0`, or `""` with
   `UpdateRecordWithZeroValues` and a map.
-- `ReportChatSettings` and `ReportUserSettings` retain alias fields `Enabled` and
-  `Status`; set them consistently.
 - Repository writes must invalidate every affected cache using the exact existing
   key prefix. Prefixes are not consistently the same as package or table names,
   so follow nearby repository code rather than guessing.
-- Use existing conflict-safe upsert and row-locking patterns for concurrently
-  writable data. Do not replace them with read-then-create logic.
+- Use existing conflict-safe upsert and `db.RetryOnLock` patterns for
+  concurrently writable data. Do not replace them with read-then-create logic.
 - Repository reads often return safe defaults instead of propagating errors; do
   not use those defaults as proof that a row exists.
 
-## Redis and cache behavior
+## Cache and ephemeral state
 
 - Retained repository caching (`alita/db/cache`) and the Telegram administrator
-  cache live in the in-process TTL store (`alita/utils/state`). They never
-  serialize through Redis, so cached values are shared between callers: treat
-  reads as read-only, or return a copy as `AdminCache` does.
-- Redis remains for the operational caches that still need it (restricted-chat
-  probes, greeting locks, the `/db_metrics` health probe). Those helpers must
-  tolerate a nil marshaler and fall back safely.
-- `ClearAllCaches` flushes the entire selected Redis database. The deployment
-  assumes that database is dedicated to this bot.
+  cache live in the in-process TTL store (`alita/utils/state`). Cached values are
+  shared between callers: treat reads as read-only, or return a copy as
+  `AdminCache` does.
 - Do not bypass repository `DeleteCache` or `InvalidateAdminCache`: both bump an
   invalidation generation that prevents an in-flight load from restoring stale
   data, and `InvalidateAdminCache` also forgets the in-flight singleflight load.
@@ -140,7 +126,7 @@ and exact CI versions.
   `GetAndDelete`; preserve user binding, TTLs, and replay protection.
 - Tests that must observe the database directly disable repository caching with
   `dbcache.SetEnabled(false)` and reset in-process entries with
-  `state.SimulateRestart()`; a nil marshaler no longer disables caching.
+  `state.SimulateRestart()`.
 
 ## Locale and message content
 

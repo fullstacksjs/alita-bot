@@ -10,12 +10,9 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/channels"
 	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/connections"
-	"github.com/divkix/Alita_Robot/alita/db/disabling"
 	"github.com/divkix/Alita_Robot/alita/db/filters"
 	"github.com/divkix/Alita_Robot/alita/db/greetings"
 	"github.com/divkix/Alita_Robot/alita/db/notes"
-	"github.com/divkix/Alita_Robot/alita/db/pins"
-	"github.com/divkix/Alita_Robot/alita/db/rules"
 	"github.com/divkix/Alita_Robot/alita/db/user"
 	"github.com/dustin/go-humanize"
 )
@@ -27,12 +24,9 @@ func LoadAllStats() string {
 	activeChats, inactiveChats := chats.LoadChatStats()
 	dag, wag, mag := chats.LoadActivityStats()
 	dau, wau, mau := user.LoadUserActivityStats()
-	AcCount, ClCount := pins.LoadPinStats()
 	antiCount := antiflood.LoadAntifloodStats()
-	setRules, pvtRules := rules.LoadRulesStats()
 	blacklistTriggers, blacklistChats := blacklists.LoadBlacklistsStats()
 	connectedUsers, _ := connections.LoadConnectionStats()
-	disabledCmds, disableEnabledChats := disabling.LoadDisableStats()
 	filtersNum, filtersChats := filters.LoadFilterStats()
 	enabledWelcome, cleanServiceEnabled, cleanWelcomeEnabled := greetings.LoadGreetingsStats()
 	notesNum, notesChats := notes.LoadNotesStats()
@@ -72,12 +66,6 @@ func LoadAllStats() string {
 		fmt.Sprintf("\n    <b>Daily Active Users (DAU):</b> %s", humanize.Comma(dau)) +
 		fmt.Sprintf("\n    <b>Weekly Active Users (WAU):</b> %s", humanize.Comma(wau)) +
 		fmt.Sprintf("\n    <b>Monthly Active Users (MAU):</b> %s", humanize.Comma(mau)) +
-		"\n<b>Pins:</b>" +
-		fmt.Sprintf("\n    <b>CleanLinked Enabled:</b> %s", humanize.Comma(ClCount)) +
-		fmt.Sprintf("\n    <b>AntiChannelPin Enabled:</b> %s", humanize.Comma(AcCount)) +
-		"\n<b>Rules:</b>" +
-		fmt.Sprintf("\n    <b>Set:</b> %s", humanize.Comma(setRules)) +
-		fmt.Sprintf("\n    <b>Private:</b> %s", humanize.Comma(pvtRules)) +
 		fmt.Sprintf(
 			"\n<b>Blacklists:</b> %s triggers in %s chats",
 			humanize.Comma(blacklistTriggers),
@@ -85,11 +73,6 @@ func LoadAllStats() string {
 		) +
 		"\n<b>Connections:</b>" +
 		fmt.Sprintf("\n    %s users connected to chats", humanize.Comma(connectedUsers)) +
-		fmt.Sprintf(
-			"\n<b>Disabling:</b> %s commands disabled in %s chats",
-			humanize.Comma(disabledCmds),
-			humanize.Comma(disableEnabledChats),
-		) +
 		fmt.Sprintf(
 			"\n<b>Filters:</b> %s filters saved in %s chats",
 			humanize.Comma(filtersNum),

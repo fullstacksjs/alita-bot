@@ -10,8 +10,7 @@ const sqliteRetryAttempts = 10
 
 // RetryOnLock runs fn and retries it while SQLite reports a busy or locked
 // database. SQLite serializes writers, so concurrent setting changes surface as
-// transient "database is locked" errors rather than lost updates. Every other
-// error, and every dialect other than SQLite, returns immediately.
+// transient "database is locked" errors rather than lost updates.
 func RetryOnLock(fn func() error) error {
 	var err error
 	for attempt := 0; attempt < sqliteRetryAttempts; attempt++ {
@@ -29,7 +28,7 @@ func RetryOnLock(fn func() error) error {
 
 // isSQLiteLockError reports whether err is a transient SQLite contention error.
 func isSQLiteLockError(err error) bool {
-	if DB == nil || DB.Dialector == nil || DB.Name() != "sqlite" {
+	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())

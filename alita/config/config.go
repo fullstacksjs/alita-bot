@@ -29,8 +29,6 @@ func isCliModeActive() bool {
 	return false
 }
 
-
-
 func getHTTPPort() int {
 	value := os.Getenv("HTTP_PORT")
 	if value == "" {
@@ -54,20 +52,11 @@ type Config struct {
 	DropPendingUpdates bool
 	AllowedUpdates     []string
 
-	// Database configuration
-	DatabaseURL string `validate:"required"`
-	SQLitePath  string
-
-	// Database connection pool configuration
-	DBMaxIdleConns       int `validate:"min=1,max=100"`
-	DBMaxOpenConns       int `validate:"min=1,max=1000"`
-	DBConnMaxLifetimeMin int `validate:"min=1,max=1440"` // Max lifetime in minutes
-	DBConnMaxIdleTimeMin int `validate:"min=1,max=60"`   // Max idle time in minutes
+	// Database configuration (SQLite only)
+	SQLitePath string
 
 	// Database monitoring configuration
 	EnableDBMonitoring bool `env:"ENABLE_DB_MONITORING" envDefault:"false"`
-
-
 
 	// HTTP Server configuration (unified server for health, metrics, webhook)
 	HTTPPort int `validate:"min=1,max=65535"`
@@ -82,8 +71,6 @@ type Config struct {
 	EnableBackgroundStats       bool
 	DispatcherMaxRoutines       int `validate:"min=1,max=1000"` // Max concurrent goroutines for dispatcher
 
-
-
 	// Activity monitoring configuration
 	InactivityThresholdDays int  `validate:"min=1,max=365"` // Days before marking a chat as inactive
 	ActivityCheckInterval   int  `validate:"min=1,max=24"`  // Hours between activity checks
@@ -92,11 +79,6 @@ type Config struct {
 	// Performance optimization settings
 	HTTPMaxIdleConns        int `validate:"min=10,max=1000"` // HTTP connection pool size
 	HTTPMaxIdleConnsPerHost int `validate:"min=5,max=500"`   // HTTP connections per host
-
-	// Database migration settings
-	AutoMigrate           bool   // Enable automatic database migrations on startup
-	AutoMigrateSilentFail bool   // Continue running even if migrations fail
-	MigrationsPath        string // Path to migration files (defaults to migrations)
 
 	// Resource monitoring limits
 	ResourceMaxGoroutines int `validate:"min=100,max=10000"` // Maximum goroutines before triggering cleanup
@@ -126,10 +108,9 @@ func ValidateConfig(cfg *Config) error {
 	if cfg.MessageDump == 0 {
 		return fmt.Errorf("MESSAGE_DUMP is required and must be greater than 0")
 	}
-	if cfg.DatabaseURL == "" && cfg.SQLitePath == "" {
-		return fmt.Errorf("DATABASE_URL is required")
+	if cfg.SQLitePath == "" {
+		return fmt.Errorf("SQLITE_PATH is required")
 	}
-
 
 	// Validate webhook configuration if webhooks are enabled
 	if cfg.UseWebhooks {
@@ -149,20 +130,6 @@ func ValidateConfig(cfg *Config) error {
 	// Validate performance limits
 	if cfg.DispatcherMaxRoutines != 0 && (cfg.DispatcherMaxRoutines < 1 || cfg.DispatcherMaxRoutines > 1000) {
 		return fmt.Errorf("DISPATCHER_MAX_ROUTINES must be between 1 and 1000")
-	}
-
-	// Validate database connection pool configuration
-	if cfg.DBMaxIdleConns != 0 && (cfg.DBMaxIdleConns < 1 || cfg.DBMaxIdleConns > 100) {
-		return fmt.Errorf("DB_MAX_IDLE_CONNS must be between 1 and 100")
-	}
-	if cfg.DBMaxOpenConns != 0 && (cfg.DBMaxOpenConns < 1 || cfg.DBMaxOpenConns > 1000) {
-		return fmt.Errorf("DB_MAX_OPEN_CONNS must be between 1 and 1000")
-	}
-	if cfg.DBConnMaxLifetimeMin != 0 && (cfg.DBConnMaxLifetimeMin < 1 || cfg.DBConnMaxLifetimeMin > 1440) {
-		return fmt.Errorf("DB_CONN_MAX_LIFETIME_MIN must be between 1 and 1440 minutes")
-	}
-	if cfg.DBConnMaxIdleTimeMin != 0 && (cfg.DBConnMaxIdleTimeMin < 1 || cfg.DBConnMaxIdleTimeMin > 60) {
-		return fmt.Errorf("DB_CONN_MAX_IDLE_TIME_MIN must be between 1 and 60 minutes")
 	}
 
 	return nil
@@ -188,19 +155,10 @@ func LoadConfig() (*Config, error) {
 		DropPendingUpdates: typeConvertor{str: os.Getenv("DROP_PENDING_UPDATES")}.Bool(),
 
 		// Database configuration
-		DatabaseURL: os.Getenv("DATABASE_URL"),
-		SQLitePath:  os.Getenv("SQLITE_PATH"),
-
-		// Database connection pool configuration
-		DBMaxIdleConns:       typeConvertor{str: os.Getenv("DB_MAX_IDLE_CONNS")}.Int(),
-		DBMaxOpenConns:       typeConvertor{str: os.Getenv("DB_MAX_OPEN_CONNS")}.Int(),
-		DBConnMaxLifetimeMin: typeConvertor{str: os.Getenv("DB_CONN_MAX_LIFETIME_MIN")}.Int(),
-		DBConnMaxIdleTimeMin: typeConvertor{str: os.Getenv("DB_CONN_MAX_IDLE_TIME_MIN")}.Int(),
+		SQLitePath: os.Getenv("SQLITE_PATH"),
 
 		// Database monitoring configuration
 		EnableDBMonitoring: typeConvertor{str: os.Getenv("ENABLE_DB_MONITORING")}.Bool(),
-
-
 
 		// HTTP Server configuration
 		HTTPPort: getHTTPPort(),
@@ -215,8 +173,6 @@ func LoadConfig() (*Config, error) {
 		EnableBackgroundStats:       typeConvertor{str: os.Getenv("ENABLE_BACKGROUND_STATS")}.Bool(),
 		DispatcherMaxRoutines:       typeConvertor{str: os.Getenv("DISPATCHER_MAX_ROUTINES")}.Int(),
 
-
-
 		// Activity monitoring configuration
 		InactivityThresholdDays: typeConvertor{str: os.Getenv("INACTIVITY_THRESHOLD_DAYS")}.Int(),
 		ActivityCheckInterval:   typeConvertor{str: os.Getenv("ACTIVITY_CHECK_INTERVAL")}.Int(),
@@ -225,11 +181,6 @@ func LoadConfig() (*Config, error) {
 		// Performance optimization settings
 		HTTPMaxIdleConns:        typeConvertor{str: os.Getenv("HTTP_MAX_IDLE_CONNS")}.Int(),
 		HTTPMaxIdleConnsPerHost: typeConvertor{str: os.Getenv("HTTP_MAX_IDLE_CONNS_PER_HOST")}.Int(),
-
-		// Database migration settings
-		AutoMigrate:           typeConvertor{str: os.Getenv("AUTO_MIGRATE")}.Bool(),
-		AutoMigrateSilentFail: typeConvertor{str: os.Getenv("AUTO_MIGRATE_SILENT_FAIL")}.Bool(),
-		MigrationsPath:        os.Getenv("MIGRATIONS_PATH"),
 
 		// Resource monitoring limits
 		ResourceMaxGoroutines: typeConvertor{str: os.Getenv("RESOURCE_MAX_GOROUTINES")}.Int(),
@@ -283,7 +234,6 @@ func (cfg *Config) setDefaults() {
 		cfg.WorkingMode = "worker"
 	}
 
-
 	if cfg.HTTPPort == 0 {
 		cfg.HTTPPort = 8080
 	}
@@ -300,26 +250,10 @@ func (cfg *Config) setDefaults() {
 		cfg.EnableAutoCleanup = true
 	}
 
-	// Set database connection pool defaults (optimized for performance)
-	if cfg.DBMaxIdleConns == 0 {
-		cfg.DBMaxIdleConns = 50 // Keep more connections warm
-	}
-	if cfg.DBMaxOpenConns == 0 {
-		cfg.DBMaxOpenConns = 200 // Handle burst traffic better
-	}
-	if cfg.DBConnMaxLifetimeMin == 0 {
-		cfg.DBConnMaxLifetimeMin = 240 // 4 hours - reuse connections longer
-	}
-	if cfg.DBConnMaxIdleTimeMin == 0 {
-		cfg.DBConnMaxIdleTimeMin = 60 // 1 hour - keep idle connections longer
-	}
-
 	// Set default safety limits
 	if cfg.DispatcherMaxRoutines == 0 {
 		cfg.DispatcherMaxRoutines = 200 // Optimized for better throughput
 	}
-
-
 
 	// Enable monitoring by default in production
 	if !cfg.Debug {
@@ -331,8 +265,8 @@ func (cfg *Config) setDefaults() {
 		}
 	}
 
-	if cfg.DatabaseURL == "" && cfg.SQLitePath != "" {
-		cfg.DatabaseURL = cfg.SQLitePath
+	if cfg.SQLitePath == "" {
+		cfg.SQLitePath = "/data/alita.db"
 	}
 
 	// Set performance optimization defaults (enabled by default for better performance)
@@ -342,13 +276,6 @@ func (cfg *Config) setDefaults() {
 	if cfg.HTTPMaxIdleConnsPerHost == 0 {
 		cfg.HTTPMaxIdleConnsPerHost = 50
 	}
-
-	// Set database migration defaults
-	if cfg.MigrationsPath == "" {
-		cfg.MigrationsPath = "migrations"
-	}
-	// AutoMigrate defaults to false for backward compatibility
-	// AutoMigrateSilentFail defaults to false
 
 	// Set resource monitoring defaults
 	if cfg.ResourceMaxGoroutines == 0 {
@@ -410,7 +337,6 @@ func init() {
 	// containing the DSN, or a startup dump).
 	logredact.RegisterSecret(
 		cfg.BotToken,
-		cfg.DatabaseURL,
 		cfg.WebhookSecret,
 		cfg.MetricsAuthToken,
 	)

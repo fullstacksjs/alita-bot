@@ -31,125 +31,44 @@ func main() {
 }
 
 func defaultOrphanChecks() []orphanCheck {
-	// Keep this list in sync with STEP 1 orphan cleanup in
-	// migrations/20250805204145_add_foreign_key_relations.sql.
-	return []orphanCheck{
-		{
-			table:     "admin",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM admin WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "antiflood_settings",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM antiflood_settings WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "blacklists",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM blacklists WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "channels",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM channels WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "channels",
-			condition: "channel_id IS NOT NULL AND channel_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent channel_id",
-			cleanup: "UPDATE channels SET channel_id = NULL WHERE channel_id IS NOT NULL " +
-				"AND channel_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "disable",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM disable WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "filters",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM filters WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "greetings",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM greetings WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "locks",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM locks WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "notes",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM notes WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "notes_settings",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM notes_settings WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "pins",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM pins WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "rules",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM rules WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "warns_settings",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
-			issue:     "Records with non-existent chat_id",
-			cleanup:   "DELETE FROM warns_settings WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
-		},
-		{
-			table:     "devs",
-			condition: "user_id NOT IN (SELECT user_id FROM users)",
-			issue:     "Records with non-existent user_id",
-			cleanup:   "DELETE FROM devs WHERE user_id NOT IN (SELECT user_id FROM users);",
-		},
-		{
-			table: "chat_users",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats) OR " +
-				"user_id NOT IN (SELECT user_id FROM users)",
-			issue: "Records with non-existent chat_id or user_id",
-			cleanup: "DELETE FROM chat_users WHERE chat_id NOT IN (SELECT chat_id FROM chats) " +
-				"OR user_id NOT IN (SELECT user_id FROM users);",
-		},
-		{
-			table: "connection",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats) OR " +
-				"user_id NOT IN (SELECT user_id FROM users)",
-			issue: "Records with non-existent chat_id or user_id",
-			cleanup: "DELETE FROM connection WHERE chat_id NOT IN (SELECT chat_id FROM chats) " +
-				"OR user_id NOT IN (SELECT user_id FROM users);",
-		},
-		{
-			table: "warn_events",
-			condition: "chat_id NOT IN (SELECT chat_id FROM chats) OR " +
-				"user_id NOT IN (SELECT user_id FROM users)",
-			issue: "Records with non-existent chat_id or user_id",
-			cleanup: "DELETE FROM warn_events WHERE chat_id NOT IN (SELECT chat_id FROM chats) " +
-				"OR user_id NOT IN (SELECT user_id FROM users);",
-		},
+	// Keep this list in sync with the FOREIGN KEY relations declared in
+	// alita/db/migrations/sqlite/20260806000000_sqlite_baseline.sql.
+	// The channels table intentionally has no chat_id FK: it stores a
+	// channel's own Telegram ID, not a reference to a row in chats.
+	chatOwnedTables := []string{
+		"antiflood_settings",
+		"antiraid_settings",
+		"blacklists",
+		"filters",
+		"greetings",
+		"notes",
+		"notes_settings",
+		"reactions",
+		"warns_settings",
 	}
+
+	checks := make([]orphanCheck, 0, len(chatOwnedTables)+3)
+	for _, table := range chatOwnedTables {
+		checks = append(checks, orphanCheck{
+			table:     table,
+			condition: "chat_id NOT IN (SELECT chat_id FROM chats)",
+			issue:     "Records with non-existent chat_id",
+			cleanup:   "DELETE FROM " + table + " WHERE chat_id NOT IN (SELECT chat_id FROM chats);",
+		})
+	}
+
+	for _, table := range []string{"approved_users", "connection", "warn_events"} {
+		checks = append(checks, orphanCheck{
+			table: table,
+			condition: "chat_id NOT IN (SELECT chat_id FROM chats) OR " +
+				"user_id NOT IN (SELECT user_id FROM users)",
+			issue: "Records with non-existent chat_id or user_id",
+			cleanup: "DELETE FROM " + table + " WHERE chat_id NOT IN (SELECT chat_id FROM chats) " +
+				"OR user_id NOT IN (SELECT user_id FROM users);",
+		})
+	}
+
+	return checks
 }
 
 func findOrphanReports(database *gorm.DB, checks []orphanCheck) ([]OrphanReport, error) {
@@ -177,7 +96,7 @@ func findOrphanReports(database *gorm.DB, checks []orphanCheck) ([]OrphanReport,
 func runOrphanValidation(database *gorm.DB, out io.Writer) int {
 	// Database initialization happens in db package init.
 	if database == nil {
-		log.Print("[Validation] Database not initialized. Set DATABASE_URL environment variable.")
+		log.Print("[Validation] Database not initialized. Set SQLITE_PATH environment variable.")
 		return 1
 	}
 
@@ -228,13 +147,13 @@ func formatOrphanReport(reports []OrphanReport) string {
 	}
 
 	builder.WriteString("⚠️  WARNING: Orphaned records detected!\n")
-	builder.WriteString("   Before deploying foreign key constraints, you must:\n")
+	builder.WriteString("   Before relying on foreign key constraints, you must:\n")
 	builder.WriteString("   1. Review the orphaned records above\n")
 	builder.WriteString("   2. Run the cleanup SQL in a transaction\n")
 	builder.WriteString("   3. Re-run this validation script to confirm\n")
 	builder.WriteString("\n   ⚠️  CRITICAL: Always run cleanup in transactions for safety!\n")
 	builder.WriteString("\n   Example cleanup transaction:\n")
-	builder.WriteString("   psql \"$DATABASE_URL\" << 'EOF'\n")
+	builder.WriteString("   sqlite3 \"$SQLITE_PATH\" << 'EOF'\n")
 	builder.WriteString("   BEGIN;\n")
 	for _, report := range reports {
 		builder.WriteString("   ")

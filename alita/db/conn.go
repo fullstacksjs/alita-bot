@@ -7,13 +7,19 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
-	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
 	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db/migrations"
+)
+
+const (
+	defaultSQLitePath   = "/data/alita.db"
+	sqliteMaxOpenConns  = 5
+	sqliteMaxIdleConns  = 5
+	sqliteBusyTimeoutMS = 10000
 )
 
 var (
@@ -41,36 +47,32 @@ func isCliModeActive() bool {
 	return false
 }
 
-// IsSQLiteMode reports whether SQLite mode is configured via SQLITE_PATH or DATABASE_URL.
-func IsSQLiteMode() bool {
-	if os.Getenv("SQLITE_PATH") != "" {
-		return true
+// ResolveSQLitePath returns the configured SQLite file path, defaulting to
+// /data/alita.db when neither config nor SQLITE_PATH is set.
+func ResolveSQLitePath() string {
+	if config.AppConfig != nil && config.AppConfig.SQLitePath != "" {
+		return config.AppConfig.SQLitePath
 	}
-	dsn := ""
-	if config.AppConfig != nil && config.AppConfig.DatabaseURL != "" {
-		dsn = config.AppConfig.DatabaseURL
-	} else {
-		dsn = os.Getenv("DATABASE_URL")
+	if path := strings.TrimSpace(os.Getenv("SQLITE_PATH")); path != "" {
+		return path
 	}
-	if dsn == "" {
-		return false
-	}
-	return strings.HasPrefix(dsn, "sqlite") || strings.HasSuffix(dsn, ".db") || strings.HasSuffix(dsn, ".sqlite")
+	return defaultSQLitePath
 }
 
 // FormatSQLiteDSN prepares a SQLite connection string with WAL mode, busy timeout, and foreign keys.
 func FormatSQLiteDSN(rawDSN string) string {
 	pathStr := rawDSN
-	if strings.HasPrefix(pathStr, "sqlite://") {
+	switch {
+	case strings.HasPrefix(pathStr, "sqlite://"):
 		pathStr = strings.TrimPrefix(pathStr, "sqlite://")
-	} else if strings.HasPrefix(pathStr, "sqlite:") {
+	case strings.HasPrefix(pathStr, "sqlite:"):
 		pathStr = strings.TrimPrefix(pathStr, "sqlite:")
 	}
 
 	if strings.Contains(pathStr, "?") {
 		params := []string{}
 		if !strings.Contains(pathStr, "_busy_timeout=") {
-			params = append(params, "_busy_timeout=10000")
+			params = append(params, fmt.Sprintf("_busy_timeout=%d", sqliteBusyTimeoutMS))
 		}
 		if !strings.Contains(pathStr, "_journal_mode=") {
 			params = append(params, "_journal_mode=WAL")
@@ -84,22 +86,20 @@ func FormatSQLiteDSN(rawDSN string) string {
 		return pathStr
 	}
 
-	return pathStr + "?_busy_timeout=10000&_journal_mode=WAL&_foreign_keys=ON"
-}
-
-func formatSQLiteDSN(rawDSN string) string {
-	return FormatSQLiteDSN(rawDSN)
+	return fmt.Sprintf("%s?_busy_timeout=%d&_journal_mode=WAL&_foreign_keys=ON", pathStr, sqliteBusyTimeoutMS)
 }
 
 func init() {
 	if isCliModeActive() {
 		return
 	}
-	if os.Getenv("DATABASE_URL") == "" && os.Getenv("SQLITE_PATH") == "" {
-		return
+	// Unit tests and package imports without a real bot process leave the path
+	// unset; production LoadConfig always supplies SQLitePath (or its default).
+	if config.AppConfig == nil || config.AppConfig.BotToken == "" {
+		if os.Getenv("SQLITE_PATH") == "" && os.Getenv("ALITA_TEST_DATABASE") == "" {
+			return
+		}
 	}
-
-	var err error
 
 	gormLogger := logger.New(
 		log.StandardLogger(),
@@ -111,39 +111,17 @@ func init() {
 		},
 	)
 
-	dsn := ""
-	if config.AppConfig != nil && config.AppConfig.DatabaseURL != "" {
-		dsn = config.AppConfig.DatabaseURL
-	}
-	if dsn == "" {
-		dsn = os.Getenv("SQLITE_PATH")
-	}
-	if dsn == "" {
-		dsn = os.Getenv("DATABASE_URL")
-	}
-
-	isSQLite := IsSQLiteMode()
-
+	dsn := FormatSQLiteDSN(ResolveSQLitePath())
+	var err error
 	maxRetries := 5
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		if isSQLite {
-			sqliteDSN := formatSQLiteDSN(dsn)
-			DB, err = gorm.Open(sqlite.Open(sqliteDSN), &gorm.Config{
-				Logger:      gormLogger,
-				PrepareStmt: true,
-				NowFunc: func() time.Time {
-					return time.Now().UTC()
-				},
-			})
-		} else {
-			DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-				Logger:      gormLogger,
-				PrepareStmt: true,
-				NowFunc: func() time.Time {
-					return time.Now().UTC()
-				},
-			})
-		}
+		DB, err = gorm.Open(sqlite.Open(dsn), &gorm.Config{
+			Logger:      gormLogger,
+			PrepareStmt: true,
+			NowFunc: func() time.Time {
+				return time.Now().UTC()
+			},
+		})
 		if err == nil {
 			break
 		}
@@ -161,76 +139,29 @@ func init() {
 		log.Fatalf("[Database][Connection] Failed after %d attempts: %v", maxRetries, err)
 	}
 
-	if isSQLite {
-		DB.Exec("PRAGMA foreign_keys = ON;")
-		DB.Exec("PRAGMA journal_mode = WAL;")
-		DB.Exec("PRAGMA busy_timeout = 10000;")
-	}
+	DB.Exec("PRAGMA foreign_keys = ON;")
+	DB.Exec("PRAGMA journal_mode = WAL;")
+	DB.Exec(fmt.Sprintf("PRAGMA busy_timeout = %d;", sqliteBusyTimeoutMS))
 
 	sqlDB, err := DB.DB()
 	if err != nil {
 		log.Fatalf("[Database][SQL DB]: %v", err)
 	}
 
-	if isSQLite {
-		maxOpen := 5
-		if config.AppConfig != nil && config.AppConfig.DBMaxOpenConns > 0 && config.AppConfig.DBMaxOpenConns <= 5 {
-			maxOpen = config.AppConfig.DBMaxOpenConns
-		}
-		maxIdle := 5
-		if config.AppConfig != nil && config.AppConfig.DBMaxIdleConns > 0 && config.AppConfig.DBMaxIdleConns <= 5 {
-			maxIdle = config.AppConfig.DBMaxIdleConns
-		}
-		sqlDB.SetMaxOpenConns(maxOpen)
-		sqlDB.SetMaxIdleConns(maxIdle)
-		if config.AppConfig != nil {
-			sqlDB.SetConnMaxLifetime(time.Duration(config.AppConfig.DBConnMaxLifetimeMin) * time.Minute)
-			sqlDB.SetConnMaxIdleTime(time.Duration(config.AppConfig.DBConnMaxIdleTimeMin) * time.Minute)
-		}
-	} else {
-		if config.AppConfig != nil {
-			sqlDB.SetMaxIdleConns(config.AppConfig.DBMaxIdleConns)
-			sqlDB.SetMaxOpenConns(config.AppConfig.DBMaxOpenConns)
-			sqlDB.SetConnMaxLifetime(time.Duration(config.AppConfig.DBConnMaxLifetimeMin) * time.Minute)
-			sqlDB.SetConnMaxIdleTime(time.Duration(config.AppConfig.DBConnMaxIdleTimeMin) * time.Minute)
-		}
-	}
+	sqlDB.SetMaxOpenConns(sqliteMaxOpenConns)
+	sqlDB.SetMaxIdleConns(sqliteMaxIdleConns)
 
 	if err := sqlDB.Ping(); err != nil {
 		log.Fatalf("[Database][Ping]: %v", err)
 	}
 
-	if isSQLite {
-		log.Info("Connected to SQLite database successfully!")
-		log.Info("[Database] Running embedded SQLite baseline migrations...")
-		runner := migrations.NewSQLiteMigrationRunner(DB)
-		if err := runner.RunMigrations(); err != nil {
-			if config.AppConfig != nil && config.AppConfig.AutoMigrateSilentFail {
-				log.Errorf("[Database][AutoMigrate] SQLite migration failed but continuing: %v", err)
-			} else {
-				log.Fatalf("[Database][AutoMigrate] SQLite migration failed: %v", err)
-			}
-		} else {
-			log.Info("[Database][AutoMigrate] SQLite baseline migrations applied successfully")
-		}
-	} else {
-		log.Info("Connected to PostgreSQL database successfully!")
-		if config.AppConfig != nil && config.AppConfig.AutoMigrate {
-			log.Info("[Database] AUTO_MIGRATE is enabled, running database migrations...")
-			runner := migrations.NewMigrationRunner(DB)
-			if err := runner.RunMigrations(); err != nil {
-				if config.AppConfig.AutoMigrateSilentFail {
-					log.Errorf("[Database][AutoMigrate] Migration failed but continuing: %v", err)
-				} else {
-					log.Fatalf("[Database][AutoMigrate] Migration failed: %v", err)
-				}
-			} else {
-				log.Info("[Database][AutoMigrate] All migrations applied successfully")
-			}
-		} else {
-			log.Info("Database schema managed via SQL migrations - skipping auto-migration")
-		}
+	log.Info("Connected to SQLite database successfully!")
+	log.Info("[Database] Running embedded SQLite migrations...")
+	runner := migrations.NewSQLiteMigrationRunner(DB)
+	if err := runner.RunMigrations(); err != nil {
+		log.Fatalf("[Database][Migrate] SQLite migration failed: %v", err)
 	}
+	log.Info("[Database][Migrate] SQLite migrations applied successfully")
 }
 
 // Close closes the database connection gracefully.

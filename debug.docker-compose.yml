@@ -10,30 +10,9 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-alita_robot}?sslmode=disable
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  postgres:
-    image: postgres:15-alpine
-    container_name: alita-postgres-debug
-    restart: always
-    env_file:
-      - .env
-    environment:
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      SQLITE_PATH: ${SQLITE_PATH:-/data/alita.db}
     volumes:
-      - postgres_debug_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-
+      - alita_debug_data:/data
 
   telegram-bot-api:
     image: aiogram/telegram-bot-api:latest
@@ -46,5 +25,5 @@ services:
     # no ports published; internal use
 
 volumes:
-  postgres_debug_data:
+  alita_debug_data:
   telegram-bot-api-data:
