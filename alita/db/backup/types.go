@@ -10,26 +10,25 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/models"
 )
 
-const (
-	// BackupFormatVersion is the current backup format version.
-	BackupFormatVersion = "1.1"
-	legacyFormatVersion = "1.0"
-)
+// BackupFormatVersion is the current backup format version. Version 2 covers
+// only the retained persistent domains and is intentionally incompatible with
+// every historical export; no earlier version is accepted.
+const BackupFormatVersion = "2"
 
 // BackupFormat represents the structure of an exported backup file
 type BackupFormat struct {
-	Version    string                 `json:"version"`     // Backup format version (e.g., "1.0")
+	Version    string                 `json:"version"`     // Backup format version (e.g., "2")
 	ExportedAt time.Time              `json:"exported_at"` // Timestamp of export
 	BotName    string                 `json:"bot_name"`    // Bot identifier (e.g., "AlitaRobot")
 	ChatID     int64                  `json:"chat_id"`     // Source chat ID
 	ChatName   string                 `json:"chat_name"`   // Source chat name
 	ExportedBy int64                  `json:"exported_by"` // User ID who exported
-	Modules    []string               `json:"modules"`     // List of exported module names
-	Data       map[string]interface{} `json:"data"`        // Module-specific data
+	Domains    []string               `json:"domains"`     // List of exported domain names
+	Data       map[string]interface{} `json:"data"`        // Domain-specific data
 }
 
 // NewBackupFormat creates a new backup format instance
-func NewBackupFormat(chatID int64, chatName string, exportedBy int64, modules []string) *BackupFormat {
+func NewBackupFormat(chatID int64, chatName string, exportedBy int64, domains []string) *BackupFormat {
 	return &BackupFormat{
 		Version:    BackupFormatVersion,
 		ExportedAt: time.Now().UTC(),
@@ -37,7 +36,7 @@ func NewBackupFormat(chatID int64, chatName string, exportedBy int64, modules []
 		ChatID:     chatID,
 		ChatName:   chatName,
 		ExportedBy: exportedBy,
-		Modules:    modules,
+		Domains:    domains,
 		Data:       make(map[string]interface{}),
 	}
 }
@@ -56,26 +55,34 @@ func (b *BackupFormat) Validate() error {
 	if b.ChatID == 0 {
 		return fmt.Errorf("chat ID is required")
 	}
-	if len(b.Modules) == 0 {
-		return fmt.Errorf("at least one module must be specified")
+	if len(b.Domains) == 0 {
+		return fmt.Errorf("at least one domain must be specified")
 	}
 	if b.Data == nil {
 		return fmt.Errorf("data field cannot be nil")
 	}
-	for _, module := range b.Modules {
-		if !IsValidModule(module) {
-			return fmt.Errorf("unknown module: %s", module)
+	for _, domain := range b.Domains {
+		if !IsValidDomain(domain) {
+			return fmt.Errorf("unsupported domain: %s", domain)
 		}
-		if _, ok := b.Data[module]; !ok {
-			return fmt.Errorf("missing data for module: %s", module)
+		if _, ok := b.Data[domain]; !ok {
+			return fmt.Errorf("missing data for domain: %s", domain)
+		}
+	}
+	// Payloads outside the declared domain set are rejected so a removed or
+	// unknown domain can never reach a writer.
+	for domain := range b.Data {
+		if !IsValidDomain(domain) {
+			return fmt.Errorf("unsupported domain: %s", domain)
 		}
 	}
 	return nil
 }
 
-// IsCompatibleVersion checks if the backup version is compatible
+// IsCompatibleVersion reports whether the backup declares the current format
+// version. Historical exports are rejected rather than partially migrated.
 func (b *BackupFormat) IsCompatibleVersion() bool {
-	return b.Version == BackupFormatVersion || b.Version == legacyFormatVersion
+	return b != nil && b.Version == BackupFormatVersion
 }
 
 // ToJSON marshals the backup format to JSON bytes
@@ -97,126 +104,57 @@ func BackupFormatFromJSON(data []byte) (*BackupFormat, error) {
 	return &backup, nil
 }
 
-// Module names for export/import
+// Retained domain names for export/import/reset.
 const (
-	BackupModuleAdmin       = "admin"
-	BackupModuleAntiflood   = "antiflood"
-	BackupModuleAntiraid    = "antiraid"
-	BackupModuleApprovals   = "approvals"
-	BackupModuleBlacklists  = "blacklists"
-	BackupModuleConnections = "connections"
-	BackupModuleDisabling   = "disabling"
-	BackupModuleFilters     = "filters"
-	BackupModuleGreetings   = "greetings"
-	BackupModuleNotes       = "notes"
-	BackupModulePins        = "pins"
-	BackupModuleReactions   = "reactions"
-	BackupModuleRules       = "rules"
-	BackupModuleWarns       = "warns"
+	DomainAntiflood   = "antiflood"
+	DomainAntiraid    = "antiraid"
+	DomainApprovals   = "approvals"
+	DomainBlacklists  = "blacklists"
+	DomainConnections = "connections"
+	DomainFilters     = "filters"
+	DomainWelcome     = "welcome"
+	DomainNotes       = "notes"
+	DomainReactions   = "reactions"
+	DomainWarnings    = "warnings"
 )
 
-// AllExportableModules returns a list of all module names that support export
-func AllExportableModules() []string {
-	return []string{
-		BackupModuleAdmin,
-		BackupModuleAntiflood,
-		BackupModuleAntiraid,
-		BackupModuleApprovals,
-		BackupModuleBlacklists,
-		BackupModuleConnections,
-		BackupModuleDisabling,
-		BackupModuleFilters,
-		BackupModuleGreetings,
-		BackupModuleNotes,
-		BackupModulePins,
-		BackupModuleReactions,
-		BackupModuleRules,
-		BackupModuleWarns,
-	}
+// allDomains is the canonical, ordered set of supported domains.
+var allDomains = []string{
+	DomainAntiflood,
+	DomainAntiraid,
+	DomainApprovals,
+	DomainBlacklists,
+	DomainConnections,
+	DomainFilters,
+	DomainWelcome,
+	DomainNotes,
+	DomainReactions,
+	DomainWarnings,
 }
 
-// IsValidModule checks if a module name is valid for export
-func IsValidModule(module string) bool {
-	for _, m := range AllExportableModules() {
-		if m == module {
+// AllDomains returns every domain name supported by the current backup format.
+func AllDomains() []string {
+	domains := make([]string, len(allDomains))
+	copy(domains, allDomains)
+	return domains
+}
+
+// IsValidDomain reports whether a domain name is supported by the current
+// backup format. Removed domains and unknown names both return false.
+func IsValidDomain(domain string) bool {
+	for _, d := range allDomains {
+		if d == domain {
 			return true
 		}
 	}
 	return false
 }
 
-// FilterValidModules returns only valid module names from a list
-func FilterValidModules(modules []string) []string {
-	var valid []string
-	for _, m := range modules {
-		if IsValidModule(m) {
-			valid = append(valid, m)
-		}
-	}
-	return valid
-}
-
-// Per-module backup data structures - using existing db types
-
-// AdminBackup represents admin settings backup data
-type AdminBackup struct {
-	AdminSettings     *models.AdminSettings     `json:"admin_settings,omitempty"`
-	AntifloodSettings *models.AntifloodSettings `json:"antiflood_settings,omitempty"`
-	BlacklistMode     string                    `json:"blacklist_mode,omitempty"`
-}
+// Per-domain backup payloads - using existing db models.
 
 // AntifloodBackup represents antiflood settings backup data
 type AntifloodBackup struct {
 	Settings *models.AntifloodSettings `json:"settings,omitempty"`
-}
-
-// BlacklistsBackup represents blacklist settings and entries backup data
-type BlacklistsBackup struct {
-	Settings      *models.BlacklistSettings  `json:"settings,omitempty"`
-	BlacklistMode string                     `json:"blacklist_mode,omitempty"`
-	Entries       []models.BlacklistSettings `json:"entries,omitempty"`
-}
-
-
-// ConnectionsBackup is retained for backup format compatibility; connections have no settings.
-type ConnectionsBackup struct{}
-
-// DisablingBackup represents disabled commands backup data
-type DisablingBackup struct {
-	ChatSettings *models.DisableChatSettings `json:"chat_settings,omitempty"`
-	Commands     []models.DisableSettings    `json:"commands,omitempty"`
-}
-
-// FiltersBackup represents filters backup data
-type FiltersBackup struct {
-	Filters []models.ChatFilters `json:"filters,omitempty"`
-}
-
-// GreetingsBackup represents greetings/welcome settings backup data
-type GreetingsBackup struct {
-	Settings *models.GreetingSettings `json:"settings,omitempty"`
-}
-
-// NotesBackup represents notes backup data
-type NotesBackup struct {
-	Settings *models.NotesSettings `json:"settings,omitempty"`
-	Notes    []models.Notes        `json:"notes,omitempty"`
-}
-
-// PinsBackup represents pin settings backup data
-type PinsBackup struct {
-	Settings *models.PinSettings `json:"settings,omitempty"`
-}
-
-// RulesBackup represents rules backup data
-type RulesBackup struct {
-	Settings *models.RulesSettings `json:"settings,omitempty"`
-}
-
-// WarnsBackup represents warning settings backup data
-type WarnsBackup struct {
-	WarnSettings *models.WarnSettings `json:"warn_settings,omitempty"`
-	Warns        []models.Warns       `json:"warns,omitempty"`
 }
 
 // AntiraidBackup represents anti-raid settings backup data
@@ -229,7 +167,39 @@ type ApprovalsBackup struct {
 	ApprovedUsers []models.ApprovedUsers `json:"approved_users,omitempty"`
 }
 
+// BlacklistsBackup represents blacklist entries backup data
+type BlacklistsBackup struct {
+	Entries []models.BlacklistSettings `json:"entries,omitempty"`
+}
+
+// ConnectionsBackup represents the users connected to the chat.
+type ConnectionsBackup struct {
+	Connections []models.ConnectionSettings `json:"connections,omitempty"`
+}
+
+// FiltersBackup represents filters backup data
+type FiltersBackup struct {
+	Filters []models.ChatFilters `json:"filters,omitempty"`
+}
+
+// WelcomeBackup represents welcome/greeting settings backup data
+type WelcomeBackup struct {
+	Settings *models.GreetingSettings `json:"settings,omitempty"`
+}
+
+// NotesBackup represents notes backup data
+type NotesBackup struct {
+	Settings *models.NotesSettings `json:"settings,omitempty"`
+	Notes    []models.Notes        `json:"notes,omitempty"`
+}
+
 // ReactionsBackup represents keyword reaction mappings.
 type ReactionsBackup struct {
 	Reactions []models.Reactions `json:"reactions,omitempty"`
+}
+
+// WarningsBackup represents warning settings and events backup data
+type WarningsBackup struct {
+	Settings *models.WarnSettings `json:"settings,omitempty"`
+	Warns    []models.Warns       `json:"warns,omitempty"`
 }

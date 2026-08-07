@@ -52,7 +52,7 @@ var (
 	pendingMu        sync.Mutex
 	pendingImports   = make(map[int64]pendingImportState)
 	pendingResets    = make(map[int64]pendingResetState)
-	errNoValidModule = errors.New("no valid modules in arguments")
+	errNoValidDomain = errors.New("no valid domains in arguments")
 
 	backupDownloadBaseURL    = "https://api.telegram.org/file/bot"
 	backupDownloadHTTPClient = &http.Client{}
@@ -105,21 +105,46 @@ func getPendingImport(chatID int64) (*backup.BackupFormat, []string, bool) {
 	return pending.backup, pending.modules, true
 }
 
-func consumePendingImport(chatID int64, token string) (*backup.BackupFormat, []string, bool) {
+// claimPendingImport removes the matching pending import so only one caller can
+// act on it. A caller that does not complete the work must hand the state back
+// with restorePendingImport.
+func claimPendingImport(chatID int64, token string) (pendingImportState, bool) {
 	pendingMu.Lock()
 	defer pendingMu.Unlock()
 	pending, ok := pendingImports[chatID]
 	if !ok {
-		return nil, nil, false
+		return pendingImportState{}, false
 	}
 	if !time.Now().Before(pending.expiresAt) {
 		delete(pendingImports, chatID)
-		return nil, nil, false
+		return pendingImportState{}, false
 	}
 	if pending.token != token {
-		return nil, nil, false
+		return pendingImportState{}, false
 	}
 	delete(pendingImports, chatID)
+	return pending, true
+}
+
+// restorePendingImport returns a claimed import to the pending map so the owner
+// can retry after a failed transaction. A newer pending import wins.
+func restorePendingImport(chatID int64, pending pendingImportState) {
+	pendingMu.Lock()
+	defer pendingMu.Unlock()
+	if _, ok := pendingImports[chatID]; ok {
+		return
+	}
+	if !time.Now().Before(pending.expiresAt) {
+		return
+	}
+	pendingImports[chatID] = pending
+}
+
+func consumePendingImport(chatID int64, token string) (*backup.BackupFormat, []string, bool) {
+	pending, ok := claimPendingImport(chatID, token)
+	if !ok {
+		return nil, nil, false
+	}
 	return pending.backup, pending.modules, true
 }
 
@@ -161,21 +186,46 @@ func getPendingReset(chatID int64) ([]string, bool) {
 	return pending.modules, true
 }
 
-func consumePendingReset(chatID int64, token string) ([]string, bool) {
+// claimPendingReset removes the matching pending reset so only one caller can
+// act on it. A caller that does not complete the work must hand the state back
+// with restorePendingReset.
+func claimPendingReset(chatID int64, token string) (pendingResetState, bool) {
 	pendingMu.Lock()
 	defer pendingMu.Unlock()
 	pending, ok := pendingResets[chatID]
 	if !ok {
-		return nil, false
+		return pendingResetState{}, false
 	}
 	if !time.Now().Before(pending.expiresAt) {
 		delete(pendingResets, chatID)
-		return nil, false
+		return pendingResetState{}, false
 	}
 	if pending.token != token {
-		return nil, false
+		return pendingResetState{}, false
 	}
 	delete(pendingResets, chatID)
+	return pending, true
+}
+
+// restorePendingReset returns a claimed reset to the pending map so the owner
+// can retry after a failed transaction. A newer pending reset wins.
+func restorePendingReset(chatID int64, pending pendingResetState) {
+	pendingMu.Lock()
+	defer pendingMu.Unlock()
+	if _, ok := pendingResets[chatID]; ok {
+		return
+	}
+	if !time.Now().Before(pending.expiresAt) {
+		return
+	}
+	pendingResets[chatID] = pending
+}
+
+func consumePendingReset(chatID int64, token string) ([]string, bool) {
+	pending, ok := claimPendingReset(chatID, token)
+	if !ok {
+		return nil, false
+	}
 	return pending.modules, true
 }
 
@@ -226,7 +276,7 @@ func (m moduleStruct) exportHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		args := strings.Fields(msg.Text)
 		if len(args) > 1 {
 			var parseErr error
-			modules, parseErr = parseModuleArgs(args[1:], backup.IsValidModule)
+			modules, parseErr = parseDomainArgs(args[1:], backup.IsValidDomain)
 			if parseErr != nil {
 				text, _ := tr.GetString("backup_export_no_modules")
 				_, _ = msg.Reply(b, text, formatting.Shtml())
@@ -429,7 +479,7 @@ func parseImportModules(text string, backupData map[string]interface{}) ([]strin
 	if text != "" {
 		args := strings.Fields(text)
 		if len(args) > 1 {
-			return parseModuleArgs(args[1:], func(module string) bool {
+			return parseDomainArgs(args[1:], func(module string) bool {
 				_, ok := backupData[module]
 				return ok
 			})
@@ -438,7 +488,7 @@ func parseImportModules(text string, backupData map[string]interface{}) ([]strin
 	return nil, nil
 }
 
-func parseModuleArgs(args []string, valid func(string) bool) ([]string, error) {
+func parseDomainArgs(args []string, valid func(string) bool) ([]string, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
@@ -456,7 +506,7 @@ func parseModuleArgs(args []string, valid func(string) bool) ([]string, error) {
 		modules = append(modules, module)
 	}
 	if len(modules) == 0 {
-		return nil, errNoValidModule
+		return nil, errNoValidDomain
 	}
 	return modules, nil
 }
@@ -499,6 +549,14 @@ func (m moduleStruct) importHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
+	// Reject historical formats before validating domains, so an old export is
+	// reported as an incompatible version rather than as a corrupt file.
+	if !bkp.IsCompatibleVersion() {
+		text, _ := tr.GetString("backup_import_version_mismatch")
+		_, _ = msg.Reply(b, text, formatting.Shtml())
+		return ext.EndGroups
+	}
+
 	// Validate backup
 	if err := bkp.Validate(); err != nil {
 		log.Errorf("[Backup] Invalid backup: %v", err)
@@ -507,13 +565,7 @@ func (m moduleStruct) importHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		return ext.EndGroups
 	}
 
-	if !bkp.IsCompatibleVersion() {
-		text, _ := tr.GetString("backup_import_version_mismatch")
-		_, _ = msg.Reply(b, text, formatting.Shtml())
-		return ext.EndGroups
-	}
-
-	// Parse module arguments
+	// Parse domain arguments
 	importModules, parseErr := parseImportModules(msg.Text, bkp.Data)
 	if parseErr != nil {
 		text, _ := tr.GetString("backup_import_invalid_file")
@@ -523,7 +575,7 @@ func (m moduleStruct) importHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	// If no modules specified, use all from backup
 	if len(importModules) == 0 {
-		importModules = bkp.Modules
+		importModules = bkp.Domains
 	}
 
 	// Store pending import
@@ -602,7 +654,7 @@ func (m moduleStruct) resetHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		args := strings.Fields(msg.Text)
 		if len(args) > 1 {
 			var parseErr error
-			resetModules, parseErr = parseModuleArgs(args[1:], backup.IsValidModule)
+			resetModules, parseErr = parseDomainArgs(args[1:], backup.IsValidDomain)
 			if parseErr != nil {
 				text, _ := tr.GetString("backup_export_no_modules")
 				_, _ = msg.Reply(b, text, formatting.Shtml())
@@ -613,7 +665,7 @@ func (m moduleStruct) resetHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	// If no modules specified, reset all
 	if len(resetModules) == 0 {
-		resetModules = backup.AllExportableModules()
+		resetModules = backup.AllDomains()
 	}
 
 	// Store pending reset
@@ -706,7 +758,10 @@ func (m moduleStruct) backupCallbackHandler(b *gotgbot.Bot, ctx *ext.Context) er
 }
 
 func (m moduleStruct) handleConfirmImport(b *gotgbot.Bot, ctx *ext.Context, tr *i18n.Translator, chat *gotgbot.Chat, token string) error {
-	bkp, modules, ok := consumePendingImport(chat.Id, token)
+	// The pending state is claimed rather than consumed: nothing else can act on
+	// it while the transaction runs, and it is only spent once the transaction
+	// commits.
+	pending, ok := claimPendingImport(chat.Id, token)
 	if !ok {
 		text, _ := tr.GetString("backup_import_expired")
 		_, err := b.SendMessage(chat.Id, text, formatting.Shtml())
@@ -715,9 +770,11 @@ func (m moduleStruct) handleConfirmImport(b *gotgbot.Bot, ctx *ext.Context, tr *
 		}
 		return ext.EndGroups
 	}
+	bkp, modules := pending.backup, pending.modules
 
 	limiter := ratelimit.GetBackupRateLimiter()
 	if allowed, cooldown := limiter.AcquireImport(chat.Id); !allowed {
+		restorePendingImport(chat.Id, pending)
 		text, _ := tr.GetString("backup_import_rate_limited", i18n.TranslationParams{
 			"time": ratelimit.FormatCooldown(cooldown),
 		})
@@ -726,6 +783,7 @@ func (m moduleStruct) handleConfirmImport(b *gotgbot.Bot, ctx *ext.Context, tr *
 	}
 	// Perform import
 	if err := backup.ImportChatData(chat.Id, bkp, modules); err != nil {
+		restorePendingImport(chat.Id, pending)
 		log.Errorf("[Backup] Import failed for chat %d: %v", chat.Id, err)
 		text, _ := tr.GetString("backup_import_failed", i18n.TranslationParams{
 			"error": err.Error(),
@@ -779,15 +837,19 @@ func (m moduleStruct) handleCancelImport(b *gotgbot.Bot, ctx *ext.Context, tr *i
 }
 
 func (m moduleStruct) handleConfirmReset(b *gotgbot.Bot, ctx *ext.Context, tr *i18n.Translator, chat *gotgbot.Chat, token string) error {
-	modules, ok := consumePendingReset(chat.Id, token)
-	if !ok || len(modules) == 0 {
+	// Claimed, not consumed: the confirmation is only spent once the reset
+	// transaction commits.
+	pending, ok := claimPendingReset(chat.Id, token)
+	if !ok || len(pending.modules) == 0 {
 		text, _ := tr.GetString("backup_reset_expired")
 		_, _ = b.SendMessage(chat.Id, text, formatting.Shtml())
 		return ext.EndGroups
 	}
+	modules := pending.modules
 
 	limiter := ratelimit.GetBackupRateLimiter()
 	if allowed, cooldown := limiter.AcquireReset(chat.Id); !allowed {
+		restorePendingReset(chat.Id, pending)
 		text, _ := tr.GetString("backup_reset_rate_limited", i18n.TranslationParams{
 			"time": ratelimit.FormatCooldown(cooldown),
 		})
@@ -796,6 +858,7 @@ func (m moduleStruct) handleConfirmReset(b *gotgbot.Bot, ctx *ext.Context, tr *i
 	}
 	// Perform reset
 	if err := backup.ClearChatData(chat.Id, modules); err != nil {
+		restorePendingReset(chat.Id, pending)
 		log.Errorf("[Backup] Reset failed for chat %d: %v", chat.Id, err)
 		text, _ := tr.GetString("backup_reset_failed", i18n.TranslationParams{
 			"error": err.Error(),
@@ -825,7 +888,7 @@ func (m moduleStruct) handleCancelReset(b *gotgbot.Bot, ctx *ext.Context, tr *i1
 // Helper functions
 
 func buildExportCaption(tr *i18n.Translator, backup *backup.BackupFormat) string {
-	modulesList := buildModuleList(backup.Modules)
+	modulesList := buildModuleList(backup.Domains)
 	caption, _ := tr.GetString("backup_export_success", i18n.TranslationParams{
 		"modules": fmt.Sprintf("%d", len(backup.Data)),
 		"list":    modulesList,

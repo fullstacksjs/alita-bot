@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 	"time"
@@ -9,20 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/db/admin"
 	"github.com/divkix/Alita_Robot/alita/db/antiflood"
 	"github.com/divkix/Alita_Robot/alita/db/antiraid"
 	"github.com/divkix/Alita_Robot/alita/db/approvals"
 	"github.com/divkix/Alita_Robot/alita/db/blacklists"
 	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/connections"
-	"github.com/divkix/Alita_Robot/alita/db/disabling"
 	"github.com/divkix/Alita_Robot/alita/db/filters"
 	"github.com/divkix/Alita_Robot/alita/db/greetings"
 	"github.com/divkix/Alita_Robot/alita/db/models"
 	"github.com/divkix/Alita_Robot/alita/db/notes"
-	"github.com/divkix/Alita_Robot/alita/db/pins"
-	"github.com/divkix/Alita_Robot/alita/db/rules"
 	"github.com/divkix/Alita_Robot/alita/db/warns"
 )
 
@@ -31,6 +28,19 @@ func skipIfNoDb(t *testing.T) {
 	if db.DB == nil {
 		t.Skip("requires database connection")
 	}
+}
+
+// payloadFor renders an exported domain payload the same way the real import
+// path does: through a json.Number decoder, so large Telegram IDs survive.
+func payloadFor(t *testing.T, exported interface{}) map[string]interface{} {
+	t.Helper()
+	raw, err := json.Marshal(exported)
+	require.NoError(t, err)
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var payload map[string]interface{}
+	require.NoError(t, decoder.Decode(&payload))
+	return payload
 }
 
 func TestBackupTypes(t *testing.T) {
@@ -42,7 +52,7 @@ func TestBackupTypes(t *testing.T) {
 		assert.Equal(t, int64(12345), backup.ChatID)
 		assert.Equal(t, "Test Chat", backup.ChatName)
 		assert.Equal(t, int64(67890), backup.ExportedBy)
-		assert.Equal(t, []string{"notes", "filters"}, backup.Modules)
+		assert.Equal(t, []string{"notes", "filters"}, backup.Domains)
 		assert.NotNil(t, backup.Data)
 		assert.WithinDuration(t, time.Now().UTC(), backup.ExportedAt, time.Second)
 	})
@@ -56,10 +66,10 @@ func TestBackupTypes(t *testing.T) {
 			{
 				name: "valid backup",
 				backup: &BackupFormat{
-					Version:    "1.0",
+					Version:    BackupFormatVersion,
 					BotName:    "AlitaRobot",
 					ChatID:     12345,
-					Modules:    []string{"notes"},
+					Domains:    []string{"notes"},
 					Data:       map[string]interface{}{"notes": map[string]interface{}{}},
 					ExportedAt: time.Now(),
 				},
@@ -70,7 +80,7 @@ func TestBackupTypes(t *testing.T) {
 				backup: &BackupFormat{
 					BotName: "AlitaRobot",
 					ChatID:  12345,
-					Modules: []string{"notes"},
+					Domains: []string{"notes"},
 					Data:    make(map[string]interface{}),
 				},
 				wantErr: true,
@@ -78,9 +88,9 @@ func TestBackupTypes(t *testing.T) {
 			{
 				name: "missing bot name",
 				backup: &BackupFormat{
-					Version: "1.0",
+					Version: BackupFormatVersion,
 					ChatID:  12345,
-					Modules: []string{"notes"},
+					Domains: []string{"notes"},
 					Data:    make(map[string]interface{}),
 				},
 				wantErr: true,
@@ -88,20 +98,20 @@ func TestBackupTypes(t *testing.T) {
 			{
 				name: "missing chat ID",
 				backup: &BackupFormat{
-					Version: "1.0",
+					Version: BackupFormatVersion,
 					BotName: "AlitaRobot",
-					Modules: []string{"notes"},
+					Domains: []string{"notes"},
 					Data:    make(map[string]interface{}),
 				},
 				wantErr: true,
 			},
 			{
-				name: "empty modules",
+				name: "empty domains",
 				backup: &BackupFormat{
-					Version: "1.0",
+					Version: BackupFormatVersion,
 					BotName: "AlitaRobot",
 					ChatID:  12345,
-					Modules: []string{},
+					Domains: []string{},
 					Data:    make(map[string]interface{}),
 				},
 				wantErr: true,
@@ -109,10 +119,10 @@ func TestBackupTypes(t *testing.T) {
 			{
 				name: "nil data",
 				backup: &BackupFormat{
-					Version: "1.0",
+					Version: BackupFormatVersion,
 					BotName: "AlitaRobot",
 					ChatID:  12345,
-					Modules: []string{"notes"},
+					Domains: []string{"notes"},
 					Data:    nil,
 				},
 				wantErr: true,
@@ -135,8 +145,10 @@ func TestBackupTypes(t *testing.T) {
 		compatible := &BackupFormat{Version: BackupFormatVersion}
 		assert.True(t, compatible.IsCompatibleVersion())
 
-		incompatible := &BackupFormat{Version: "0.9"}
-		assert.False(t, incompatible.IsCompatibleVersion())
+		for _, version := range []string{"0.9", "1.0", "1.1", ""} {
+			assert.Falsef(t, (&BackupFormat{Version: version}).IsCompatibleVersion(),
+				"version %q must not be accepted", version)
+		}
 	})
 
 	t.Run("ToJSON marshals correctly", func(t *testing.T) {
@@ -152,22 +164,23 @@ func TestBackupTypes(t *testing.T) {
 
 	t.Run("BackupFormatFromJSON unmarshals correctly", func(t *testing.T) {
 		jsonData := `{
-			"version": "1.0",
+			"version": "2",
 			"bot_name": "AlitaRobot",
 			"chat_id": 12345,
 			"chat_name": "Test Chat",
 			"exported_by": 67890,
-			"modules": ["notes", "filters"],
-			"data": {"notes": [{"note_name": "welcome", "note_content": "Hello!"}]},
+			"domains": ["notes", "filters"],
+			"data": {"notes": {"notes": [{"note_name": "welcome", "note_content": "Hello!"}]}, "filters": {}},
 			"exported_at": "2024-01-01T00:00:00Z"
 		}`
 
 		backup, err := BackupFormatFromJSON([]byte(jsonData))
 		require.NoError(t, err)
-		assert.Equal(t, "1.0", backup.Version)
+		assert.Equal(t, "2", backup.Version)
 		assert.Equal(t, "AlitaRobot", backup.BotName)
 		assert.Equal(t, int64(12345), backup.ChatID)
-		assert.Equal(t, []string{"notes", "filters"}, backup.Modules)
+		assert.Equal(t, []string{"notes", "filters"}, backup.Domains)
+		assert.NoError(t, backup.Validate())
 	})
 
 	t.Run("BackupFormatFromJSON returns error on invalid JSON", func(t *testing.T) {
@@ -176,54 +189,46 @@ func TestBackupTypes(t *testing.T) {
 	})
 }
 
-func TestModuleValidation(t *testing.T) {
-	t.Run("AllExportableModules returns expected modules", func(t *testing.T) {
-		modules := AllExportableModules()
-		assert.NotEmpty(t, modules)
-		assert.Contains(t, modules, BackupModuleAdmin)
-		assert.Contains(t, modules, BackupModuleNotes)
-		assert.Contains(t, modules, BackupModuleFilters)
-		assert.Contains(t, modules, BackupModuleRules)
+func TestDomainValidation(t *testing.T) {
+	t.Run("AllDomains returns the retained set", func(t *testing.T) {
+		domains := AllDomains()
+		assert.Len(t, domains, 10)
+		for _, retained := range []string{
+			DomainAntiflood, DomainAntiraid, DomainApprovals, DomainBlacklists,
+			DomainConnections, DomainFilters, DomainWelcome, DomainNotes,
+			DomainReactions, DomainWarnings,
+		} {
+			assert.Contains(t, domains, retained)
+		}
+		for _, removed := range []string{"admin", "disabling", "pins", "rules", "greetings", "warns", "captcha", "reports"} {
+			assert.NotContains(t, domains, removed)
+		}
 	})
 
-	t.Run("IsValidModule validates correctly", func(t *testing.T) {
-		assert.True(t, IsValidModule("notes"))
-		assert.True(t, IsValidModule("filters"))
-		assert.False(t, IsValidModule("invalid"))
-		assert.False(t, IsValidModule(""))
-	})
-
-	t.Run("FilterValidModules filters correctly", func(t *testing.T) {
-		input := []string{"notes", "filters", "invalid", "rules"}
-		filtered := FilterValidModules(input)
-		assert.Contains(t, filtered, "notes")
-		assert.Contains(t, filtered, "filters")
-		assert.Contains(t, filtered, "rules")
-		assert.NotContains(t, filtered, "invalid")
+	t.Run("IsValidDomain validates correctly", func(t *testing.T) {
+		assert.True(t, IsValidDomain("notes"))
+		assert.True(t, IsValidDomain("filters"))
+		assert.False(t, IsValidDomain("invalid"))
+		assert.False(t, IsValidDomain(""))
 	})
 }
 
-func TestExportModuleData(t *testing.T) {
-	t.Run("ExportModuleData for invalid module", func(t *testing.T) {
-		_, err := ExportModuleData(12345, "invalid_module")
-		assert.Error(t, err)
-	})
+func TestDomainDataEntryPointsRejectUnsupportedDomains(t *testing.T) {
+	for _, domain := range []string{"invalid_domain", "admin", "disabling", "pins", "rules", "greetings", "warns"} {
+		t.Run(domain, func(t *testing.T) {
+			_, err := ExportDomainData(12345, domain)
+			assert.ErrorContains(t, err, "unsupported domain")
 
-	t.Run("ImportModuleData with invalid module", func(t *testing.T) {
-		err := ImportModuleData(12345, "invalid_module", map[string]interface{}{})
-		assert.Error(t, err)
-	})
-
-	t.Run("ClearModuleData with invalid module", func(t *testing.T) {
-		err := ClearModuleData(12345, "invalid_module")
-		assert.Error(t, err)
-	})
+			assert.ErrorContains(t, ImportDomainData(12345, domain, map[string]interface{}{}), "unsupported domain")
+			assert.ErrorContains(t, ClearDomainData(12345, domain), "unsupported domain")
+		})
+	}
 }
 
-func TestImportModuleDataRejectsMalformedPayloadForEveryModule(t *testing.T) {
-	for _, module := range AllExportableModules() {
-		t.Run(module, func(t *testing.T) {
-			err := ImportModuleData(12345, module, "not a backup object")
+func TestImportDomainDataRejectsMalformedPayloadForEveryDomain(t *testing.T) {
+	for _, domain := range AllDomains() {
+		t.Run(domain, func(t *testing.T) {
+			err := ImportDomainData(12345, domain, "not a backup object")
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "invalid")
@@ -232,7 +237,7 @@ func TestImportModuleDataRejectsMalformedPayloadForEveryModule(t *testing.T) {
 	}
 }
 
-func TestClearModuleDataConnectionsDisconnectsUsers(t *testing.T) {
+func TestClearDomainDataConnectionsDisconnectsUsers(t *testing.T) {
 	skipIfNoDb(t)
 
 	base := time.Now().UnixNano()
@@ -251,7 +256,7 @@ func TestClearModuleDataConnectionsDisconnectsUsers(t *testing.T) {
 	require.NoError(t, connections.ConnectId(userID, chatID))
 	require.True(t, connections.Connection(userID).Connected)
 
-	require.NoError(t, ClearModuleData(chatID, BackupModuleConnections))
+	require.NoError(t, ClearDomainData(chatID, DomainConnections))
 
 	conn := connections.Connection(userID)
 	assert.False(t, conn.Connected)
@@ -259,33 +264,20 @@ func TestClearModuleDataConnectionsDisconnectsUsers(t *testing.T) {
 }
 
 func TestExportChatData(t *testing.T) {
-	t.Run("ExportChatData with no valid modules", func(t *testing.T) {
-		_, err := ExportChatData(12345, "Test", 67890, []string{"invalid_module"})
+	t.Run("ExportChatData with no valid domains", func(t *testing.T) {
+		_, err := ExportChatData(12345, "Test", 67890, []string{"invalid_domain"})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "unknown module")
+		assert.Contains(t, err.Error(), "unsupported domain")
 	})
 
-	t.Run("ExportChatData with empty modules exports all", func(t *testing.T) {
-		// Just verify it doesn't error with nil modules
-		backup := NewBackupFormat(12345, "Test", 67890, AllExportableModules())
+	t.Run("ExportChatData with empty domains exports all", func(t *testing.T) {
+		// Just verify it doesn't error with nil domains
+		backup := NewBackupFormat(12345, "Test", 67890, AllDomains())
 		assert.NotNil(t, backup)
 	})
 }
 
 func TestBackupDataStructures(t *testing.T) {
-	t.Run("AdminBackup struct", func(t *testing.T) {
-		backup := &AdminBackup{
-			AdminSettings: &models.AdminSettings{
-				ChatId:    12345,
-				AnonAdmin: true,
-			},
-			BlacklistMode: "ban",
-		}
-		assert.Equal(t, int64(12345), backup.AdminSettings.ChatId)
-		assert.True(t, backup.AdminSettings.AnonAdmin)
-		assert.Equal(t, "ban", backup.BlacklistMode)
-	})
-
 	t.Run("AntifloodBackup struct", func(t *testing.T) {
 		backup := &AntifloodBackup{
 			Settings: &models.AntifloodSettings{
@@ -317,9 +309,6 @@ func TestBackupDataStructures(t *testing.T) {
 // Uses t.Errorf not t.Fatalf so a failure for one table still attempts the others.
 func cleanupBackupChat(t *testing.T, chatID int64) {
 	t.Helper()
-	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.AdminSettings{}).Error; err != nil {
-		t.Errorf("cleanup failed deleting AdminSettings: %v", err)
-	}
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.AntifloodSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting AntifloodSettings: %v", err)
 	}
@@ -328,12 +317,6 @@ func cleanupBackupChat(t *testing.T, chatID int64) {
 	}
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.ConnectionSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting ConnectionSettings: %v", err)
-	}
-	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.DisableSettings{}).Error; err != nil {
-		t.Errorf("cleanup failed deleting DisableSettings: %v", err)
-	}
-	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.DisableChatSettings{}).Error; err != nil {
-		t.Errorf("cleanup failed deleting DisableChatSettings: %v", err)
 	}
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.ChatFilters{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting ChatFilters: %v", err)
@@ -346,12 +329,6 @@ func cleanupBackupChat(t *testing.T, chatID int64) {
 	}
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.Notes{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting Notes: %v", err)
-	}
-	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.PinSettings{}).Error; err != nil {
-		t.Errorf("cleanup failed deleting PinSettings: %v", err)
-	}
-	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.RulesSettings{}).Error; err != nil {
-		t.Errorf("cleanup failed deleting RulesSettings: %v", err)
 	}
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.WarnSettings{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting WarnSettings: %v", err)
@@ -371,78 +348,6 @@ func cleanupBackupChat(t *testing.T, chatID int64) {
 	if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.Chat{}).Error; err != nil {
 		t.Errorf("cleanup failed deleting Chat: %v", err)
 	}
-}
-
-func TestExportAdminData(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := time.Now().UnixNano()
-	require.NoError(t, chats.EnsureChatInDb(chatID, "test_export_admin"))
-	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
-
-	// Configure admin-related settings
-	require.NoError(t, admin.SetAnonAdminMode(chatID, true))
-	require.NoError(t, antiflood.SetFlood(chatID, 7))
-	require.NoError(t, antiflood.SetFloodMode(chatID, "ban"))
-
-	backup, err := exportAdminData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, backup)
-
-	require.NotNil(t, backup.AdminSettings)
-	assert.Equal(t, chatID, backup.AdminSettings.ChatId)
-	assert.True(t, backup.AdminSettings.AnonAdmin)
-
-	require.NotNil(t, backup.AntifloodSettings)
-	assert.Equal(t, 7, backup.AntifloodSettings.Limit)
-	assert.Equal(t, "ban", backup.AntifloodSettings.Action)
-}
-
-func TestImportAdminData(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := time.Now().UnixNano()
-	require.NoError(t, chats.EnsureChatInDb(chatID, "test_import_admin"))
-	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
-
-	// Ensure admin settings record exists before import
-	_ = admin.GetAdminSettings(chatID)
-
-	// Build import payload as map (mimics JSON round-trip)
-	payload := map[string]interface{}{
-		"admin_settings": map[string]interface{}{
-			"chat_id":    float64(chatID),
-			"anon_admin": true,
-		},
-		"antiflood_settings": map[string]interface{}{
-			"chat_id": float64(chatID),
-			"limit":   float64(10),
-			"action":  "kick",
-		},
-	}
-
-	require.NoError(t, ImportModuleData(chatID, BackupModuleAdmin, payload))
-
-	adminSettings := admin.GetAdminSettings(chatID)
-	require.NotNil(t, adminSettings)
-	assert.True(t, adminSettings.AnonAdmin)
-
-	flood := antiflood.GetFlood(chatID)
-	require.NotNil(t, flood)
-	assert.Equal(t, 10, flood.Limit)
-	assert.Equal(t, "kick", flood.Action)
-}
-
-func TestImportAdminData_InvalidFormat(t *testing.T) {
-	skipIfNoDb(t)
-
-	chatID := time.Now().UnixNano()
-	require.NoError(t, chats.EnsureChatInDb(chatID, "test_import_admin_invalid"))
-	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
-
-	err := ImportModuleData(chatID, BackupModuleAdmin, "not a map")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid admin data format")
 }
 
 func TestExportFiltersData(t *testing.T) {
@@ -499,7 +404,7 @@ func TestImportFiltersData(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, ImportModuleData(chatID, BackupModuleFilters, payload))
+	require.NoError(t, ImportDomainData(chatID, DomainFilters, payload))
 
 	list := filters.GetFiltersList(chatID)
 	assert.Len(t, list, 2)
@@ -514,7 +419,7 @@ func TestImportFiltersData_InvalidFormat(t *testing.T) {
 	require.NoError(t, chats.EnsureChatInDb(chatID, "test_import_filters_invalid"))
 	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
 
-	err := ImportModuleData(chatID, BackupModuleFilters, "not a map")
+	err := ImportDomainData(chatID, DomainFilters, "not a map")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid filters data format")
 }
@@ -547,7 +452,7 @@ func TestExportImportNotesRoundTrip(t *testing.T) {
 	}
 
 	// Import into destination
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleNotes, payload))
+	require.NoError(t, ImportDomainData(dstChat, DomainNotes, payload))
 
 	list := notes.GetNotesList(dstChat, true)
 	assert.Len(t, list, 2)
@@ -559,50 +464,7 @@ func TestExportImportNotesRoundTrip(t *testing.T) {
 	assert.Equal(t, "Welcome!", note.NoteContent)
 }
 
-func TestExportImportRulesRoundTrip(t *testing.T) {
-	skipIfNoDb(t)
-
-	srcChat := time.Now().UnixNano()
-	dstChat := srcChat + 1
-	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_rules"))
-	require.NoError(t, chats.EnsureChatInDb(dstChat, "dst_rules"))
-	t.Cleanup(func() {
-		cleanupBackupChat(t, srcChat)
-		cleanupBackupChat(t, dstChat)
-	})
-
-	rules.SetChatRules(srcChat, "Be nice")
-	rules.SetChatRulesButton(srcChat, "Read Rules")
-	rules.SetPrivateRules(srcChat, true)
-
-	exported, err := exportRulesData(srcChat)
-	require.NoError(t, err)
-	require.NotNil(t, exported)
-	require.NotNil(t, exported.Settings)
-	assert.Equal(t, "Be nice", exported.Settings.Rules)
-	assert.Equal(t, "Read Rules", exported.Settings.RulesBtn)
-	assert.True(t, exported.Settings.Private)
-
-	payload := map[string]interface{}{
-		"settings": map[string]interface{}{
-			"chat_id":   float64(dstChat),
-			"rules":     "Be nice",
-			"rules_btn": "Read Rules",
-			"private":   true,
-		},
-	}
-
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleRules, payload))
-
-	settings := rules.GetChatRulesInfo(dstChat)
-	require.NotNil(t, settings)
-	assert.Equal(t, "Be nice", settings.Rules)
-	assert.Equal(t, "Read Rules", settings.RulesBtn)
-	assert.True(t, settings.Private)
-}
-
-
-func TestExportImportWarnsRoundTrip(t *testing.T) {
+func TestExportImportWarningsRoundTrip(t *testing.T) {
 	skipIfNoDb(t)
 
 	srcChat := time.Now().UnixNano()
@@ -616,20 +478,20 @@ func TestExportImportWarnsRoundTrip(t *testing.T) {
 
 	require.NoError(t, warns.SetWarnLimit(srcChat, 5))
 
-	exported, err := exportWarnsData(srcChat)
+	exported, err := exportWarningsData(srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
-	require.NotNil(t, exported.WarnSettings)
-	assert.Equal(t, 5, exported.WarnSettings.WarnLimit)
+	require.NotNil(t, exported.Settings)
+	assert.Equal(t, 5, exported.Settings.WarnLimit)
 
 	payload := map[string]interface{}{
-		"warn_settings": map[string]interface{}{
+		"settings": map[string]interface{}{
 			"chat_id":    float64(dstChat),
 			"warn_limit": float64(5),
 		},
 	}
 
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleWarns, payload))
+	require.NoError(t, ImportDomainData(dstChat, DomainWarnings, payload))
 
 	settings := warns.GetWarnSetting(dstChat)
 	require.NotNil(t, settings)
@@ -655,61 +517,20 @@ func TestExportImportBlacklistsRoundTrip(t *testing.T) {
 	exported, err := exportBlacklistsData(srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
-	assert.Equal(t, "ban", exported.BlacklistMode)
 	assert.Len(t, exported.Entries, 2)
+	for _, entry := range exported.Entries {
+		assert.Equal(t, "ban", entry.Action)
+	}
 
 	payload := map[string]interface{}{
 		"entries": exported.Entries,
 	}
 
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleBlacklists, payload))
+	require.NoError(t, ImportDomainData(dstChat, DomainBlacklists, payload))
 
 	settings := blacklists.GetBlacklistSettings(dstChat)
 	assert.Len(t, settings, 2)
 	assert.Equal(t, "ban", settings.Action())
-}
-
-func TestExportImportDisablingRoundTrip(t *testing.T) {
-	skipIfNoDb(t)
-
-	srcChat := time.Now().UnixNano()
-	dstChat := srcChat + 1
-	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_disabling"))
-	require.NoError(t, chats.EnsureChatInDb(dstChat, "dst_disabling"))
-	t.Cleanup(func() {
-		cleanupBackupChat(t, srcChat)
-		cleanupBackupChat(t, dstChat)
-	})
-
-	require.NoError(t, disabling.DisableCMD(srcChat, "kick"))
-	require.NoError(t, disabling.DisableCMD(srcChat, "ban"))
-	require.NoError(t, disabling.ToggleDel(srcChat, true))
-
-	exported, err := exportDisablingData(srcChat)
-	require.NoError(t, err)
-	require.NotNil(t, exported)
-	assert.Len(t, exported.Commands, 2)
-	require.NotNil(t, exported.ChatSettings)
-	assert.True(t, exported.ChatSettings.DeleteCommands)
-
-	payload := map[string]interface{}{
-		"chat_settings": map[string]interface{}{
-			"chat_id":         float64(dstChat),
-			"delete_commands": true,
-		},
-		"commands": []map[string]interface{}{
-			{"chat_id": float64(dstChat), "command": "kick", "disabled": true},
-			{"chat_id": float64(dstChat), "command": "ban", "disabled": true},
-		},
-	}
-
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleDisabling, payload))
-
-	disabled := disabling.GetChatDisabledCMDs(dstChat)
-	assert.Len(t, disabled, 2)
-	assert.Contains(t, disabled, "kick")
-	assert.Contains(t, disabled, "ban")
-	assert.True(t, disabling.ShouldDel(dstChat))
 }
 
 func TestExportImportConnectionsRoundTrip(t *testing.T) {
@@ -717,26 +538,29 @@ func TestExportImportConnectionsRoundTrip(t *testing.T) {
 
 	srcChat := time.Now().UnixNano()
 	dstChat := srcChat + 1
+	userID := srcChat + 2
 	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_connections"))
 	require.NoError(t, chats.EnsureChatInDb(dstChat, "dst_connections"))
 	t.Cleanup(func() {
 		cleanupBackupChat(t, srcChat)
 		cleanupBackupChat(t, dstChat)
+		if err := db.DB.Where("user_id = ?", userID).Delete(&models.User{}).Error; err != nil {
+			t.Errorf("cleanup failed deleting User: %v", err)
+		}
 	})
+
+	require.NoError(t, connections.ConnectId(userID, srcChat))
 
 	exported, err := exportConnectionsData(srcChat)
 	require.NoError(t, err)
-	require.NotNil(t, exported)
+	require.Len(t, exported.Connections, 1)
+	assert.Equal(t, userID, exported.Connections[0].UserId)
 
-	payload := map[string]interface{}{
-		"settings": map[string]interface{}{
-			"chat_id":       float64(dstChat),
-			"allow_connect": true,
-		},
-	}
+	require.NoError(t, ImportDomainData(dstChat, DomainConnections, payloadFor(t, exported)))
 
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleConnections, payload))
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleConnections, map[string]interface{}{}))
+	conn := connections.Connection(userID)
+	assert.True(t, conn.Connected)
+	assert.Equal(t, dstChat, conn.ChatId)
 }
 
 func TestExportImportAntifloodRoundTrip(t *testing.T) {
@@ -772,7 +596,7 @@ func TestExportImportAntifloodRoundTrip(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleAntiflood, payload))
+	require.NoError(t, ImportDomainData(dstChat, DomainAntiflood, payload))
 
 	settings := antiflood.GetFlood(dstChat)
 	require.NotNil(t, settings)
@@ -781,13 +605,13 @@ func TestExportImportAntifloodRoundTrip(t *testing.T) {
 	assert.True(t, settings.DeleteAntifloodMessage)
 }
 
-func TestExportImportGreetingsRoundTrip(t *testing.T) {
+func TestExportImportWelcomeRoundTrip(t *testing.T) {
 	skipIfNoDb(t)
 
 	srcChat := time.Now().UnixNano()
 	dstChat := srcChat + 1
-	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_greetings"))
-	require.NoError(t, chats.EnsureChatInDb(dstChat, "dst_greetings"))
+	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_welcome"))
+	require.NoError(t, chats.EnsureChatInDb(dstChat, "dst_welcome"))
 	t.Cleanup(func() {
 		cleanupBackupChat(t, srcChat)
 		cleanupBackupChat(t, dstChat)
@@ -796,7 +620,7 @@ func TestExportImportGreetingsRoundTrip(t *testing.T) {
 	require.NoError(t, greetings.SetWelcomeText(srcChat, "Hello {first}!", "", nil, db.TEXT))
 	require.NoError(t, greetings.SetWelcomeToggle(srcChat, true))
 
-	exported, err := exportGreetingsData(srcChat)
+	exported, err := exportWelcomeData(srcChat)
 	require.NoError(t, err)
 	require.NotNil(t, exported)
 	require.NotNil(t, exported.Settings)
@@ -808,56 +632,13 @@ func TestExportImportGreetingsRoundTrip(t *testing.T) {
 	_ = greetings.GetGreetingSettings(dstChat)
 
 	// Build payload from exported JSON so keys match struct tags exactly
-	exportedJSON, err := json.Marshal(exported)
-	require.NoError(t, err)
-	var payload map[string]interface{}
-	require.NoError(t, json.Unmarshal(exportedJSON, &payload))
-
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleGreetings, payload))
+	require.NoError(t, ImportDomainData(dstChat, DomainWelcome, payloadFor(t, exported)))
 
 	settings := greetings.GetGreetingSettings(dstChat)
 	require.NotNil(t, settings)
 	require.NotNil(t, settings.WelcomeSettings)
 	assert.Equal(t, "Hello {first}!", settings.WelcomeSettings.WelcomeText)
 	assert.True(t, settings.WelcomeSettings.ShouldWelcome)
-}
-
-func TestExportImportPinsRoundTrip(t *testing.T) {
-	skipIfNoDb(t)
-
-	srcChat := time.Now().UnixNano()
-	dstChat := srcChat + 1
-	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_pins"))
-	require.NoError(t, chats.EnsureChatInDb(dstChat, "dst_pins"))
-	t.Cleanup(func() {
-		cleanupBackupChat(t, srcChat)
-		cleanupBackupChat(t, dstChat)
-	})
-
-	_ = pins.GetPinData(srcChat)
-	require.NoError(t, pins.SetAntiChannelPin(srcChat, true))
-
-	// Ensure dst has record before import
-	_ = pins.GetPinData(dstChat)
-
-	exported, err := exportPinsData(srcChat)
-	require.NoError(t, err)
-	require.NotNil(t, exported)
-	require.NotNil(t, exported.Settings)
-	assert.True(t, exported.Settings.AntiChannelPin)
-
-	payload := map[string]interface{}{
-		"settings": map[string]interface{}{
-			"chat_id":          float64(dstChat),
-			"anti_channel_pin": true,
-		},
-	}
-
-	require.NoError(t, ImportModuleData(dstChat, BackupModulePins, payload))
-
-	settings := pins.GetPinData(dstChat)
-	require.NotNil(t, settings)
-	assert.True(t, settings.AntiChannelPin)
 }
 
 func TestImportChatData_Validation(t *testing.T) {
@@ -868,113 +649,95 @@ func TestImportChatData_Validation(t *testing.T) {
 	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
 
 	invalidBackup := &BackupFormat{
-		Version: "", // empty version triggers validation error
+		Version: "", // empty version triggers the incompatible-version check
 		BotName: "OtherBot",
 		ChatID:  chatID,
-		Modules: []string{"notes"},
+		Domains: []string{"notes"},
 		Data:    map[string]interface{}{},
 	}
 
 	err := ImportChatData(chatID, invalidBackup, []string{"notes"})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid backup")
+	assert.ErrorContains(t, err, "unsupported backup version")
+
+	missingData := NewBackupFormat(chatID, "Test", 1, []string{DomainNotes})
+	assert.ErrorContains(t, ImportChatData(chatID, missingData, nil), "invalid backup")
 }
 
-func TestImportChatData_SingleModule(t *testing.T) {
+func TestImportChatData_SingleDomain(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
 	require.NoError(t, chats.EnsureChatInDb(chatID, "test_import_chat_single"))
 	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
 
-	backup := NewBackupFormat(chatID, "Test", 1, []string{BackupModuleWarns})
-	backup.Data[BackupModuleWarns] = map[string]interface{}{
-		"warn_settings": map[string]interface{}{
+	backup := NewBackupFormat(chatID, "Test", 1, []string{DomainWarnings})
+	backup.Data[DomainWarnings] = map[string]interface{}{
+		"settings": map[string]interface{}{
 			"chat_id":    float64(chatID),
 			"warn_limit": float64(7),
 		},
 	}
 
-	require.NoError(t, ImportChatData(chatID, backup, []string{BackupModuleWarns}))
+	require.NoError(t, ImportChatData(chatID, backup, []string{DomainWarnings}))
 
 	settings := warns.GetWarnSetting(chatID)
 	require.NotNil(t, settings)
 	assert.Equal(t, 7, settings.WarnLimit)
 }
 
-func TestImportChatData_AllModulesFromBackup(t *testing.T) {
+func TestImportChatData_AllDomainsFromBackup(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
 	require.NoError(t, chats.EnsureChatInDb(chatID, "test_import_chat_all"))
 	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
 
-	backup := NewBackupFormat(chatID, "Test", 1, []string{BackupModuleFilters, BackupModuleRules})
-	backup.Data[BackupModuleFilters] = map[string]interface{}{
+	backup := NewBackupFormat(chatID, "Test", 1, []string{DomainFilters, DomainNotes})
+	backup.Data[DomainFilters] = map[string]interface{}{
 		"filters": []map[string]interface{}{
 			{"chat_id": float64(chatID), "keyword": "test", "filter_reply": "reply", "msgtype": float64(db.TEXT)},
 		},
 	}
-	backup.Data[BackupModuleRules] = map[string]interface{}{
-		"settings": map[string]interface{}{
-			"chat_id": float64(chatID),
-			"rules":   "test rules",
+	backup.Data[DomainNotes] = map[string]interface{}{
+		"notes": []map[string]interface{}{
+			{"chat_id": float64(chatID), "note_name": "test", "note_content": "content", "msg_type": float64(db.TEXT)},
 		},
 	}
 
 	require.NoError(t, ImportChatData(chatID, backup, nil))
 
 	assert.Len(t, filters.GetFiltersList(chatID), 1)
-	assert.Equal(t, "test rules", rules.GetChatRulesInfo(chatID).Rules)
+	assert.Len(t, notes.GetNotesList(chatID, true), 1)
 }
 
-func TestClearChatData_SpecificModules(t *testing.T) {
+func TestClearChatData_SpecificDomains(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
 	require.NoError(t, chats.EnsureChatInDb(chatID, "test_clear_specific"))
 	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
 
-	// Set up data for multiple modules
+	// Set up data for multiple domains
 	require.NoError(t, filters.AddFilter(chatID, "hello", "hi", "", nil, db.TEXT))
 	require.NoError(t, antiflood.SetFlood(chatID, 5))
-	rules.SetChatRules(chatID, "rules text")
+	require.NoError(t, notes.AddNote(chatID, "n", "c", "", nil, db.TEXT, false, false, false, true, false, false))
 
 	// Clear only filters
-	require.NoError(t, ClearChatData(chatID, []string{BackupModuleFilters}))
+	require.NoError(t, ClearChatData(chatID, []string{DomainFilters}))
 
 	assert.Empty(t, filters.GetFiltersList(chatID))
 	assert.Equal(t, 5, antiflood.GetFlood(chatID).Limit)
-	assert.Equal(t, "rules text", rules.GetChatRulesInfo(chatID).Rules)
+	assert.Len(t, notes.GetNotesList(chatID, true), 1)
 }
 
-func TestClearChatData_AllModules(t *testing.T) {
+func TestClearChatData_InvalidDomain(t *testing.T) {
 	skipIfNoDb(t)
 
-	chatID := time.Now().UnixNano()
-	require.NoError(t, chats.EnsureChatInDb(chatID, "test_clear_all"))
-	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
-
-	// Set up data
-	require.NoError(t, filters.AddFilter(chatID, "hello", "hi", "", nil, db.TEXT))
-	require.NoError(t, blacklists.AddBlacklist(chatID, "bad"))
-	require.NoError(t, antiflood.SetFlood(chatID, 5))
-	rules.SetChatRules(chatID, "rules text")
-
-	pin := pins.GetPinData(chatID)
-	if pin != nil {
-		assert.False(t, pin.AntiChannelPin)
-	}
+	err := ClearChatData(12345, []string{"invalid_domain"})
+	assert.ErrorContains(t, err, "unsupported domain")
 }
 
-func TestClearChatData_InvalidModule(t *testing.T) {
-	skipIfNoDb(t)
-
-	err := ClearChatData(12345, []string{"invalid_module"})
-	assert.ErrorContains(t, err, "unknown module")
-}
-
-func TestClearModuleData_IndividualModules(t *testing.T) {
+func TestClearDomainData_IndividualDomains(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
@@ -983,103 +746,51 @@ func TestClearModuleData_IndividualModules(t *testing.T) {
 
 	// --- Filters ---
 	require.NoError(t, filters.AddFilter(chatID, "f", "r", "", nil, db.TEXT))
-	require.NoError(t, ClearModuleData(chatID, BackupModuleFilters))
+	require.NoError(t, ClearDomainData(chatID, DomainFilters))
 	assert.Empty(t, filters.GetFiltersList(chatID))
 
 	// --- Blacklists ---
 	require.NoError(t, blacklists.AddBlacklist(chatID, "badword"))
-	require.NoError(t, ClearModuleData(chatID, BackupModuleBlacklists))
+	require.NoError(t, ClearDomainData(chatID, DomainBlacklists))
 	assert.Empty(t, blacklists.GetBlacklistSettings(chatID))
 
 	// --- Notes ---
 	require.NoError(t, notes.AddNote(chatID, "n1", "c1", "", nil, db.TEXT, false, false, false, true, false, false))
-	require.NoError(t, ClearModuleData(chatID, BackupModuleNotes))
+	require.NoError(t, ClearDomainData(chatID, DomainNotes))
 	assert.Empty(t, notes.GetNotesList(chatID, true))
 
-	// --- Rules ---
-	rules.SetChatRules(chatID, "some rules")
-	require.NoError(t, ClearModuleData(chatID, BackupModuleRules))
-	assert.Equal(t, "", rules.GetChatRulesInfo(chatID).Rules)
-
-	// --- Warns ---
+	// --- Warnings ---
 	require.NoError(t, warns.SetWarnLimit(chatID, 10))
-	require.NoError(t, ClearModuleData(chatID, BackupModuleWarns))
+	require.NoError(t, ClearDomainData(chatID, DomainWarnings))
 	assert.Equal(t, 3, warns.GetWarnSetting(chatID).WarnLimit)
 
-
-	// --- Greetings ---
+	// --- Welcome ---
 	require.NoError(t, greetings.SetWelcomeToggle(chatID, true))
-	require.NoError(t, ClearModuleData(chatID, BackupModuleGreetings))
+	require.NoError(t, ClearDomainData(chatID, DomainWelcome))
 	settings := greetings.GetGreetingSettings(chatID)
 	if settings != nil && settings.WelcomeSettings != nil {
 		assert.False(t, settings.WelcomeSettings.ShouldWelcome)
 	}
 
-	// --- Pins ---
-	_ = pins.GetPinData(chatID)
-	require.NoError(t, pins.SetAntiChannelPin(chatID, true))
-	require.NoError(t, ClearModuleData(chatID, BackupModulePins))
-	assert.False(t, pins.GetPinData(chatID).AntiChannelPin)
-
 	// --- Antiflood ---
 	require.NoError(t, antiflood.SetFlood(chatID, 8))
-	require.NoError(t, ClearModuleData(chatID, BackupModuleAntiflood))
+	require.NoError(t, ClearDomainData(chatID, DomainAntiflood))
 	assert.Equal(t, 0, antiflood.GetFlood(chatID).Limit)
 }
 
-func TestExportModuleData_EdgeCases(t *testing.T) {
+func TestExportDomainData_EdgeCases(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
 	require.NoError(t, chats.EnsureChatInDb(chatID, "test_export_edge"))
 	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
 
-	// No data exists yet → exports should return non-nil empty structs
-	adminData, err := exportAdminData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, adminData)
-
-	antifloodData, err := exportAntifloodData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, antifloodData)
-
-	blacklistsData, err := exportBlacklistsData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, blacklistsData)
-	assert.Empty(t, blacklistsData.Entries)
-
-	connectionsData, err := exportConnectionsData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, connectionsData)
-
-	disablingData, err := exportDisablingData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, disablingData)
-
-	filtersData, err := exportFiltersData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, filtersData)
-
-	greetingsData, err := exportGreetingsData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, greetingsData)
-
-
-	notesData, err := exportNotesData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, notesData)
-
-	pinsData, err := exportPinsData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, pinsData)
-
-	rulesData, err := exportRulesData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, rulesData)
-
-	warnsData, err := exportWarnsData(chatID)
-	require.NoError(t, err)
-	require.NotNil(t, warnsData)
+	// No data exists yet → every domain still exports a non-nil payload.
+	for _, domain := range AllDomains() {
+		data, err := ExportDomainData(chatID, domain)
+		require.NoErrorf(t, err, "export %s", domain)
+		require.NotNilf(t, data, "export %s", domain)
+	}
 }
 
 func TestExportChatData_Full(t *testing.T) {
@@ -1089,29 +800,29 @@ func TestExportChatData_Full(t *testing.T) {
 	require.NoError(t, chats.EnsureChatInDb(chatID, "test_export_chat_full"))
 	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
 
-	// Populate multiple modules
-	require.NoError(t, admin.SetAnonAdminMode(chatID, true))
+	// Populate multiple domains
 	require.NoError(t, antiflood.SetFlood(chatID, 4))
 	require.NoError(t, filters.AddFilter(chatID, "hi", "hello", "", nil, db.TEXT))
-	rules.SetChatRules(chatID, "Be kind")
+	require.NoError(t, notes.AddNote(chatID, "n", "Be kind", "", nil, db.TEXT, false, false, false, true, false, false))
+
 	backup, err := ExportChatData(chatID, "Test Chat", 1, []string{
-		BackupModuleAdmin,
-		BackupModuleFilters,
-		BackupModuleRules,
+		DomainAntiflood,
+		DomainFilters,
+		DomainNotes,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, backup)
 	assert.Equal(t, chatID, backup.ChatID)
 	assert.Equal(t, "Test Chat", backup.ChatName)
-	assert.Len(t, backup.Modules, 3)
+	assert.Len(t, backup.Domains, 3)
 
 	// Verify data is present
-	assert.NotNil(t, backup.Data[BackupModuleAdmin])
-	assert.NotNil(t, backup.Data[BackupModuleFilters])
-	assert.NotNil(t, backup.Data[BackupModuleRules])
+	assert.NotNil(t, backup.Data[DomainAntiflood])
+	assert.NotNil(t, backup.Data[DomainFilters])
+	assert.NotNil(t, backup.Data[DomainNotes])
 }
 
-func TestExportChatData_EmptyModulesExportsAll(t *testing.T) {
+func TestExportChatData_EmptyDomainsExportsAll(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
@@ -1125,29 +836,29 @@ func TestExportChatData_EmptyModulesExportsAll(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, backup)
 
-	// Should contain all modules (even if some have empty data)
-	assert.Equal(t, len(AllExportableModules()), len(backup.Modules))
+	// Should contain all domains (even if some have empty data)
+	assert.Equal(t, len(AllDomains()), len(backup.Domains))
+	assert.NoError(t, backup.Validate())
 }
 
-func TestImportChatData_RejectsMissingLegacyModuleData(t *testing.T) {
+func TestImportChatData_RejectsMissingDomainData(t *testing.T) {
 	skipIfNoDb(t)
 
 	chatID := time.Now().UnixNano()
 	require.NoError(t, chats.EnsureChatInDb(chatID, "test_import_missing"))
 	t.Cleanup(func() { cleanupBackupChat(t, chatID) })
 
-	backup := NewBackupFormat(chatID, "Test", 1, []string{BackupModuleFilters, BackupModuleNotes})
-	backup.Version = legacyFormatVersion
+	backup := NewBackupFormat(chatID, "Test", 1, []string{DomainFilters, DomainNotes})
 	// Only provide data for filters
-	backup.Data[BackupModuleFilters] = map[string]interface{}{
+	backup.Data[DomainFilters] = map[string]interface{}{
 		"filters": []map[string]interface{}{
 			{"chat_id": float64(chatID), "keyword": "k", "filter_reply": "r", "msgtype": float64(db.TEXT)},
 		},
 	}
-	// Notes module has no data in backup
+	// Notes domain has no data in backup
 
 	err := ImportChatData(chatID, backup, nil)
-	require.ErrorContains(t, err, "missing data for module: notes")
+	require.ErrorContains(t, err, "missing data for domain: notes")
 	assert.Empty(t, filters.GetFiltersList(chatID))
 }
 
@@ -1178,19 +889,14 @@ func TestAntiraidBackupRoundTrip(t *testing.T) {
 	assert.Equal(t, 10, exported.Settings.AutoAntiRaidThreshold)
 
 	// Clear srcChat to defaults
-	require.NoError(t, ClearModuleData(srcChat, BackupModuleAntiraid))
+	require.NoError(t, ClearDomainData(srcChat, DomainAntiraid))
 	cleared := antiraid.GetAntiRaidSettings(srcChat)
 	assert.Equal(t, 21600, cleared.RaidTime)
 	assert.Equal(t, 3600, cleared.RaidActionTime)
 	assert.Equal(t, 0, cleared.AutoAntiRaidThreshold)
 
 	// Import into dstChat
-	exportedJSON, err := json.Marshal(exported)
-	require.NoError(t, err)
-	var payload map[string]interface{}
-	require.NoError(t, json.Unmarshal(exportedJSON, &payload))
-
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleAntiraid, payload))
+	require.NoError(t, ImportDomainData(dstChat, DomainAntiraid, payloadFor(t, exported)))
 
 	restored := antiraid.GetAntiRaidSettings(dstChat)
 	require.NotNil(t, restored)
@@ -1225,9 +931,7 @@ func TestAntiraidBackupExcludesRaidWindow(t *testing.T) {
 	assert.NotContains(t, string(exportedJSON), "raid_started_at")
 
 	// Restoring a backup resets the window rather than reopening a stale raid.
-	var payload map[string]interface{}
-	require.NoError(t, json.Unmarshal(exportedJSON, &payload))
-	require.NoError(t, ImportModuleData(srcChat, BackupModuleAntiraid, payload))
+	require.NoError(t, ImportDomainData(srcChat, DomainAntiraid, payloadFor(t, exported)))
 	assert.False(t, antiraid.GetRaidState(srcChat).Active)
 }
 
@@ -1264,16 +968,11 @@ func TestApprovalsBackupRoundTrip(t *testing.T) {
 	assert.Contains(t, exportedUserIDs, userB)
 
 	// Clear srcChat approvals
-	require.NoError(t, ClearModuleData(srcChat, BackupModuleApprovals))
+	require.NoError(t, ClearDomainData(srcChat, DomainApprovals))
 	assert.Empty(t, approvals.GetApprovedUsers(srcChat))
 
 	// Import into dstChat
-	exportedJSON, err := json.Marshal(exported)
-	require.NoError(t, err)
-	var payload map[string]interface{}
-	require.NoError(t, json.Unmarshal(exportedJSON, &payload))
-
-	require.NoError(t, ImportModuleData(dstChat, BackupModuleApprovals, payload))
+	require.NoError(t, ImportDomainData(dstChat, DomainApprovals, payloadFor(t, exported)))
 
 	restoredUsers := approvals.GetApprovedUsers(dstChat)
 	require.Len(t, restoredUsers, 2)
@@ -1288,4 +987,31 @@ func TestApprovalsBackupRoundTrip(t *testing.T) {
 	// Verify approvals recognizes the restored users
 	assert.True(t, approvals.IsUserApproved(dstChat, userA))
 	assert.True(t, approvals.IsUserApproved(dstChat, userB))
+}
+
+func TestReactionsBackupRoundTrip(t *testing.T) {
+	skipIfNoDb(t)
+
+	srcChat := time.Now().UnixNano()
+	dstChat := srcChat + 1
+	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_reactions"))
+	require.NoError(t, chats.EnsureChatInDb(dstChat, "dst_reactions"))
+	t.Cleanup(func() {
+		cleanupBackupChat(t, srcChat)
+		cleanupBackupChat(t, dstChat)
+	})
+
+	require.NoError(t, db.DB.Create(&models.Reactions{ChatID: srcChat, Keyword: "gg", Emoji: "🔥"}).Error)
+
+	exported, err := exportReactionsData(srcChat)
+	require.NoError(t, err)
+	require.Len(t, exported.Reactions, 1)
+
+	require.NoError(t, ImportDomainData(dstChat, DomainReactions, payloadFor(t, exported)))
+
+	restored, err := exportReactionsData(dstChat)
+	require.NoError(t, err)
+	require.Len(t, restored.Reactions, 1)
+	assert.Equal(t, "gg", restored.Reactions[0].Keyword)
+	assert.Equal(t, "🔥", restored.Reactions[0].Emoji)
 }

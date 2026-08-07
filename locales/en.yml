@@ -1106,14 +1106,17 @@ backup_help_msg: |
   Backup and restore your group settings using these commands:
 
   <b>User Commands:</b>
-  • /export - Export all group settings to a JSON file
-  • /export notes filters rules - Export specific modules only
+  • /export - Export all supported domains to a JSON file
+  • /export notes filters welcome - Export specific domains only
 
   <b>Creator Commands:</b>
   • /import - Reply to a backup file to restore settings
-  • /import notes filters - Import only specific modules
-  • /reset - Reset all settings to default
-  • /reset warnings filters - Reset specific modules only
+  • /import notes filters - Import only specific domains
+  • /reset - Reset all supported domains to default
+  • /reset warnings filters - Reset specific domains only
+
+  <b>Supported domains:</b>
+  antiflood, antiraid, approvals, blacklists, connections, filters, welcome, notes, reactions, warnings
 
   <b>Rate Limits:</b>
   • Export: 1 per 5 minutes
@@ -1134,7 +1137,7 @@ backup_export_success: |
 
 backup_export_success_text: "✅ Successfully exported {modules} modules. Download the backup file above."
 backup_export_rate_limited: "⏳ Please wait <b>{time}</b> before exporting again."
-backup_export_no_modules: "❌ No exportable modules found for this chat."
+backup_export_no_modules: "❌ No supported backup domains were requested for this chat."
 backup_export_failed: "❌ Failed to export settings. Please try again later."
 
 backup_import_success: |
@@ -1150,7 +1153,7 @@ backup_import_no_reply: "❌ Please reply to a backup file with <code>/import</c
 backup_import_invalid_file: "❌ Invalid backup file format. Please send a valid JSON backup file."
 backup_import_file_too_large: "❌ Backup file is too large. Maximum size is 10MB."
 backup_import_download_failed: "❌ Failed to download backup file. Please try again."
-backup_import_version_mismatch: "⚠️ This backup was created with a different version. Some settings may not import correctly."
+backup_import_version_mismatch: "❌ This backup uses an unsupported format version. Only backups exported by the current bot version can be imported."
 backup_import_creator_only: "❌ Only the group creator can import settings."
 backup_import_confirm: |
   <b>⚠️ Confirm Import</b>
@@ -1191,19 +1194,17 @@ button_cancel_import: "❌ Cancel"
 button_confirm_reset: "⚠️ Yes, Reset All"
 button_cancel_reset: "❌ Cancel"
 
-# Module names for backup
-backup_module_admin: "Admin Settings"
-backup_module_antiflood: "Antiflood"
-backup_module_blacklists: "Blacklists"
-backup_module_captcha: "Captcha"
-backup_module_connections: "Connections"
-backup_module_disabling: "Disabled Commands"
-backup_module_filters: "Filters"
-backup_module_greetings: "Greetings"
-backup_module_notes: "Notes"
-backup_module_pins: "Pin Settings"
-backup_module_rules: "Rules"
-backup_module_warns: "Warnings"
+# Domain names for backup
+backup_domain_antiflood: "Antiflood"
+backup_domain_antiraid: "Anti-Raid"
+backup_domain_approvals: "Approvals"
+backup_domain_blacklists: "Blacklists"
+backup_domain_connections: "Connections"
+backup_domain_filters: "Filters"
+backup_domain_welcome: "Welcome"
+backup_domain_notes: "Notes"
+backup_domain_reactions: "Reactions"
+backup_domain_warnings: "Warnings"
 
 # Callback validation strings (previously hardcoded)
 common_callback_invalid_request: "Invalid request."
