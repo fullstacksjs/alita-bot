@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,8 +13,10 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 
+	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/antiraid"
 	"github.com/divkix/Alita_Robot/alita/db/approvals"
+	"github.com/divkix/Alita_Robot/alita/db/models"
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
 )
 
@@ -93,9 +96,6 @@ func TestAntiRaidKeysAndNoCacheFallbacks(t *testing.T) {
 	withNilCacheMarshal(t)
 
 	chatID := int64(-1001234567890)
-	if got := stateKey(chatID); got != "alita:antiraid:state:-1001234567890" {
-		t.Fatalf("stateKey() = %q", got)
-	}
 	if got := joinsKey(chatID); got != "alita:antiraid:joins:-1001234567890" {
 		t.Fatalf("joinsKey() = %q", got)
 	}
@@ -110,16 +110,13 @@ func TestAntiRaidKeysAndNoCacheFallbacks(t *testing.T) {
 
 	clearJoinTracking(chatID)
 
+	// Raid state lives in SQLite, so it stays readable while the cache is down.
 	state := getRaidState(chatID)
 	if state == nil {
 		t.Fatal("getRaidState() = nil, want inactive state")
 	}
 	if state.Active {
 		t.Fatalf("getRaidState() Active = true, want false")
-	}
-
-	if err := setRaidState(chatID, &raidState{Active: true}); err == nil {
-		t.Fatal("setRaidState() error = nil, want cache not initialized")
 	}
 }
 
@@ -144,19 +141,37 @@ func TestStopAntiRaidExpiryPollerCancelsExistingContext(t *testing.T) {
 	}
 }
 
-func TestStartAntiRaidExpiryPollerSkipsWhenRedisUnavailable(t *testing.T) {
+func TestStartAntiRaidExpiryPollerSkipsWhenDatabaseUnavailable(t *testing.T) {
 	antiRaidCancel = nil
 	antiRaidCtx = nil
-	restoreRedis := cache.DisableRedisForTest()
+	originalDB := db.DB
+	db.DB = nil
 	t.Cleanup(func() {
-		restoreRedis()
+		db.DB = originalDB
 		StopAntiRaidExpiryPoller()
 		antiRaidCtx = nil
 	})
 
 	StartAntiRaidExpiryPoller()
 	if antiRaidCancel != nil {
-		t.Fatal("StartAntiRaidExpiryPoller created cancel func without Redis")
+		t.Fatal("StartAntiRaidExpiryPoller created cancel func without a database")
+	}
+}
+
+func TestStartAntiRaidExpiryPollerRunsWithoutRedis(t *testing.T) {
+	antiRaidCancel = nil
+	antiRaidCtx = nil
+	restoreRedis := cache.DisableRedisForTest()
+	t.Cleanup(func() {
+		StopAntiRaidExpiryPoller()
+		restoreRedis()
+		antiRaidCtx = nil
+	})
+
+	// The raid window is persisted in SQLite, so expiry no longer depends on Redis.
+	StartAntiRaidExpiryPoller()
+	if antiRaidCancel == nil {
+		t.Fatal("StartAntiRaidExpiryPoller did not start without Redis")
 	}
 }
 
@@ -177,16 +192,16 @@ func TestAntiRaidPollerReturnsOnCancelledContext(t *testing.T) {
 	}
 }
 
-func TestAntiRaidCheckExpiredRaidsNoRedisIsNoop(t *testing.T) {
+func TestAntiRaidCheckExpiredRaidsNoDatabaseIsNoop(t *testing.T) {
+	originalDB := db.DB
+	db.DB = nil
+	t.Cleanup(func() { db.DB = originalDB })
+
 	antiRaidModule.checkExpiredRaids(context.Background())
 }
 
 func TestAntiRaidStateMachine(t *testing.T) {
-	if cache.GetMarshal() == nil {
-		t.Skip("requires Redis cache")
-	}
-
-	chatID := time.Now().UnixNano()
+	chatID := uniqueModuleChatID()
 
 	// Initial state
 	if antiRaidModule.isRaidActive(chatID) {
@@ -222,9 +237,10 @@ func TestAntiRaidStateMachine(t *testing.T) {
 }
 
 func TestAntiRaidConcurrentEnableHasSingleWinner(t *testing.T) {
-	withMiniredis(t)
-
 	chatID := uniqueModuleChatID()
+	t.Cleanup(func() {
+		_, _ = antiRaidModule.disableRaid(chatID)
+	})
 	start := make(chan struct{})
 	var winners atomic.Int32
 	var workers sync.WaitGroup
@@ -260,64 +276,88 @@ func TestAntiRaidConcurrentEnableHasSingleWinner(t *testing.T) {
 	}
 }
 
-func TestAntiRaidStaleExpiryCannotDeleteFreshState(t *testing.T) {
-	withMiniredis(t)
+// seedRaidWindow writes a raid window straight into SQLite so tests can stage
+// state that a previous process would have left behind.
+func seedRaidWindow(t *testing.T, chatID int64, startedAt, activeUntil time.Time) {
+	t.Helper()
 
-	chatID := uniqueModuleChatID()
-	expired := &raidState{
-		Active:    true,
-		StartedAt: time.Now().Add(-2 * time.Hour).Unix(),
-		ExpiresAt: time.Now().Add(-time.Hour).Unix(),
+	if err := antiraid.SetRaidTime(chatID, 21600); err != nil {
+		t.Fatalf("seedRaidWindow: SetRaidTime error = %v", err)
 	}
-	fresh := &raidState{
-		Active:    true,
-		StartedAt: time.Now().Unix(),
-		ExpiresAt: time.Now().Add(time.Hour).Unix(),
+	if err := db.DB.Model(&models.AntiRaidSettings{}).
+		Where("chat_id = ?", chatID).
+		Updates(map[string]any{
+			"raid_started_at":   startedAt,
+			"raid_active_until": activeUntil,
+		}).Error; err != nil {
+		t.Fatalf("seedRaidWindow: update error = %v", err)
 	}
-	if err := setRaidState(chatID, expired); err != nil {
-		t.Fatalf("setRaidState(expired) error = %v", err)
+}
+
+func TestAntiRaidStaleExpiryCannotClearFreshState(t *testing.T) {
+	freshChatID := uniqueModuleChatID()
+	staleChatID := uniqueModuleChatID()
+	t.Cleanup(func() {
+		_, _ = antiRaidModule.disableRaid(freshChatID)
+		_, _ = antiRaidModule.disableRaid(staleChatID)
+	})
+
+	seedRaidWindow(t, staleChatID, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
+	if enabled, err := antiRaidModule.enableRaid(freshChatID, 3600); err != nil || !enabled {
+		t.Fatalf("enableRaid(fresh) = (%v, %v), want (true, nil)", enabled, err)
 	}
-	if err := setRaidState(chatID, fresh); err != nil {
-		t.Fatalf("setRaidState(fresh) error = %v", err)
+	freshExpiry := getRaidState(freshChatID).ExpiresAt
+
+	antiRaidModule.checkExpiredRaids(context.Background())
+
+	if got := getRaidState(freshChatID); !got.Active || got.ExpiresAt != freshExpiry {
+		t.Fatalf("fresh raid after expiry sweep = %+v, want active with expiry %d", got, freshExpiry)
+	}
+	if got := getRaidState(staleChatID); got.Active || got.ExpiresAt != 0 {
+		t.Fatalf("stale raid after expiry sweep = %+v, want cleared", got)
+	}
+}
+
+// TestAntiRaidExpiryPollerRecoversRaidFromStorage covers the restart path: the
+// window was opened by an earlier process and only exists in SQLite.
+func TestAntiRaidExpiryPollerRecoversRaidFromStorage(t *testing.T) {
+	activeChatID := uniqueModuleChatID()
+	expiredChatID := uniqueModuleChatID()
+	t.Cleanup(func() {
+		_, _ = antiRaidModule.disableRaid(activeChatID)
+		_, _ = antiRaidModule.disableRaid(expiredChatID)
+	})
+
+	seedRaidWindow(t, activeChatID, time.Now().Add(-time.Minute), time.Now().Add(time.Hour))
+	seedRaidWindow(t, expiredChatID, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Minute))
+
+	// A restarted process sees the still-open raid without any cache priming.
+	if !antiRaidModule.isRaidActive(activeChatID) {
+		t.Fatal("isRaidActive() = false for a raid recovered from storage")
+	}
+	if antiRaidModule.isRaidActive(expiredChatID) {
+		t.Fatal("isRaidActive() = true for a raid whose window already closed")
 	}
 
-	deleted, err := deleteRaidStateIfUnchanged(chatID, expired)
-	if err != nil {
-		t.Fatalf("deleteRaidStateIfUnchanged() error = %v", err)
-	}
-	if deleted {
-		t.Fatal("deleteRaidStateIfUnchanged() deleted a newer raid")
-	}
-	if got := getRaidState(chatID); !got.Active || got.ExpiresAt != fresh.ExpiresAt {
-		t.Fatalf("fresh raid after stale expiry = %+v, want %+v", got, fresh)
-	}
+	antiRaidModule.checkExpiredRaids(context.Background())
 
-	replacement := *fresh
-	replacement.ExpiresAt++
-	replaced, err := replaceRaidStateIfUnchanged(chatID, fresh, &replacement)
-	if err != nil {
-		t.Fatalf("replaceRaidStateIfUnchanged() error = %v", err)
+	if !antiRaidModule.isRaidActive(activeChatID) {
+		t.Fatal("expiry sweep closed a raid that is still within its window")
 	}
-	if !replaced {
-		t.Fatal("replaceRaidStateIfUnchanged() did not replace matching state")
-	}
-	deleted, err = deleteRaidStateIfUnchanged(chatID, &replacement)
-	if err != nil {
-		t.Fatalf("deleteRaidStateIfUnchanged(replacement) error = %v", err)
-	}
-	if !deleted {
-		t.Fatal("deleteRaidStateIfUnchanged() did not delete matching state")
+	if antiRaidModule.isRaidActive(expiredChatID) {
+		t.Fatal("expiry sweep left an elapsed raid open")
 	}
 }
 
 func TestAntiRaidAutoExpiry(t *testing.T) {
-	if cache.GetMarshal() == nil {
-		t.Skip("requires Redis cache")
+	chatID := uniqueModuleChatID()
+	t.Cleanup(func() {
+		_, _ = antiRaidModule.disableRaid(chatID)
+	})
+
+	if _, err := antiRaidModule.enableRaid(chatID, 1); err != nil { // 1 second
+		t.Fatalf("enableRaid() error = %v", err)
 	}
-
-	chatID := time.Now().UnixNano() + 1
-
-	antiRaidModule.enableRaid(chatID, 1) // 1 second
 	if !antiRaidModule.isRaidActive(chatID) {
 		t.Fatal("expected raid active immediately")
 	}
@@ -329,53 +369,39 @@ func TestAntiRaidAutoExpiry(t *testing.T) {
 }
 
 func TestAntiRaidExtend(t *testing.T) {
-	if cache.GetMarshal() == nil {
-		t.Skip("requires Redis cache")
+	chatID := uniqueModuleChatID()
+	t.Cleanup(func() {
+		_, _ = antiRaidModule.disableRaid(chatID)
+	})
+
+	if _, err := antiRaidModule.enableRaid(chatID, 3600); err != nil {
+		t.Fatalf("enableRaid() error = %v", err)
+	}
+	originalExpiry := getRaidState(chatID).ExpiresAt
+
+	if err := antiRaidModule.setRaidDuration(chatID, 7200); err != nil {
+		t.Fatalf("setRaidDuration() error = %v", err)
 	}
 
-	chatID := time.Now().UnixNano() + 2
-
-	antiRaidModule.enableRaid(chatID, 3600)
-	st := getRaidState(chatID)
-	originalExpiry := st.ExpiresAt
-
-	time.Sleep(100 * time.Millisecond)
-	st.ExpiresAt = time.Now().Unix() + 7200
-	if err := setRaidState(chatID, st); err != nil {
-		t.Fatalf("setRaidState failed: %v", err)
+	extended := getRaidState(chatID)
+	if !extended.Active {
+		t.Fatal("setRaidDuration() left the raid inactive")
 	}
-
-	st2 := getRaidState(chatID)
-	if st2.ExpiresAt <= originalExpiry {
-		t.Fatalf("expected extended expiry > original, got %d vs %d", st2.ExpiresAt, originalExpiry)
+	if extended.ExpiresAt <= originalExpiry {
+		t.Fatalf("expected extended expiry > original, got %d vs %d", extended.ExpiresAt, originalExpiry)
 	}
-
-	_, _ = antiRaidModule.disableRaid(chatID)
 }
 
-func TestAntiRaidExpiredStoredStateIsPersistedInactiveOnCheck(t *testing.T) {
-	if cache.GetMarshal() == nil {
-		t.Skip("requires cache marshal")
-	}
+func TestAntiRaidExpiredStoredStateReadsInactive(t *testing.T) {
+	chatID := uniqueModuleChatID()
+	t.Cleanup(func() {
+		_, _ = antiRaidModule.disableRaid(chatID)
+	})
 
-	chatID := time.Now().UnixNano() + 3
-	if err := setRaidState(chatID, &raidState{
-		Active:    true,
-		StartedAt: time.Now().Add(-2 * time.Hour).Unix(),
-		ExpiresAt: time.Now().Add(-time.Hour).Unix(),
-	}); err != nil {
-		t.Fatalf("setRaidState() error = %v", err)
-	}
+	seedRaidWindow(t, chatID, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
 
-	st := getRaidState(chatID)
-	if !st.Active {
-		t.Fatalf("getRaidState() Active = false before expiry check: %+v", st)
-	}
 	if antiRaidModule.isRaidActive(chatID) {
 		t.Fatal("isRaidActive() = true for expired stored state")
-	}
-	if st = getRaidState(chatID); st.Active {
-		t.Fatalf("getRaidState() Active = true after expiry check: %+v", st)
 	}
 	disabled, err := antiRaidModule.disableRaid(chatID)
 	if err != nil {
@@ -700,6 +726,48 @@ func TestAntiRaidOnJoinBansDuringActiveRaid(t *testing.T) {
 	}
 }
 
+// TestAntiRaidOnJoinExemptsApprovedAndAdminDuringActiveRaid keeps the watcher
+// seam honest: even with the raid window open, approved users and chat admins
+// are never banned.
+func TestAntiRaidOnJoinExemptsApprovedAndAdminDuringActiveRaid(t *testing.T) {
+	client := newModuleBotClient()
+	bot := newModuleTestBot(client)
+	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup", Title: "Raid Chat"}
+	approved := gotgbot.User{Id: 4251, FirstName: "Approved"}
+	admin := gotgbot.User{Id: 777000, FirstName: "Telegram"}
+	raider := gotgbot.User{Id: 4252, FirstName: "Raider"}
+
+	if err := approvals.AddApprovedUser(chat.Id, approved.Id, admin.Id, "trusted"); err != nil {
+		t.Fatalf("AddApprovedUser() error = %v", err)
+	}
+	if enabled, err := antiRaidModule.enableRaid(chat.Id, 3600); err != nil || !enabled {
+		t.Fatalf("enableRaid() = (%v, %v), want (true, nil)", enabled, err)
+	}
+	t.Cleanup(func() {
+		_, _ = antiRaidModule.disableRaid(chat.Id)
+	})
+
+	msg := &gotgbot.Message{
+		MessageId:      203,
+		Date:           1,
+		Chat:           chat,
+		From:           &raider,
+		NewChatMembers: []gotgbot.User{approved, admin, raider},
+	}
+	ctx := ext.NewContext(bot, &gotgbot.Update{UpdateId: 203, Message: msg}, nil)
+	if err := antiRaidModule.onJoin(bot, ctx); err != ext.ContinueGroups {
+		t.Fatalf("onJoin() error = %v, want ContinueGroups", err)
+	}
+
+	calls := client.callsFor("banChatMember")
+	if len(calls) != 1 {
+		t.Fatalf("banChatMember calls = %d, want only the unexempt raider", len(calls))
+	}
+	if got := fmt.Sprint(calls[0].Params["user_id"]); got != fmt.Sprint(raider.Id) {
+		t.Fatalf("banned user_id = %s, want %d", got, raider.Id)
+	}
+}
+
 func TestBanRaidMemberRejectsUnsafeActionTimes(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)
@@ -972,47 +1040,23 @@ func TestAntiRaidOnJoinAppliesConfiguredAction(t *testing.T) {
 // TestAntiRaidCheckExpiredRaidsReleasesAfterWindow verifies that the poller
 // persists expiry while leaving a live raid untouched.
 func TestAntiRaidCheckExpiredRaidsReleasesAfterWindow(t *testing.T) {
-	withMiniredis(t)
-
-	rdb := cache.GetRedisClient()
-
 	// --- Scenario A: expired raid ---
 	expiredChatID := uniqueModuleChatID()
 	t.Cleanup(func() {
 		_, _ = antiRaidModule.disableRaid(expiredChatID)
 		clearJoinTracking(expiredChatID)
-		if rdb != nil {
-			_ = rdb.Del(cache.Context, stateKey(expiredChatID)).Err()
-		}
 	})
 
-	expiredState := &raidState{
-		Active:    true,
-		StartedAt: time.Now().Add(-2 * time.Hour).Unix(),
-		ExpiresAt: time.Now().Add(-1 * time.Hour).Unix(), // expired 1 hour ago
-	}
-	if err := setRaidState(expiredChatID, expiredState); err != nil {
-		t.Fatalf("setRaidState(expired) setup error = %v", err)
-	}
+	seedRaidWindow(t, expiredChatID, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
 
 	// --- Scenario B: still-active raid ---
 	activeChatID := uniqueModuleChatID()
 	t.Cleanup(func() {
 		_, _ = antiRaidModule.disableRaid(activeChatID)
 		clearJoinTracking(activeChatID)
-		if rdb != nil {
-			_ = rdb.Del(cache.Context, stateKey(activeChatID)).Err()
-		}
 	})
 
-	activeState := &raidState{
-		Active:    true,
-		StartedAt: time.Now().Unix(),
-		ExpiresAt: time.Now().Add(1 * time.Hour).Unix(), // expires 1 hour from now
-	}
-	if err := setRaidState(activeChatID, activeState); err != nil {
-		t.Fatalf("setRaidState(active) setup error = %v", err)
-	}
+	seedRaidWindow(t, activeChatID, time.Now(), time.Now().Add(time.Hour))
 
 	// Run the expiry check — must not return an error or panic.
 	antiRaidModule.checkExpiredRaids(context.Background())
@@ -1036,27 +1080,26 @@ func TestAntiRaidCheckExpiredRaidsReleasesAfterWindow(t *testing.T) {
 	}
 }
 
-func TestAntiRaidStateTTLTracksLongRaidWindow(t *testing.T) {
-	withMiniredis(t)
-
+// TestAntiRaidLongRaidWindowSurvivesCacheLoss covers week-long raids: the
+// window is stored in SQLite, so losing the cache no longer shortens it.
+func TestAntiRaidLongRaidWindowSurvivesCacheLoss(t *testing.T) {
 	chatID := uniqueModuleChatID()
 	t.Cleanup(func() {
-		_ = cache.GetRedisClient().Del(cache.Context, stateKey(chatID)).Err()
+		_, _ = antiRaidModule.disableRaid(chatID)
 	})
 
-	if err := setRaidState(chatID, &raidState{
-		Active:    true,
-		StartedAt: time.Now().Unix(),
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour).Unix(),
-	}); err != nil {
-		t.Fatalf("setRaidState() error = %v", err)
+	weekSeconds := int((7 * 24 * time.Hour).Seconds())
+	if enabled, err := antiRaidModule.enableRaid(chatID, weekSeconds); err != nil || !enabled {
+		t.Fatalf("enableRaid(week) = (%v, %v), want (true, nil)", enabled, err)
 	}
 
-	ttl, err := cache.GetRedisClient().TTL(cache.Context, stateKey(chatID)).Result()
-	if err != nil {
-		t.Fatalf("TTL() error = %v", err)
+	withNilCacheMarshal(t)
+
+	state := getRaidState(chatID)
+	if !state.Active {
+		t.Fatal("week-long raid read as inactive without a cache")
 	}
-	if ttl <= 6*24*time.Hour {
-		t.Fatalf("state TTL = %v, want longer than six days", ttl)
+	if remaining := state.ExpiresAt - time.Now().Unix(); remaining <= int64((6 * 24 * time.Hour).Seconds()) {
+		t.Fatalf("remaining raid window = %ds, want longer than six days", remaining)
 	}
 }

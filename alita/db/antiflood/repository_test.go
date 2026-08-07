@@ -1,14 +1,151 @@
-//go:build testtools
-
 package antiflood
 
 import (
+	"sync"
 	"testing"
 	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/models"
 )
+
+// sqliteFilePath returns the on-disk path backing the test database.
+func sqliteFilePath(t *testing.T) string {
+	t.Helper()
+
+	var rows []struct {
+		Seq  int
+		Name string
+		File string
+	}
+	if err := db.DB.Raw("PRAGMA database_list").Scan(&rows).Error; err != nil {
+		t.Fatalf("PRAGMA database_list failed: %v", err)
+	}
+	for _, row := range rows {
+		if row.Name == "main" && row.File != "" {
+			return row.File
+		}
+	}
+	t.Skip("test database is not file-backed")
+	return ""
+}
+
+// TestFloodSettingsPersistAcrossReopen proves the threshold, mode and deletion
+// flag survive a full close/reopen of the SQLite file.
+func TestFloodSettingsPersistAcrossReopen(t *testing.T) {
+	skipIfNoDb(t)
+
+	path := sqliteFilePath(t)
+	chatID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.AntifloodSettings{}).Error; err != nil {
+			t.Fatalf("cleanup failed: %v", err)
+		}
+	})
+
+	if err := SetFlood(chatID, 7); err != nil {
+		t.Fatalf("SetFlood() error = %v", err)
+	}
+	if err := SetFloodMode(chatID, "kick"); err != nil {
+		t.Fatalf("SetFloodMode() error = %v", err)
+	}
+	if err := SetFloodMsgDel(chatID, true); err != nil {
+		t.Fatalf("SetFloodMsgDel() error = %v", err)
+	}
+
+	reopened, err := gorm.Open(sqlite.Open(db.FormatSQLiteDSN(path)), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("reopen failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, dbErr := reopened.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	var settings models.AntifloodSettings
+	if err := reopened.Where("chat_id = ?", chatID).First(&settings).Error; err != nil {
+		t.Fatalf("reopened read failed: %v", err)
+	}
+	if settings.Limit != 7 {
+		t.Fatalf("Limit = %d, want 7", settings.Limit)
+	}
+	if settings.Action != "kick" {
+		t.Fatalf("Action = %q, want %q", settings.Action, "kick")
+	}
+	if !settings.DeleteAntifloodMessage {
+		t.Fatal("DeleteAntifloodMessage = false, want true")
+	}
+}
+
+// TestConcurrentFloodSettingChanges asserts that simultaneous setting writes
+// neither lose an update nor surface a database-lock failure.
+func TestConcurrentFloodSettingChanges(t *testing.T) {
+	skipIfNoDb(t)
+
+	chatID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.AntifloodSettings{}).Error; err != nil {
+			t.Fatalf("cleanup failed: %v", err)
+		}
+	})
+
+	// Seed the row so every worker takes the conflict path.
+	if err := SetFlood(chatID, 1); err != nil {
+		t.Fatalf("SetFlood() seed error = %v", err)
+	}
+
+	const workers = 12
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*3)
+	for i := range workers {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := SetFlood(chatID, 2+i); err != nil {
+				errs <- err
+			}
+			if err := SetFloodMode(chatID, "ban"); err != nil {
+				errs <- err
+			}
+			if err := SetFloodMsgDel(chatID, i%2 == 0); err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("concurrent setting change failed: %v", err)
+	}
+
+	var count int64
+	if err := db.DB.Model(&models.AntifloodSettings{}).Where("chat_id = ?", chatID).Count(&count).Error; err != nil {
+		t.Fatalf("count query failed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("antiflood rows = %d, want exactly 1", count)
+	}
+
+	// The last writer of each column wins; no worker may leave a partial row.
+	var settings models.AntifloodSettings
+	if err := db.DB.Where("chat_id = ?", chatID).First(&settings).Error; err != nil {
+		t.Fatalf("read-back failed: %v", err)
+	}
+	if settings.Action != "ban" {
+		t.Fatalf("Action = %q, want %q", settings.Action, "ban")
+	}
+	if settings.Limit < 2 || settings.Limit > workers+1 {
+		t.Fatalf("Limit = %d, want a value written by one of the workers", settings.Limit)
+	}
+}
 
 func skipIfNoDb(t *testing.T) {
 	if db.DB == nil {

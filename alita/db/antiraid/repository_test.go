@@ -1,11 +1,15 @@
-//go:build testtools
-
 package antiraid
 
 import (
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/models"
@@ -248,15 +252,14 @@ func TestGetAntiRaidSettingsWithRecord(t *testing.T) {
 		}
 	})
 
-	// Use FirstOrCreate to set custom values
-	updates := map[string]any{
-		"chat_id":                 chatID,
-		"raid_time":               7200,
-		"raid_action_time":        1800,
-		"auto_antiraid_threshold": 3,
+	if err := SetRaidTime(chatID, 7200); err != nil {
+		t.Fatalf("setup SetRaidTime failed: %v", err)
 	}
-	if err := db.DB.Where("chat_id = ?", chatID).Assign(updates).FirstOrCreate(&models.AntiRaidSettings{}).Error; err != nil {
-		t.Fatalf("setup failed: %v", err)
+	if err := SetRaidActionTime(chatID, 1800); err != nil {
+		t.Fatalf("setup SetRaidActionTime failed: %v", err)
+	}
+	if err := SetAutoAntiRaidThreshold(chatID, 3); err != nil {
+		t.Fatalf("setup SetAutoAntiRaidThreshold failed: %v", err)
 	}
 
 	settings := GetAntiRaidSettings(chatID)
@@ -334,5 +337,280 @@ func TestAntiRaidSettingsCacheInvalidation(t *testing.T) {
 	fresh := GetAntiRaidSettings(chatID)
 	if fresh.RaidTime != 10800 {
 		t.Fatalf("expected RaidTime=10800 after cache invalidation, got %d", fresh.RaidTime)
+	}
+}
+
+func TestRaidStateLifecycle(t *testing.T) {
+	skipIfNoDb(t)
+
+	chatID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.AntiRaidSettings{}).Error; err != nil {
+			t.Fatalf("cleanup failed: %v", err)
+		}
+	})
+
+	if state := GetRaidState(chatID); state.Active {
+		t.Fatalf("GetRaidState() = %+v, want inactive for a fresh chat", state)
+	}
+
+	enabled, err := EnableRaid(chatID, 3600)
+	if err != nil || !enabled {
+		t.Fatalf("EnableRaid() = (%v, %v), want (true, nil)", enabled, err)
+	}
+	state := GetRaidState(chatID)
+	if !state.Active {
+		t.Fatal("GetRaidState() inactive right after EnableRaid()")
+	}
+	if state.StartedAt == 0 {
+		t.Fatal("GetRaidState().StartedAt = 0, want the raid start time")
+	}
+
+	// Enabling again must not reset the deadline of the running raid.
+	firstExpiry := state.ExpiresAt
+	enabled, err = EnableRaid(chatID, 7200)
+	if err != nil {
+		t.Fatalf("EnableRaid(active) error = %v", err)
+	}
+	if enabled {
+		t.Fatal("EnableRaid(active) = true, want false for an already-active raid")
+	}
+	if got := GetRaidState(chatID).ExpiresAt; got != firstExpiry {
+		t.Fatalf("ExpiresAt = %d after redundant enable, want %d", got, firstExpiry)
+	}
+
+	// Extending an active raid moves the deadline forward.
+	if err := SetRaidDuration(chatID, 7200); err != nil {
+		t.Fatalf("SetRaidDuration() error = %v", err)
+	}
+	if got := GetRaidState(chatID).ExpiresAt; got <= firstExpiry {
+		t.Fatalf("ExpiresAt = %d after extension, want > %d", got, firstExpiry)
+	}
+
+	disabled, err := DisableRaid(chatID)
+	if err != nil || !disabled {
+		t.Fatalf("DisableRaid() = (%v, %v), want (true, nil)", disabled, err)
+	}
+	if state := GetRaidState(chatID); state.Active {
+		t.Fatalf("GetRaidState() = %+v, want inactive after DisableRaid()", state)
+	}
+
+	disabled, err = DisableRaid(chatID)
+	if err != nil {
+		t.Fatalf("DisableRaid(inactive) error = %v", err)
+	}
+	if disabled {
+		t.Fatal("DisableRaid(inactive) = true, want false")
+	}
+}
+
+// TestRaidStatePreservesConfiguration checks that opening and closing a raid
+// window leaves the chat's configured durations and threshold untouched.
+func TestRaidStatePreservesConfiguration(t *testing.T) {
+	skipIfNoDb(t)
+
+	chatID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.AntiRaidSettings{}).Error; err != nil {
+			t.Fatalf("cleanup failed: %v", err)
+		}
+	})
+
+	if err := SetRaidTime(chatID, 7200); err != nil {
+		t.Fatalf("SetRaidTime() error = %v", err)
+	}
+	if err := SetRaidActionTime(chatID, 1800); err != nil {
+		t.Fatalf("SetRaidActionTime() error = %v", err)
+	}
+	if err := SetAutoAntiRaidThreshold(chatID, 4); err != nil {
+		t.Fatalf("SetAutoAntiRaidThreshold() error = %v", err)
+	}
+
+	if _, err := EnableRaid(chatID, 600); err != nil {
+		t.Fatalf("EnableRaid() error = %v", err)
+	}
+	// A configuration change during an active raid must not close the window.
+	if err := SetRaidTime(chatID, 5400); err != nil {
+		t.Fatalf("SetRaidTime(during raid) error = %v", err)
+	}
+	if !GetRaidState(chatID).Active {
+		t.Fatal("configuration change closed the active raid window")
+	}
+	if _, err := DisableRaid(chatID); err != nil {
+		t.Fatalf("DisableRaid() error = %v", err)
+	}
+
+	settings := GetAntiRaidSettings(chatID)
+	if settings.RaidTime != 5400 {
+		t.Fatalf("RaidTime = %d, want 5400", settings.RaidTime)
+	}
+	if settings.RaidActionTime != 1800 {
+		t.Fatalf("RaidActionTime = %d, want 1800", settings.RaidActionTime)
+	}
+	if settings.AutoAntiRaidThreshold != 4 {
+		t.Fatalf("AutoAntiRaidThreshold = %d, want 4", settings.AutoAntiRaidThreshold)
+	}
+}
+
+func TestEnableRaidRejectsOutOfRangeDurations(t *testing.T) {
+	skipIfNoDb(t)
+
+	chatID := time.Now().UnixNano()
+	for _, duration := range []int{0, -1, MaxRaidDuration + 1} {
+		if _, err := EnableRaid(chatID, duration); err == nil {
+			t.Fatalf("EnableRaid(%d) = nil error, want rejection", duration)
+		}
+		if err := SetRaidDuration(chatID, duration); err == nil {
+			t.Fatalf("SetRaidDuration(%d) = nil error, want rejection", duration)
+		}
+	}
+}
+
+// TestConcurrentEnableRaidHasSingleWinner guards the raid window against lost
+// updates: only one caller may open it, and no caller may see a lock failure.
+func TestConcurrentEnableRaidHasSingleWinner(t *testing.T) {
+	skipIfNoDb(t)
+
+	chatID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.AntiRaidSettings{}).Error; err != nil {
+			t.Fatalf("cleanup failed: %v", err)
+		}
+	})
+
+	const workers = 12
+	var winners atomic.Int32
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			enabled, err := EnableRaid(chatID, 3600)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if enabled {
+				winners.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("EnableRaid() error = %v", err)
+	}
+	if got := winners.Load(); got != 1 {
+		t.Fatalf("EnableRaid() winners = %d, want 1", got)
+	}
+	if !GetRaidState(chatID).Active {
+		t.Fatal("winning EnableRaid() state cannot be read back")
+	}
+}
+
+// TestExpireRaidsClearsOnlyElapsedWindows also covers the restart path: the
+// windows are read straight from storage, with no in-process state involved.
+func TestExpireRaidsClearsOnlyElapsedWindows(t *testing.T) {
+	skipIfNoDb(t)
+
+	elapsedChatID := time.Now().UnixNano()
+	liveChatID := elapsedChatID + 1
+	t.Cleanup(func() {
+		if err := db.DB.Where("chat_id IN ?", []int64{elapsedChatID, liveChatID}).
+			Delete(&models.AntiRaidSettings{}).Error; err != nil {
+			t.Fatalf("cleanup failed: %v", err)
+		}
+	})
+
+	if _, err := EnableRaid(elapsedChatID, 1); err != nil {
+		t.Fatalf("EnableRaid(elapsed) error = %v", err)
+	}
+	if _, err := EnableRaid(liveChatID, 3600); err != nil {
+		t.Fatalf("EnableRaid(live) error = %v", err)
+	}
+
+	expired, err := ExpireRaids(time.Now().Add(2 * time.Second))
+	if err != nil {
+		t.Fatalf("ExpireRaids() error = %v", err)
+	}
+	if len(expired) != 1 || expired[0] != elapsedChatID {
+		t.Fatalf("ExpireRaids() = %v, want [%d]", expired, elapsedChatID)
+	}
+	if GetRaidState(elapsedChatID).ExpiresAt != 0 {
+		t.Fatal("elapsed raid window was not cleared")
+	}
+	if !GetRaidState(liveChatID).Active {
+		t.Fatal("ExpireRaids() closed a raid that is still within its window")
+	}
+
+	// A second sweep is idempotent.
+	expired, err = ExpireRaids(time.Now().Add(2 * time.Second))
+	if err != nil {
+		t.Fatalf("ExpireRaids(second) error = %v", err)
+	}
+	if len(expired) != 0 {
+		t.Fatalf("ExpireRaids(second) = %v, want no chats", expired)
+	}
+}
+
+// TestRaidWindowSurvivesReopen proves the expiry worker can recover an
+// in-flight raid after a process restart.
+func TestRaidWindowSurvivesReopen(t *testing.T) {
+	skipIfNoDb(t)
+
+	var rows []struct {
+		Seq  int
+		Name string
+		File string
+	}
+	if err := db.DB.Raw("PRAGMA database_list").Scan(&rows).Error; err != nil {
+		t.Fatalf("PRAGMA database_list failed: %v", err)
+	}
+	path := ""
+	for _, row := range rows {
+		if row.Name == "main" && row.File != "" {
+			path = row.File
+		}
+	}
+	if path == "" {
+		t.Skip("test database is not file-backed")
+	}
+
+	chatID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		if err := db.DB.Where("chat_id = ?", chatID).Delete(&models.AntiRaidSettings{}).Error; err != nil {
+			t.Fatalf("cleanup failed: %v", err)
+		}
+	})
+
+	if _, err := EnableRaid(chatID, 3600); err != nil {
+		t.Fatalf("EnableRaid() error = %v", err)
+	}
+	expected := GetRaidState(chatID)
+
+	reopened, err := gorm.Open(sqlite.Open(db.FormatSQLiteDSN(path)), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("reopen failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, dbErr := reopened.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	original := db.DB
+	db.DB = reopened
+	t.Cleanup(func() { db.DB = original })
+
+	recovered := GetRaidState(chatID)
+	if !recovered.Active {
+		t.Fatal("raid window did not survive the reopen")
+	}
+	if recovered.ExpiresAt != expected.ExpiresAt {
+		t.Fatalf("recovered ExpiresAt = %d, want %d", recovered.ExpiresAt, expected.ExpiresAt)
 	}
 }

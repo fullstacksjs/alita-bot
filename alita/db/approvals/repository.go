@@ -1,9 +1,6 @@
 package approvals
 
 import (
-	"strings"
-	"time"
-
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm/clause"
 
@@ -13,22 +10,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/models"
 	"github.com/divkix/Alita_Robot/alita/db/user"
 )
-
-func retryOnLock(fn func() error) error {
-	var err error
-	for attempt := 0; attempt < 5; attempt++ {
-		err = fn()
-		if err == nil {
-			return nil
-		}
-		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(err.Error(), "locked") {
-			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
-			continue
-		}
-		break
-	}
-	return err
-}
 
 // AddApprovedUser adds a user to the approved list for a chat.
 // Approved users are immune from anti-spam measures.
@@ -50,7 +31,7 @@ func AddApprovedUser(chatID, userID, approvedBy int64, reason string) error {
 		Reason:     reason,
 	}
 
-	err := retryOnLock(func() error {
+	err := db.RetryOnLock(func() error {
 		return db.DB.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "chat_id"}, {Name: "user_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{"approved_by", "reason", "updated_at"}),
@@ -95,7 +76,7 @@ func GetApprovedUsers(chatID int64) []*models.ApprovedUsers {
 
 // RemoveApprovedUser removes a user from the approved list for a chat.
 func RemoveApprovedUser(chatID, userID int64) error {
-	err := retryOnLock(func() error {
+	err := db.RetryOnLock(func() error {
 		return db.DB.Where("chat_id = ? AND user_id = ?", chatID, userID).Delete(&models.ApprovedUsers{}).Error
 	})
 	if err != nil {

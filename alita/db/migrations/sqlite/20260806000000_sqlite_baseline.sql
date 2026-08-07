@@ -30,8 +30,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_chat_id ON chats (chat_id);
 CREATE TABLE IF NOT EXISTS antiflood_settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id BIGINT NOT NULL,
-    flood_limit INTEGER DEFAULT 5,
-    action TEXT DEFAULT 'mute',
+    flood_limit INTEGER DEFAULT 5 CHECK (flood_limit >= 0),
+    action TEXT DEFAULT 'mute' CHECK (action IN ('mute','ban','kick','warn','tban','tmute')),
     delete_antiflood_message BOOLEAN DEFAULT 0,
     created_at DATETIME,
     updated_at DATETIME,
@@ -40,17 +40,22 @@ CREATE TABLE IF NOT EXISTS antiflood_settings (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_antiflood_settings_chat_id ON antiflood_settings (chat_id);
 
 -- AntiRaid Settings table
+-- raid_started_at/raid_active_until hold the active-raid window so the expiry
+-- worker recovers in-flight raids after a restart.
 CREATE TABLE IF NOT EXISTS antiraid_settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id BIGINT NOT NULL,
-    raid_time INTEGER DEFAULT 21600,
-    raid_action_time INTEGER DEFAULT 3600,
-    auto_antiraid_threshold INTEGER DEFAULT 0,
+    raid_time INTEGER DEFAULT 21600 CHECK (raid_time >= 0),
+    raid_action_time INTEGER DEFAULT 3600 CHECK (raid_action_time >= 0),
+    auto_antiraid_threshold INTEGER DEFAULT 0 CHECK (auto_antiraid_threshold >= 0),
+    raid_started_at DATETIME,
+    raid_active_until DATETIME,
     created_at DATETIME,
     updated_at DATETIME,
     FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_antiraid_settings_chat_id ON antiraid_settings (chat_id);
+CREATE INDEX IF NOT EXISTS idx_antiraid_settings_active_until ON antiraid_settings (raid_active_until);
 
 -- Approved Users table
 CREATE TABLE IF NOT EXISTS approved_users (
@@ -71,13 +76,13 @@ CREATE TABLE IF NOT EXISTS blacklists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id BIGINT NOT NULL,
     word TEXT NOT NULL,
-    action TEXT DEFAULT 'warn',
+    action TEXT DEFAULT 'warn' CHECK (action IN ('warn','mute','ban','kick','tban','tmute','delete','none')),
     reason TEXT,
     created_at DATETIME,
     updated_at DATETIME,
     FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_blacklist_chat_word ON blacklists (chat_id, word);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_blacklists_chat_word ON blacklists (chat_id, word);
 
 -- Channel Settings table
 CREATE TABLE IF NOT EXISTS channels (

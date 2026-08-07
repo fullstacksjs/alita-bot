@@ -3,25 +3,46 @@ package blacklists
 import (
 	"strings"
 
+	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm/clause"
+
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/cache"
+	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/models"
-	log "github.com/sirupsen/logrus"
 )
 
-// AddBlacklist adds a new blacklist word to a chat with default 'warn' action.
-// The trigger is converted to lowercase before storage.
+// defaultBlacklistAction is used until a chat selects its own action.
+// 'warn' is intentional: it is the least destructive option.
+const defaultBlacklistAction = "warn"
+
+// defaultBlacklistReason is a format string with a placeholder for the trigger word.
+const defaultBlacklistReason = "Blacklisted word: '%s'"
+
+// AddBlacklist adds a new blacklist word to a chat, inheriting the action the
+// chat has already selected. The trigger is converted to lowercase before
+// storage, and the (chat_id, word) unique constraint makes re-adding an
+// existing trigger a no-op instead of a duplicate row.
 // Returns an error if the database operation fails.
 func AddBlacklist(chatId int64, trigger string) error {
-	// Create a new blacklist entry
+	if err := chats.EnsureChatInDb(chatId, ""); err != nil {
+		log.Errorf("[Database] AddBlacklist: %v - %d", err, chatId)
+		return err
+	}
+
 	blacklist := &models.BlacklistSettings{
 		ChatId: chatId,
 		Word:   strings.ToLower(trigger),
-		Action: "warn",                   // default action (intentionally 'warn' for safety)
-		Reason: "Blacklisted word: '%s'", // default format string with placeholder for trigger word
+		Action: currentBlacklistAction(chatId),
+		Reason: defaultBlacklistReason,
 	}
 
-	err := db.CreateRecord(blacklist)
+	err := db.RetryOnLock(func() error {
+		return db.DB.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "chat_id"}, {Name: "word"}},
+			DoNothing: true,
+		}).Create(blacklist).Error
+	})
 	if err != nil {
 		log.Errorf("[Database] AddBlacklist: %v - %d", err, chatId)
 		return err
@@ -32,18 +53,41 @@ func AddBlacklist(chatId int64, trigger string) error {
 	return nil
 }
 
+// currentBlacklistAction returns the action the chat's existing entries use, or
+// the default when the chat has no entries yet.
+func currentBlacklistAction(chatId int64) string {
+	var action string
+	err := db.DB.Model(&models.BlacklistSettings{}).
+		Select("action").
+		Where("chat_id = ?", chatId).
+		Limit(1).
+		Scan(&action).Error
+	if err != nil || action == "" {
+		return defaultBlacklistAction
+	}
+	return action
+}
+
 // RemoveBlacklist removes a specific blacklist word from a chat.
 // The trigger is converted to lowercase before removal.
 // Returns an error if the database operation fails.
 func RemoveBlacklist(chatId int64, trigger string) error {
-	result := db.DB.Where("chat_id = ? AND word = ?", chatId, strings.ToLower(trigger)).Delete(&models.BlacklistSettings{})
-	if result.Error != nil {
-		log.Errorf("[Database] RemoveBlacklist: %v - %d", result.Error, chatId)
-		return result.Error
+	var removed int64
+	err := db.RetryOnLock(func() error {
+		result := db.DB.Where("chat_id = ? AND word = ?", chatId, strings.ToLower(trigger)).Delete(&models.BlacklistSettings{})
+		if result.Error != nil {
+			return result.Error
+		}
+		removed = result.RowsAffected
+		return nil
+	})
+	if err != nil {
+		log.Errorf("[Database] RemoveBlacklist: %v - %d", err, chatId)
+		return err
 	}
 
 	// Invalidate cache if something was deleted
-	if result.RowsAffected > 0 {
+	if removed > 0 {
 		cache.DeleteCache(cache.CacheKey("blacklist", chatId))
 	}
 	return nil
@@ -52,7 +96,9 @@ func RemoveBlacklist(chatId int64, trigger string) error {
 // RemoveAllBlacklist removes all blacklist entries for a specific chat.
 // Returns an error if the database operation fails.
 func RemoveAllBlacklist(chatId int64) error {
-	err := db.DB.Where("chat_id = ?", chatId).Delete(&models.BlacklistSettings{}).Error
+	err := db.RetryOnLock(func() error {
+		return db.DB.Where("chat_id = ?", chatId).Delete(&models.BlacklistSettings{}).Error
+	})
 	if err != nil {
 		log.Errorf("[Database] RemoveAllBlacklist: %v - %d", err, chatId)
 		return err
@@ -66,7 +112,9 @@ func RemoveAllBlacklist(chatId int64) error {
 // SetBlacklistAction updates the action for all blacklist entries in a chat.
 // The action is converted to lowercase before storage.
 func SetBlacklistAction(chatId int64, action string) error {
-	err := db.DB.Model(&models.BlacklistSettings{}).Where("chat_id = ?", chatId).Update("action", strings.ToLower(action)).Error
+	err := db.RetryOnLock(func() error {
+		return db.DB.Model(&models.BlacklistSettings{}).Where("chat_id = ?", chatId).Update("action", strings.ToLower(action)).Error
+	})
 	if err != nil {
 		log.Errorf("[Database] SetBlacklistAction: %v - %d", err, chatId)
 		return err
