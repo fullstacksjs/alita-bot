@@ -2,8 +2,6 @@ package warns
 
 import (
 	"errors"
-	"strings"
-	"time"
 	"unicode/utf8"
 
 	log "github.com/sirupsen/logrus"
@@ -16,22 +14,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/user"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 )
-
-func retryOnLock(fn func() error) error {
-	var err error
-	for attempt := 0; attempt < 10; attempt++ {
-		err = fn()
-		if err == nil {
-			return nil
-		}
-		if db.DB != nil && db.DB.Dialector.Name() == "sqlite" && strings.Contains(strings.ToLower(err.Error()), "locked") {
-			time.Sleep(time.Duration(25*(attempt+1)) * time.Millisecond)
-			continue
-		}
-		break
-	}
-	return err
-}
 
 // checkWarnSettings retrieves or creates default warn settings for a chat.
 // Returns default settings with warn limit 3 if the chat doesn't exist.
@@ -87,7 +69,7 @@ func WarnUser(userId, chatId int64, reason string) (int, []string, error) {
 		formattedReason = noReason
 	}
 
-	err := retryOnLock(func() error {
+	err := db.RetryOnLock(func() error {
 		return db.DB.Transaction(func(tx *gorm.DB) error {
 			warnSettings := &models.WarnSettings{}
 			if err := tx.Where("chat_id = ?", chatId).First(warnSettings).Error; err != nil {
@@ -139,7 +121,7 @@ func WarnUser(userId, chatId int64, reason string) (int, []string, error) {
 func RemoveWarn(userId, chatId int64) (bool, error) {
 	var removed bool
 
-	err := retryOnLock(func() error {
+	err := db.RetryOnLock(func() error {
 		return db.DB.Transaction(func(tx *gorm.DB) error {
 			var lastEvent models.WarnEvent
 			err := tx.Where("user_id = ? AND chat_id = ?", userId, chatId).Order("id DESC").First(&lastEvent).Error; if err != nil {
@@ -174,7 +156,7 @@ func RemoveWarn(userId, chatId int64) (bool, error) {
 // Returns whether any rows were deleted and any persistence error.
 func ResetUserWarns(userId, chatId int64) (bool, error) {
 	var rowsAffected int64
-	err := retryOnLock(func() error {
+	err := db.RetryOnLock(func() error {
 		res := db.DB.Where("user_id = ? AND chat_id = ?", userId, chatId).Delete(&models.WarnEvent{})
 		if res.Error != nil {
 			return res.Error
@@ -234,7 +216,7 @@ func GetWarns(userId, chatId int64) (int, []string) {
 func SetWarnLimit(chatId int64, warnLimit int) error {
 	warnrc := checkWarnSettings(chatId)
 	warnrc.WarnLimit = warnLimit
-	err := retryOnLock(func() error {
+	err := db.RetryOnLock(func() error {
 		return db.DB.Save(warnrc).Error
 	})
 	if err != nil {
@@ -282,7 +264,7 @@ func ResetAllChatWarns(chatId int64) error {
 		return err
 	}
 
-	err := retryOnLock(func() error {
+	err := db.RetryOnLock(func() error {
 		return db.DB.Where("chat_id = ?", chatId).Delete(&models.WarnEvent{}).Error
 	})
 	if err != nil {

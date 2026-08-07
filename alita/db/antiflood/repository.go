@@ -2,12 +2,17 @@ package antiflood
 
 import (
 	"errors"
+	"sort"
+	"time"
+
+	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/cache"
+	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/models"
-	log "github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
 // default mode is 'mute'
@@ -36,13 +41,47 @@ func checkFloodSetting(chatID int64) (floodSrc *models.AntifloodSettings) {
 
 // upsertChatField upserts the given column updates for a chat's antiflood settings
 // and invalidates the antiflood cache. Callers handle any pre-read short-circuits.
+//
+// The write is a single conflict-safe upsert on chat_id so concurrent setting
+// changes cannot lose updates through a read-then-create race, and only the
+// requested columns are overwritten when the row already exists.
 func upsertChatField(chatID int64, updates map[string]any) error {
-	if err := db.DB.Where("chat_id = ?", chatID).
-		Assign(updates).
-		FirstOrCreate(&models.AntifloodSettings{}).Error; err != nil {
+	if err := chats.EnsureChatInDb(chatID, ""); err != nil {
 		log.Errorf("[Database] upsertChatField: %v - %d", err, chatID)
 		return err
 	}
+
+	now := time.Now()
+	row := map[string]any{
+		"chat_id":                  chatID,
+		"flood_limit":              0,
+		"action":                   defaultFloodsettingsMode,
+		"delete_antiflood_message": false,
+		"created_at":               now,
+		"updated_at":               now,
+	}
+	assigned := make([]string, 0, len(updates)+1)
+	for column, value := range updates {
+		if column == "chat_id" {
+			continue
+		}
+		row[column] = value
+		assigned = append(assigned, column)
+	}
+	sort.Strings(assigned)
+	assigned = append(assigned, "updated_at")
+
+	err := db.RetryOnLock(func() error {
+		return db.DB.Model(&models.AntifloodSettings{}).Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "chat_id"}},
+			DoUpdates: clause.AssignmentColumns(assigned),
+		}).Create(row).Error
+	})
+	if err != nil {
+		log.Errorf("[Database] upsertChatField: %v - %d", err, chatID)
+		return err
+	}
+
 	// Invalidate cache after update
 	cache.DeleteCache(cache.CacheKey("antiflood", chatID))
 	return nil

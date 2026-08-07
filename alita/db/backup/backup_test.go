@@ -1199,6 +1199,38 @@ func TestAntiraidBackupRoundTrip(t *testing.T) {
 	assert.Equal(t, 10, restored.AutoAntiRaidThreshold)
 }
 
+// TestAntiraidBackupExcludesRaidWindow pins the backup surface to configuration:
+// the active-raid window is runtime state and must not travel with a backup.
+func TestAntiraidBackupExcludesRaidWindow(t *testing.T) {
+	skipIfNoDb(t)
+
+	srcChat := time.Now().UnixNano()
+	require.NoError(t, chats.EnsureChatInDb(srcChat, "src_antiraid_window"))
+	t.Cleanup(func() {
+		cleanupBackupChat(t, srcChat)
+	})
+
+	require.NoError(t, antiraid.SetRaidTime(srcChat, 3600))
+	enabled, err := antiraid.EnableRaid(srcChat, 3600)
+	require.NoError(t, err)
+	require.True(t, enabled)
+
+	exported, err := exportAntiraidData(srcChat)
+	require.NoError(t, err)
+	require.NotNil(t, exported.Settings)
+
+	exportedJSON, err := json.Marshal(exported)
+	require.NoError(t, err)
+	assert.NotContains(t, string(exportedJSON), "raid_active_until")
+	assert.NotContains(t, string(exportedJSON), "raid_started_at")
+
+	// Restoring a backup resets the window rather than reopening a stale raid.
+	var payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(exportedJSON, &payload))
+	require.NoError(t, ImportModuleData(srcChat, BackupModuleAntiraid, payload))
+	assert.False(t, antiraid.GetRaidState(srcChat).Active)
+}
+
 func TestApprovalsBackupRoundTrip(t *testing.T) {
 	skipIfNoDb(t)
 
