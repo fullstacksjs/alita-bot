@@ -104,7 +104,7 @@ func TestResolveSendResult(t *testing.T) {
 		{
 			name:       "success returns result",
 			result:     "sent",
-			chatID:     -100,
+			chatID:     -100201,
 			mediaType:  "text",
 			wantResult: "sent",
 		},
@@ -112,7 +112,7 @@ func TestResolveSendResult(t *testing.T) {
 			name:       "permission error returns sentinel",
 			result:     "ignored",
 			err:        errors.New("CHAT_WRITE_FORBIDDEN"),
-			chatID:     -100,
+			chatID:     -100202,
 			mediaType:  "text",
 			wantResult: "",
 			wantErr:    ErrNoPermission,
@@ -121,10 +121,10 @@ func TestResolveSendResult(t *testing.T) {
 			name:          "unexpected error is wrapped",
 			result:        "ignored",
 			err:           errors.New("network failed"),
-			chatID:        -100,
+			chatID:        -100203,
 			mediaType:     "photo",
 			wantResult:    "ignored",
-			wantErrSubstr: "failed to send photo to chat -100",
+			wantErrSubstr: "failed to send photo to chat -100203",
 		},
 	}
 
