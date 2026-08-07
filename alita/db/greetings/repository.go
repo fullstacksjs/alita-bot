@@ -2,10 +2,12 @@ package greetings
 
 import (
 	"errors"
+	"sort"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/cache"
@@ -21,26 +23,10 @@ func checkGreetingSettings(chatID int64) (greetingSrc *models.GreetingSettings) 
 	greetingSrc = &models.GreetingSettings{}
 	err := db.GetRecord(greetingSrc, map[string]any{"chat_id": chatID})
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// Ensure chat exists before creating greeting settings
-		if !db.ChatExists(chatID) {
-			// Chat doesn't exist, return default settings without creating record
-			log.Warnf("[Database][checkGreetingSettings]: Chat %d doesn't exist, returning default settings", chatID)
-			return &models.GreetingSettings{
-				ChatID:             chatID,
-				ShouldCleanService: false,
-				WelcomeSettings: &models.WelcomeSettings{
-					LastMsgId:     0,
-					CleanWelcome:  false,
-					ShouldWelcome: true,
-					WelcomeText:   db.DefaultWelcome,
-					WelcomeType:   db.TEXT,
-					Button:        models.ButtonArray{},
-				},
-			}
+	if errors.Is(err, gorm.ErrRecordNotFound) || err != nil || greetingSrc.WelcomeSettings == nil {
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Errorf("[Database][checkGreetingSettings]: %v", err)
 		}
-
-		// Create default settings only if chat exists
 		greetingSrc = &models.GreetingSettings{
 			ChatID:             chatID,
 			ShouldCleanService: false,
@@ -53,40 +39,10 @@ func checkGreetingSettings(chatID int64) (greetingSrc *models.GreetingSettings) 
 				Button:        models.ButtonArray{},
 			},
 		}
-
-		err := db.CreateRecord(greetingSrc)
-		if err != nil {
-			log.Errorf("[Database][checkGreetingSettings]: %v ", err)
-		}
-	} else if err != nil {
-		log.Errorf("[Database][checkGreetingSettings]: %v", err)
-		// Return default settings on error
-		greetingSrc = &models.GreetingSettings{
-			ChatID:             chatID,
-			ShouldCleanService: false,
-			WelcomeSettings: &models.WelcomeSettings{
-				LastMsgId:     0,
-				CleanWelcome:  false,
-				ShouldWelcome: true,
-				WelcomeText:   db.DefaultWelcome,
-				WelcomeType:   db.TEXT,
-				Button:        models.ButtonArray{},
-			},
-		}
+		return greetingSrc
 	}
 
-	// Ensure WelcomeSettings is initialized even for existing records.
-	if greetingSrc.WelcomeSettings == nil {
-		greetingSrc.WelcomeSettings = &models.WelcomeSettings{
-			LastMsgId:     0,
-			CleanWelcome:  false,
-			ShouldWelcome: true,
-			WelcomeText:   db.DefaultWelcome,
-			WelcomeType:   db.TEXT,
-			Button:        models.ButtonArray{},
-		}
-	} else if greetingSrc.WelcomeSettings.WelcomeText == "" {
-		// Set default welcome text if it's empty (for existing records with empty text)
+	if greetingSrc.WelcomeSettings.WelcomeText == "" {
 		greetingSrc.WelcomeSettings.WelcomeText = db.DefaultWelcome
 	}
 
@@ -103,21 +59,10 @@ func GetGreetingSettings(chatID int64) *models.GreetingSettings {
 // Returns an empty slice if no buttons are configured or settings are missing.
 func GetWelcomeButtons(chatId int64) []models.Button {
 	greetingSettings := checkGreetingSettings(chatId)
-	if greetingSettings.WelcomeSettings != nil {
+	if greetingSettings.WelcomeSettings != nil && len(greetingSettings.WelcomeSettings.Button) > 0 {
 		return []models.Button(greetingSettings.WelcomeSettings.Button)
 	}
 	return []models.Button{}
-}
-
-func defaultGreetingSettingsAttrs(chatID int64) map[string]any {
-	return map[string]any{
-		"chat_id":                chatID,
-		"clean_service_settings": false,
-		"welcome_enabled":        true,
-		"welcome_text":           db.DefaultWelcome,
-		"welcome_type":           db.TEXT,
-		"welcome_btns":           models.ButtonArray{},
-	}
 }
 
 func upsertGreetingSettings(chatID int64, updates map[string]any) error {
@@ -126,17 +71,40 @@ func upsertGreetingSettings(chatID int64, updates map[string]any) error {
 			return alitaerrors.Wrapf(err, "ensure chat %d in db", chatID)
 		}
 	}
-	updates["updated_at"] = time.Now()
-	settings := models.GreetingSettings{}
-	if err := db.DB.Where("chat_id = ?", chatID).
-		Attrs(defaultGreetingSettingsAttrs(chatID)).
-		FirstOrCreate(&settings).Error; err != nil {
-		return alitaerrors.Wrapf(err, "first-or-create greeting settings for chat %d", chatID)
+	now := time.Now().UTC()
+	row := map[string]any{
+		"chat_id":                chatID,
+		"clean_service_settings": false,
+		"welcome_clean_old":      false,
+		"welcome_last_msg_id":    int64(0),
+		"welcome_enabled":        true,
+		"welcome_text":           db.DefaultWelcome,
+		"welcome_file_id":        "",
+		"welcome_type":           db.TEXT,
+		"welcome_btns":           models.ButtonArray{},
+		"created_at":             now,
+		"updated_at":             now,
 	}
-	if err := db.DB.Model(&models.GreetingSettings{}).
-		Where("chat_id = ?", chatID).
-		Updates(updates).Error; err != nil {
-		return alitaerrors.Wrapf(err, "update greeting settings for chat %d", chatID)
+
+	assigned := make([]string, 0, len(updates)+1)
+	for column, value := range updates {
+		if column == "chat_id" {
+			continue
+		}
+		row[column] = value
+		assigned = append(assigned, column)
+	}
+	sort.Strings(assigned)
+	assigned = append(assigned, "updated_at")
+
+	err := db.RetryOnLock(func() error {
+		return db.DB.Model(&models.GreetingSettings{}).Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "chat_id"}},
+			DoUpdates: clause.AssignmentColumns(assigned),
+		}).Create(row).Error
+	})
+	if err != nil {
+		return alitaerrors.Wrapf(err, "upsert greeting settings for chat %d", chatID)
 	}
 	return nil
 }

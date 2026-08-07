@@ -10,6 +10,7 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/cache"
+	"github.com/divkix/Alita_Robot/alita/db/chats"
 	"github.com/divkix/Alita_Robot/alita/db/models"
 )
 
@@ -73,6 +74,12 @@ func DoesFilterExists(chatId int64, keyword string) bool {
 // AddFilter creates a filter if its keyword is unused.
 // Explicit overwrite confirmation uses UpdateFilter.
 func AddFilter(chatID int64, keyWord, replyText, fileID string, buttons []models.Button, filtType int) error {
+	if !db.ChatExists(chatID) {
+		if err := chats.EnsureChatInDb(chatID, ""); err != nil {
+			return err
+		}
+	}
+
 	now := time.Now().UTC()
 	newFilter := map[string]any{
 		"chat_id":        chatID,
@@ -86,73 +93,80 @@ func AddFilter(chatID int64, keyWord, replyText, fileID string, buttons []models
 		"updated_at":     now,
 	}
 
-	result := db.DB.Model(&models.ChatFilters{}).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "chat_id"}, {Name: "keyword"}},
-		DoNothing: true,
-	}).Create(newFilter)
-	if result.Error != nil {
-		log.Errorf("[Database][AddFilter]: %d - %v", chatID, result.Error)
-		return result.Error
-	}
+	return db.RetryOnLock(func() error {
+		result := db.DB.Model(&models.ChatFilters{}).Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "chat_id"}, {Name: "keyword"}},
+			DoNothing: true,
+		}).Create(newFilter)
+		if result.Error != nil {
+			log.Errorf("[Database][AddFilter]: %d - %v", chatID, result.Error)
+			return result.Error
+		}
 
-	if result.RowsAffected > 0 {
-		invalidateFilterCaches(chatID)
-	}
-	return nil
+		if result.RowsAffected > 0 {
+			invalidateFilterCaches(chatID)
+		}
+		return nil
+	})
 }
 
 // UpdateFilter replaces an existing filter without recreating one removed while
 // an overwrite confirmation was pending.
 func UpdateFilter(chatID int64, keyWord, replyText, fileID string, buttons []models.Button, filtType int) (bool, error) {
-	result := db.DB.Model(&models.ChatFilters{}).
-		Where("chat_id = ? AND keyword = ?", chatID, keyWord).
-		Updates(map[string]any{
-			"filter_reply":   replyText,
-			"msgtype":        filtType,
-			"fileid":         fileID,
-			"filter_buttons": models.ButtonArray(buttons),
-			"updated_at":     time.Now().UTC(),
-		})
-	if result.Error != nil {
-		log.Errorf("[Database][UpdateFilter]: %d - %v", chatID, result.Error)
-		return false, result.Error
-	}
-	if result.RowsAffected > 0 {
-		invalidateFilterCaches(chatID)
-	}
-	return result.RowsAffected > 0, nil
+	var rowsAffected int64
+	err := db.RetryOnLock(func() error {
+		result := db.DB.Model(&models.ChatFilters{}).
+			Where("chat_id = ? AND keyword = ?", chatID, keyWord).
+			Updates(map[string]any{
+				"filter_reply":   replyText,
+				"msgtype":        filtType,
+				"fileid":         fileID,
+				"filter_buttons": models.ButtonArray(buttons),
+				"updated_at":     time.Now().UTC(),
+			})
+		if result.Error != nil {
+			log.Errorf("[Database][UpdateFilter]: %d - %v", chatID, result.Error)
+			return result.Error
+		}
+		rowsAffected = result.RowsAffected
+		if rowsAffected > 0 {
+			invalidateFilterCaches(chatID)
+		}
+		return nil
+	})
+	return rowsAffected > 0, err
 }
 
 // RemoveFilter deletes a filter with the specified keyword from the chat.
 // Invalidates the filter list cache if a filter was successfully removed.
 func RemoveFilter(chatID int64, keyWord string) error {
-	// Directly attempt to delete the filter without checking existence first
-	result := db.DB.Where("chat_id = ? AND keyword = ?", chatID, keyWord).Delete(&models.ChatFilters{})
-	if result.Error != nil {
-		log.Errorf("[Database][RemoveFilter]: %d - %v", chatID, result.Error)
-		return result.Error
-	}
-	// result.RowsAffected will be 0 if no filter was found, which is fine
+	return db.RetryOnLock(func() error {
+		result := db.DB.Where("chat_id = ? AND keyword = ?", chatID, keyWord).Delete(&models.ChatFilters{})
+		if result.Error != nil {
+			log.Errorf("[Database][RemoveFilter]: %d - %v", chatID, result.Error)
+			return result.Error
+		}
 
-	// Invalidate cache after removing filter
-	if result.RowsAffected > 0 {
-		invalidateFilterCaches(chatID)
-	}
-	return nil
+		if result.RowsAffected > 0 {
+			invalidateFilterCaches(chatID)
+		}
+		return nil
+	})
 }
 
 // RemoveAllFilters deletes all filters for the specified chat ID from the database.
 // Invalidates the filter list cache after successful removal.
 func RemoveAllFilters(chatID int64) error {
-	err := db.DB.Where("chat_id = ?", chatID).Delete(&models.ChatFilters{}).Error
-	if err != nil {
-		log.Errorf("[Database][RemoveAllFilters]: %d - %v", chatID, err)
-		return err
-	}
+	return db.RetryOnLock(func() error {
+		err := db.DB.Where("chat_id = ?", chatID).Delete(&models.ChatFilters{}).Error
+		if err != nil {
+			log.Errorf("[Database][RemoveAllFilters]: %d - %v", chatID, err)
+			return err
+		}
 
-	// Invalidate cache after removing all filters
-	invalidateFilterCaches(chatID)
-	return nil
+		invalidateFilterCaches(chatID)
+		return nil
+	})
 }
 
 // CountFilters returns the total number of filters configured for the specified chat ID.

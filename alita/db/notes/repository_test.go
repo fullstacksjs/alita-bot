@@ -1,5 +1,3 @@
-//go:build testtools
-
 package notes
 
 import (
@@ -434,7 +432,25 @@ func TestLoadNotesStatsErrorBranch(t *testing.T) {
 
 	_ = db.DB.Migrator().DropTable(&models.Notes{})
 	t.Cleanup(func() {
-		_ = db.DB.AutoMigrate(&models.Notes{})
+		db.DB.Exec(`CREATE TABLE IF NOT EXISTS notes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			chat_id BIGINT NOT NULL,
+			note_name TEXT NOT NULL,
+			note_content TEXT,
+			file_id TEXT,
+			msg_type INTEGER,
+			buttons TEXT,
+			admin_only BOOLEAN DEFAULT 0,
+			private_only BOOLEAN DEFAULT 0,
+			group_only BOOLEAN DEFAULT 0,
+			web_preview BOOLEAN DEFAULT 1,
+			is_protected BOOLEAN DEFAULT 0,
+			no_notif BOOLEAN DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME,
+			FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
+		);`)
+		db.DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uk_notes_chat_name ON notes (chat_id, note_name);`)
 	})
 
 	if err := AddNote(1, "missing-table", "text", "", nil, db.TEXT, false, false, false, false, false, false); err == nil {

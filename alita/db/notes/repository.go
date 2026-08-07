@@ -123,6 +123,12 @@ func DoesNoteExists(chatID int64, noteName string) bool {
 // Returns an error if the operation fails.
 // Supports various note types including text, media, and custom buttons.
 func AddNote(chatID int64, noteName, replyText, fileID string, buttons models.ButtonArray, filtType int, pvtOnly, grpOnly, adminOnly, webPrev, isProtected, noNotif bool) error {
+	if !db.ChatExists(chatID) {
+		if err := chats.EnsureChatInDb(chatID, ""); err != nil {
+			return err
+		}
+	}
+
 	now := time.Now().UTC()
 	noterc := map[string]any{
 		"chat_id":      chatID,
@@ -141,64 +147,73 @@ func AddNote(chatID int64, noteName, replyText, fileID string, buttons models.Bu
 		"updated_at":   now,
 	}
 
-	result := db.DB.Model(&models.Notes{}).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "chat_id"}, {Name: "note_name"}},
-		DoNothing: true,
-	}).Create(noterc)
-	if result.Error != nil {
-		log.Errorf("[Database][AddNote]: %d - %v", chatID, result.Error)
-		return result.Error
-	}
-	return nil
+	return db.RetryOnLock(func() error {
+		result := db.DB.Model(&models.Notes{}).Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "chat_id"}, {Name: "note_name"}},
+			DoNothing: true,
+		}).Create(noterc)
+		if result.Error != nil {
+			log.Errorf("[Database][AddNote]: %d - %v", chatID, result.Error)
+			return result.Error
+		}
+		return nil
+	})
 }
 
 // UpdateNote replaces an existing note without recreating one removed while an
 // overwrite confirmation was pending.
 func UpdateNote(chatID int64, noteName, replyText, fileID string, buttons models.ButtonArray, filtType int, pvtOnly, grpOnly, adminOnly, webPrev, isProtected, noNotif bool) (bool, error) {
-	result := db.DB.Model(&models.Notes{}).
-		Where("chat_id = ? AND note_name = ?", chatID, noteName).
-		Updates(map[string]any{
-			"note_content": replyText,
-			"msg_type":     filtType,
-			"file_id":      fileID,
-			"buttons":      buttons,
-			"admin_only":   adminOnly,
-			"private_only": pvtOnly,
-			"group_only":   grpOnly,
-			"web_preview":  webPrev,
-			"is_protected": isProtected,
-			"no_notif":     noNotif,
-			"updated_at":   time.Now().UTC(),
-		})
-	if result.Error != nil {
-		log.Errorf("[Database][UpdateNote]: %d - %v", chatID, result.Error)
-		return false, result.Error
-	}
-	return result.RowsAffected > 0, nil
+	var rowsAffected int64
+	err := db.RetryOnLock(func() error {
+		result := db.DB.Model(&models.Notes{}).
+			Where("chat_id = ? AND note_name = ?", chatID, noteName).
+			Updates(map[string]any{
+				"note_content": replyText,
+				"msg_type":     filtType,
+				"file_id":      fileID,
+				"buttons":      buttons,
+				"admin_only":   adminOnly,
+				"private_only": pvtOnly,
+				"group_only":   grpOnly,
+				"web_preview":  webPrev,
+				"is_protected": isProtected,
+				"no_notif":     noNotif,
+				"updated_at":   time.Now().UTC(),
+			})
+		if result.Error != nil {
+			log.Errorf("[Database][UpdateNote]: %d - %v", chatID, result.Error)
+			return result.Error
+		}
+		rowsAffected = result.RowsAffected
+		return nil
+	})
+	return rowsAffected > 0, err
 }
 
 // RemoveNote deletes a note with the specified name from the chat.
 // Returns an error if the operation fails.
 func RemoveNote(chatID int64, noteName string) error {
-	// Directly attempt to delete the note without checking existence first
-	result := db.DB.Where("chat_id = ? AND note_name = ?", chatID, noteName).Delete(&models.Notes{})
-	if result.Error != nil {
-		log.Errorf("[Database][RemoveNote]: %d - %v", chatID, result.Error)
-		return result.Error
-	}
-	// result.RowsAffected will be 0 if no note was found, which is fine
-	return nil
+	return db.RetryOnLock(func() error {
+		result := db.DB.Where("chat_id = ? AND note_name = ?", chatID, noteName).Delete(&models.Notes{})
+		if result.Error != nil {
+			log.Errorf("[Database][RemoveNote]: %d - %v", chatID, result.Error)
+			return result.Error
+		}
+		return nil
+	})
 }
 
 // RemoveAllNotes deletes all notes for the specified chat ID from the database.
 // Returns an error if the operation fails.
 func RemoveAllNotes(chatID int64) error {
-	err := db.DB.Where("chat_id = ?", chatID).Delete(&models.Notes{}).Error
-	if err != nil {
-		log.Errorf("[Database][RemoveAllNotes]: %d - %v", chatID, err)
-		return err
-	}
-	return nil
+	return db.RetryOnLock(func() error {
+		err := db.DB.Where("chat_id = ?", chatID).Delete(&models.Notes{}).Error
+		if err != nil {
+			log.Errorf("[Database][RemoveAllNotes]: %d - %v", chatID, err)
+			return err
+		}
+		return nil
+	})
 }
 
 // ensureNotesSettingsRecord ensures a notes_settings row exists for the chat.

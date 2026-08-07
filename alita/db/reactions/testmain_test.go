@@ -1,4 +1,4 @@
-package notes
+package reactions
 
 import (
 	"fmt"
@@ -16,7 +16,7 @@ import (
 func TestMain(m *testing.M) {
 	var dbFileName string
 	if db.DB == nil {
-		dbFile, err := os.CreateTemp("", "alita_notes_test_*.db")
+		dbFile, err := os.CreateTemp("", "alita_reactions_test_*.db")
 		if err != nil {
 			fmt.Printf("temp file creation failed: %v\n", err)
 			os.Exit(1)
