@@ -1,19 +1,15 @@
 package modules
 
 import (
+	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
-	"github.com/eko/gocache/lib/v4/store"
-	"github.com/vmihailenco/msgpack/v5"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 const overwriteCacheTTL = 5 * time.Minute
-
-var overwriteConsumeMu sync.Mutex
 
 // overwriteBase holds common fields for temporary state storage during command flows.
 type overwriteBase struct {
@@ -47,51 +43,26 @@ func overwriteCacheKey(kind, token string) string {
 }
 
 func setOverwriteCache(key string, data any) error {
-	m := cache.GetMarshal()
-	if m == nil {
-		return fmt.Errorf("cache not initialized")
-	}
-	return m.Set(cache.Context, key, data, store.WithExpiration(overwriteCacheTTL))
+	state.Set(context.Background(), key, data, overwriteCacheTTL)
+	return nil
 }
 
 func getOverwriteCache[T any](key string) (*T, error) {
-	m := cache.GetMarshal()
-	if m == nil {
-		return nil, fmt.Errorf("cache not initialized")
-	}
-	var data T
-	if _, err := m.Get(cache.Context, key, &data); err != nil {
-		return nil, err
+	data, ok := state.Get[T](context.Background(), key)
+	if !ok {
+		return nil, fmt.Errorf("overwrite cache missed or expired")
 	}
 	return &data, nil
 }
 
 func consumeOverwriteCache[T any](key string) (*T, error) {
-	if rdb := cache.GetRedisClient(); rdb != nil {
-		raw, err := rdb.GetDel(cache.Context, key).Bytes()
-		if err != nil {
-			return nil, err
-		}
-		var data T
-		if err := msgpack.Unmarshal(raw, &data); err != nil {
-			return nil, err
-		}
-		return &data, nil
+	data, ok := state.GetAndDelete[T](context.Background(), key)
+	if !ok {
+		return nil, fmt.Errorf("overwrite cache missed or expired")
 	}
-
-	// Test/fallback stores lack GETDEL; serialize the read and delete locally.
-	overwriteConsumeMu.Lock()
-	defer overwriteConsumeMu.Unlock()
-	data, err := getOverwriteCache[T](key)
-	if err != nil {
-		return nil, err
-	}
-	deleteOverwriteCache(key)
-	return data, nil
+	return &data, nil
 }
 
 func deleteOverwriteCache(key string) {
-	if m := cache.GetMarshal(); m != nil {
-		_ = m.Delete(cache.Context, key)
-	}
+	state.Delete(context.Background(), key)
 }

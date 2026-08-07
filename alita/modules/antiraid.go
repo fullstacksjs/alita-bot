@@ -14,24 +14,23 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers/filters/callbackquery"
-	"github.com/redis/go-redis/v9"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/antiraid"
 	"github.com/divkix/Alita_Robot/alita/i18n"
-	"github.com/divkix/Alita_Robot/alita/utils/cache"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
 	"github.com/divkix/Alita_Robot/alita/utils/extraction"
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 const (
 	antiraidJoinWindowSeconds = 60
 	antiraidPollInterval      = 30 * time.Second
-	antiraidJoinsKey          = "alita:antiraid:joins" // format: joins:chat_id (sorted set)
+	antiraidJoinsKey          = "alita:antiraid:joins" // format: joins:chat_id
 	maxAntiRaidDuration       = antiraid.MaxRaidDuration
 )
 
@@ -43,10 +42,16 @@ var (
 	antiRaidCancel   context.CancelFunc
 	antiRaidPollerMu sync.Mutex
 	antiRaidPollerWG sync.WaitGroup
+	trackJoinMu      sync.Mutex
 )
 
 type antiRaidStruct struct {
 	moduleStruct
+}
+
+type joinEntry struct {
+	UserID   int64
+	JoinedAt time.Time
 }
 
 // StartAntiRaidExpiryPoller starts the background expiry poller once the
@@ -89,34 +94,40 @@ func joinsKey(chatID int64) string {
 }
 
 func trackJoin(chatID, userID int64) (count int, err error) {
-	if !cache.IsRedisAvailable() {
-		return 0, fmt.Errorf("cache not initialized")
+	trackJoinMu.Lock()
+	defer trackJoinMu.Unlock()
+
+	ctx := context.Background()
+	key := joinsKey(chatID)
+	now := time.Now()
+
+	entries, _ := state.Get[[]joinEntry](ctx, key)
+
+	cutoff := now.Add(-time.Duration(antiraidJoinWindowSeconds) * time.Second)
+	valid := make([]joinEntry, 0, len(entries)+1)
+	userFound := false
+
+	for _, e := range entries {
+		if e.JoinedAt.After(cutoff) {
+			if e.UserID == userID {
+				valid = append(valid, joinEntry{UserID: userID, JoinedAt: now})
+				userFound = true
+			} else {
+				valid = append(valid, e)
+			}
+		}
 	}
-	now := time.Now().Unix()
-	ctx := cache.Context
-	rdb := cache.GetRedisClient()
-	_, err = rdb.ZAdd(ctx, joinsKey(chatID), redis.Z{Score: float64(now), Member: strconv.FormatInt(userID, 10)}).Result()
-	if err != nil {
-		return 0, err
+
+	if !userFound {
+		valid = append(valid, joinEntry{UserID: userID, JoinedAt: now})
 	}
-	if err := rdb.Expire(ctx, joinsKey(chatID), time.Duration(antiraidJoinWindowSeconds)*time.Second).Err(); err != nil {
-		log.WithError(err).Warnf("[AntiRaid] Failed to expire join tracking for chat %d", chatID)
-	}
-	_, err = rdb.ZRemRangeByScore(ctx, joinsKey(chatID), "0", strconv.FormatInt(now-int64(antiraidJoinWindowSeconds), 10)).Result()
-	if err != nil {
-		log.WithError(err).Warnf("[AntiRaid] ZRemRangeByScore failed on joinsKey %d", chatID)
-	}
-	rawCount, err := rdb.ZCard(ctx, joinsKey(chatID)).Result()
-	return int(rawCount), err
+
+	state.Set(ctx, key, valid, time.Duration(antiraidJoinWindowSeconds)*time.Second)
+	return len(valid), nil
 }
 
 func clearJoinTracking(chatID int64) {
-	if !cache.IsRedisAvailable() {
-		return
-	}
-	ctx := cache.Context
-	rdb := cache.GetRedisClient()
-	_ = rdb.Del(ctx, joinsKey(chatID)).Err()
+	state.Delete(context.Background(), joinsKey(chatID))
 }
 
 // getRaidState reads the persisted raid window for a chat.

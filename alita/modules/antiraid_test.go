@@ -18,6 +18,7 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/approvals"
 	"github.com/divkix/Alita_Robot/alita/db/models"
 	"github.com/divkix/Alita_Robot/alita/utils/cache"
+	"github.com/divkix/Alita_Robot/alita/utils/state"
 )
 
 func TestParseDuration(t *testing.T) {
@@ -101,11 +102,11 @@ func TestAntiRaidKeysAndNoCacheFallbacks(t *testing.T) {
 	}
 
 	count, err := trackJoin(chatID, 42)
-	if err == nil {
-		t.Fatal("trackJoin() error = nil, want cache not initialized")
+	if err != nil {
+		t.Fatalf("trackJoin() error = %v, want nil", err)
 	}
-	if count != 0 {
-		t.Fatalf("trackJoin() count = %d, want 0", count)
+	if count != 1 {
+		t.Fatalf("trackJoin() count = %d, want 1", count)
 	}
 
 	clearJoinTracking(chatID)
@@ -905,12 +906,9 @@ func TestAntiRaidTrackJoinTriggersAtThreshold(t *testing.T) {
 	if count < threshold {
 		t.Fatalf("T-th join: count = %d, want >= %d (threshold should be reached)", count, threshold)
 	}
-	ttl, err := cache.GetRedisClient().TTL(cache.Context, joinsKey(chatID)).Result()
-	if err != nil {
-		t.Fatalf("join tracking TTL error = %v", err)
-	}
-	if ttl <= 0 || ttl > time.Duration(antiraidJoinWindowSeconds)*time.Second {
-		t.Fatalf("join tracking TTL = %v, want within the join window", ttl)
+	entries, ok := state.Get[[]joinEntry](context.Background(), joinsKey(chatID))
+	if !ok || len(entries) < threshold {
+		t.Fatalf("join tracking entries = %v (ok=%v), want >= %d entries in state", entries, ok, threshold)
 	}
 
 	// A separate chat ID must have an independent counter.
