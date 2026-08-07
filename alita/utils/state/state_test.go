@@ -114,7 +114,7 @@ func TestExpirySemantics(t *testing.T) {
 		state.WithClock(clock),
 		state.WithCleanupInterval(0),
 	)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	const key = "ephemeral-key"
 	state.SetIn(ctx, store, key, "ephemeral-val", 5*time.Second)
@@ -156,7 +156,7 @@ func TestBoundedCleanupMechanism(t *testing.T) {
 		state.WithCleanupBatch(2),
 		state.WithCleanupInterval(0),
 	)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Insert 5 entries with 1 second TTL
 	for i := 0; i < 5; i++ {
@@ -248,7 +248,7 @@ func TestConcurrentAccessAndExpirySafety(t *testing.T) {
 		state.WithCleanupInterval(10 * time.Millisecond),
 		state.WithCleanupBatch(100),
 	)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	const numGoroutines = 20
 	const numOps = 200
