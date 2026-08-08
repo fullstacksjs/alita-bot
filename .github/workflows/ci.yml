@@ -332,7 +332,9 @@ jobs:
   docker-publish:
     name: Publish Docker Images
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The arm64 leg builds under QEMU emulation because CGO (go-sqlite3) cannot
+    # be cross-compiled from the amd64 runner, so allow for the slower build.
+    timeout-minutes: 60
     needs: [security, lint, build, test, translations-check, docker-verify]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:

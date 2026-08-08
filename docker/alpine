@@ -1,7 +1,9 @@
 # Multi-stage build for production Docker images
-# CGO is required for the mattn/go-sqlite3 driver.
+# CGO is required for the mattn/go-sqlite3 driver, so the builder stage runs on
+# the target platform (under QEMU when emulated) instead of $BUILDPLATFORM;
+# cross-compiling CGO from amd64 to arm64 has no toolchain in golang:alpine.
 
-FROM --platform=$BUILDPLATFORM golang:alpine AS builder
+FROM golang:alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -12,14 +14,14 @@ WORKDIR /app
 
 COPY go.mod go.sum ./
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,target=/go/pkg/mod,id=gomod-${TARGETOS}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.cache/go-build,id=gobuild-${TARGETOS}-${TARGETARCH} \
     go mod download && go mod verify
 
 COPY . .
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,target=/go/pkg/mod,id=gomod-${TARGETOS}-${TARGETARCH} \
+    --mount=type=cache,target=/root/.cache/go-build,id=gobuild-${TARGETOS}-${TARGETARCH} \
     CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -trimpath \
     -ldflags="-s -w" \
