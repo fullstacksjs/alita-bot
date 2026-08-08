@@ -59,7 +59,15 @@ func LoadAdminCache(b *gotgbot.Bot, chatId int64) AdminCache {
 		return AdminCache{}
 	}
 
-	loaded, _, _ := adminLoadGroup.Do(adminCacheKey(chatId), func() (interface{}, error) {
+	key := adminCacheKey(chatId)
+	loaded, _, _ := adminLoadGroup.Do(key, func() (interface{}, error) {
+		// A concurrent burst only shares one flight while that flight is running;
+		// callers arriving just after it must reuse the entry it stored instead of
+		// issuing another Telegram round trip. Callers that need fresh data
+		// invalidate first, which drops the entry and bumps the generation.
+		if cached, ok := state.Get[AdminCache](context.Background(), key); ok && cached.Cached {
+			return cached, nil
+		}
 		return loadAdminCache(b, chatId), nil
 	})
 
