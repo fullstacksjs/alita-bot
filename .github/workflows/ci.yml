@@ -4,14 +4,11 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -172,70 +169,12 @@ jobs:
       - name: Verify container health and SQLite persistence
         run: scripts/docker-acceptance/run.sh test-build:latest
 
-  # Publish Docker images for main branch pushes and tag releases
-  docker-publish:
-    name: Publish Docker Images
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [lint, build, test, translations-check, docker-verify]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract short commit SHA
-        id: short-sha
-        run: echo "short_sha=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=${{ steps.short-sha.outputs.short_sha }}
-            type=ref,event=tag
-          labels: |
-            org.opencontainers.image.title=Alita Robot
-            org.opencontainers.image.description=Production image for Alita Robot
-            org.opencontainers.image.source=${{ github.event.repository.html_url }}
-            org.opencontainers.image.revision=${{ github.sha }}
-
-      - name: Build and push Docker image
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/alpine
-          platforms: linux/amd64
-          build-args: |
-            COMMIT=${{ steps.short-sha.outputs.short_sha }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=main
-          cache-to: type=gha,mode=max,scope=main,ignore-error=true
-
   # CI success gate
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [lint, build, test, translations-check, docker-verify, docker-publish]
+    needs: [lint, build, test, translations-check, docker-verify]
     if: always()
     steps:
       - name: Check all jobs status
@@ -247,14 +186,6 @@ jobs:
              [ "${{ needs.docker-verify.result }}" != "success" ]; then
             echo "One or more required CI verification jobs failed!"
             exit 1
-          fi
-
-          if [ "${{ github.event_name }}" == "push" ] && \
-             ( [ "${{ github.ref }}" == "refs/heads/main" ] || [[ "${{ github.ref }}" == refs/tags/* ]] ); then
-            if [ "${{ needs.docker-publish.result }}" != "success" ]; then
-              echo "Docker publish job failed!"
-              exit 1
-            fi
           fi
 
           echo "All CI checks passed!"
