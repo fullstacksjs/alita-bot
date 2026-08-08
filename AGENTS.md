@@ -105,6 +105,10 @@ the current coverage gate and exact CI versions.
 - Repository writes must invalidate every affected cache using the exact existing
   key prefix. Prefixes are not consistently the same as package or table names,
   so follow nearby repository code rather than guessing.
+- Open connections through `db.OpenSQLite` so tests share the runtime PRAGMAs
+  and pool limits. Never enable GORM's `PrepareStmt` for SQLite: cached
+  statements stay open past a transaction and go-sqlite3 then rejects the
+  COMMIT with "SQL statements in progress".
 - Use existing conflict-safe upsert and `db.RetryOnLock` patterns for
   concurrently writable data. Do not replace them with read-then-create logic.
 - Repository reads often return safe defaults instead of propagating errors; do
@@ -162,8 +166,18 @@ the current coverage gate and exact CI versions.
 - Build identity is `config.Commit`: `dev` locally, and the short commit SHA when
   injected via `-ldflags "-X .../alita/config.Commit=<sha>"`. `--version` and
   `/health` both report it. There is no semver to bump.
-- Release behavior and image tags are defined by `.github/workflows/release.yml`
-  and `.goreleaser.yaml`. Review both when changing release or registry behavior.
+- `docker/alpine` is the only image definition and `docker-compose.yml` the only
+  deployment: one non-root `linux/amd64` container, one `alita_data` volume
+  mounted at `/data`. Debug, PR-build, and GoReleaser images and the local Bot
+  API service are gone; `internal/repo_checks` fails the build if one returns.
+  `scripts/docker-acceptance/run.sh` proves the image starts from an empty
+  volume, becomes healthy, and keeps its SQLite database across a recreation.
+- Deployment on the Docker host is manual: snapshot the volume, pull, and
+  recreate the container. No workflow touches the host.
+- Release behavior is defined by `.github/workflows/release.yml` and
+  `.goreleaser.yaml`; images are built and pushed by `.github/workflows/ci.yml`,
+  which injects `config.Commit` through the `COMMIT` build argument. Review the
+  relevant file when changing release or registry behavior.
 - Treat `gotgbot/v2` release-candidate changes and `gotg_md2html` pseudo-version
   changes as compatibility-sensitive; do not auto-merge them without review.
 

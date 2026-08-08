@@ -285,6 +285,59 @@ func TestNoObservabilityStack(t *testing.T) {
 	}
 }
 
+// TestSingleContainerDeployment asserts that the supported runtime keeps one
+// image definition and one Compose service: the debug, PR-build, and GoReleaser
+// images and the local Bot API service were removed with the single-host stack.
+func TestSingleContainerDeployment(t *testing.T) {
+	t.Parallel()
+
+	removed := []string{
+		filepath.Join("docker", "alpine.debug"),
+		filepath.Join("docker", "pr-build"),
+		filepath.Join("docker", "goreleaser"),
+		"debug.docker-compose.yml",
+	}
+	for _, name := range removed {
+		if _, err := os.Stat(filepath.Join("..", "..", name)); err == nil {
+			t.Fatalf("%s exists; the single-host stack ships one image definition", name)
+		}
+	}
+
+	images, err := filepath.Glob(filepath.Join("..", "..", "docker", "*"))
+	if err != nil {
+		t.Fatalf("failed to list image definitions: %v", err)
+	}
+	if len(images) != 1 || filepath.Base(images[0]) != "alpine" {
+		t.Fatalf("expected docker/alpine to be the only image definition, found %v", images)
+	}
+
+	dockerfile := readRepoFile(t, "docker", "alpine")
+	for _, required := range []string{"linux/amd64", "USER alita:alita", `VOLUME ["/data"]`} {
+		if !strings.Contains(dockerfile, required) {
+			t.Fatalf("docker/alpine must keep %q: the image is a non-root amd64 build with a writable /data volume", required)
+		}
+	}
+
+	compose := readRepoFile(t, "docker-compose.yml")
+	for _, banned := range []string{"postgres", "redis", "telegram-bot-api"} {
+		if strings.Contains(compose, banned) {
+			t.Fatalf("docker-compose.yml still defines %s; the deployment is one bot service", banned)
+		}
+	}
+	for _, required := range []string{"alita_data:/data", "restart:", "healthcheck:", "ports:"} {
+		if !strings.Contains(compose, required) {
+			t.Fatalf("docker-compose.yml must define %q", required)
+		}
+	}
+
+	goreleaser := readRepoFile(t, ".goreleaser.yaml")
+	for _, banned := range []string{"dockers:", "dockers_v2:", "docker_manifests:"} {
+		if strings.Contains(goreleaser, banned) {
+			t.Fatalf(".goreleaser.yaml still declares %s; images are published from docker/alpine only", banned)
+		}
+	}
+}
+
 // TestStartupDoesNotDropPendingUpdates asserts that neither update transport
 // asks Telegram to discard queued updates on startup.
 func TestStartupDoesNotDropPendingUpdates(t *testing.T) {

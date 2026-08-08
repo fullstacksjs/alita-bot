@@ -1,12 +1,13 @@
-# Multi-stage build for production Docker images
+# The single supported production image: multi-stage Alpine, linux/amd64 only.
+#
 # CGO is required for the mattn/go-sqlite3 driver, so the builder stage runs on
-# the target platform (under QEMU when emulated) instead of $BUILDPLATFORM;
-# cross-compiling CGO from amd64 to arm64 has no toolchain in golang:alpine.
+# the target platform. Only linux/amd64 is supported, which keeps the build
+# native on amd64 runners and needs no cross-compilation toolchain.
 
-FROM golang:alpine AS builder
+FROM --platform=linux/amd64 golang:alpine AS builder
 
-ARG TARGETOS
-ARG TARGETARCH
+# Short commit SHA reported by --version and /health; "dev" for local builds.
+ARG COMMIT=dev
 
 RUN apk add --no-cache build-base sqlite-dev
 
@@ -14,21 +15,23 @@ WORKDIR /app
 
 COPY go.mod go.sum ./
 
-RUN --mount=type=cache,target=/go/pkg/mod,id=gomod-${TARGETOS}-${TARGETARCH} \
-    --mount=type=cache,target=/root/.cache/go-build,id=gobuild-${TARGETOS}-${TARGETARCH} \
+RUN --mount=type=cache,target=/go/pkg/mod,id=gomod-linux-amd64 \
+    --mount=type=cache,target=/root/.cache/go-build,id=gobuild-linux-amd64 \
     go mod download && go mod verify
 
 COPY . .
 
-RUN --mount=type=cache,target=/go/pkg/mod,id=gomod-${TARGETOS}-${TARGETARCH} \
-    --mount=type=cache,target=/root/.cache/go-build,id=gobuild-${TARGETOS}-${TARGETARCH} \
-    CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+RUN --mount=type=cache,target=/go/pkg/mod,id=gomod-linux-amd64 \
+    --mount=type=cache,target=/root/.cache/go-build,id=gobuild-linux-amd64 \
+    CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
     -trimpath \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -X github.com/divkix/Alita_Robot/alita/config.Commit=${COMMIT}" \
     -o alita_robot .
 
-FROM alpine:3.21
+FROM --platform=linux/amd64 alpine:3.21
 
+# The runtime user owns /data so the bot can create and update the SQLite
+# database (plus its WAL and shared-memory files) on the mounted volume.
 RUN apk add --no-cache ca-certificates tzdata sqlite-libs && \
     addgroup -g 65532 -S alita && \
     adduser -u 65532 -S alita -G alita && \
@@ -44,9 +47,8 @@ VOLUME ["/data"]
 EXPOSE 8080
 ENTRYPOINT ["/app/alita_robot"]
 
-LABEL org.opencontainers.image.authors="Divanshu Chauhan <divkix@divkix.me>"
-LABEL org.opencontainers.image.url="https://divkix.me"
-LABEL org.opencontainers.image.source="https://github.com/divkix/Alita_Robot"
-LABEL org.opencontainers.image.title="Alita Go Robot"
-LABEL org.opencontainers.image.description="Official Alita Go Robot Docker Image"
-LABEL org.opencontainers.image.vendor="Divkix"
+LABEL org.opencontainers.image.source="https://github.com/fullstacksjs/alita-bot"
+LABEL org.opencontainers.image.title="Alita Robot"
+LABEL org.opencontainers.image.description="Telegram group-management bot for a single private instance"
+LABEL org.opencontainers.image.vendor="FullstacksJS"
+LABEL org.opencontainers.image.licenses="MIT"
