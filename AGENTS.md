@@ -174,9 +174,9 @@ the current coverage gate and exact CI versions.
   volume, becomes healthy, and keeps its SQLite database across a recreation.
 - Deployment on the Docker host is manual: snapshot the volume, pull, and
   recreate the container. No workflow touches the host.
-- Images are built and pushed by `.github/workflows/ci.yml`, which injects
-  `config.Commit` through the `COMMIT` build argument. Review the workflow file
-  when changing release or registry behavior.
+- PR verification is handled by `.github/workflows/ci.yml`. Release behavior is
+  defined by `.github/workflows/release.yml`; images are built and pushed to GHCR
+  when a tag is pushed, injecting `config.Commit` through the `COMMIT` build argument.
 - Treat `gotgbot/v2` release-candidate changes and `gotg_md2html` pseudo-version
   changes as compatibility-sensitive; do not auto-merge them without review.
 
