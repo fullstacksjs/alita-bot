@@ -152,10 +152,6 @@ func TestAdminCacheAutoUpdateReloadsAdminList(t *testing.T) {
 	}
 }
 
-
-
-
-
 func TestBotUpdatesLoadersRegisterExpectedHandlers(t *testing.T) {
 	moduleDispatcher := ext.NewDispatcher(&ext.DispatcherOpts{MaxRoutines: -1})
 	LoadBotUpdates(moduleDispatcher)

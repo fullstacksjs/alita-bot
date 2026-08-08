@@ -13,7 +13,6 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/models"
-
 )
 
 func skipIfNoDb(t *testing.T) {

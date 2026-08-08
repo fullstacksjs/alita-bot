@@ -1084,8 +1084,6 @@ func TestAntiRaidLongRaidWindowSurvivesCacheLoss(t *testing.T) {
 		t.Fatalf("enableRaid(week) = (%v, %v), want (true, nil)", enabled, err)
 	}
 
-
-
 	state := getRaidState(chatID)
 	if !state.Active {
 		t.Fatal("week-long raid read as inactive without a cache")

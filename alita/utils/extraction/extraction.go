@@ -427,7 +427,6 @@ func ExtractOptionalTime(b *gotgbot.Bot, ctx *ext.Context, inputVal string) (unt
 	return banTime, timeStr, reason, nil
 }
 
-
 func parseTemporaryDuration(inputVal string, now int64) (banTime int64, timeStr, reason string, err error) {
 	args := strings.Fields(inputVal)
 	if len(args) == 0 {
