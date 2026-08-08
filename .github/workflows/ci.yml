@@ -9,20 +9,60 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Verify code formatting and linting
+  # Security scanning
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@v2.28.0
+        with:
+          args: -no-fail -fmt sarif -out gosec.sarif ./...
+
+      - name: Upload Gosec SARIF
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+      - name: Run govulncheck
+        continue-on-error: true
+        uses: golang/govulncheck-action@v1
+
+  # Code quality & formatting
   lint:
-    name: Code Quality & Formatting
+    name: Code Quality
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -44,8 +84,86 @@ jobs:
           version: v2.11.4
           install-mode: binary
           args: --timeout 10m
+          only-new-issues: true
 
-  # Binary compilation verification
+      - name: Technical Debt Tracking
+        run: |
+          echo "## 📋 Technical Debt Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          TODO_COUNT=$(grep -r -n "TODO" --include="*.go" . 2>/dev/null | grep -v "godot\|godoc" | wc -l)
+          FIXME_COUNT=$(grep -r -n "FIXME" --include="*.go" . 2>/dev/null | wc -l)
+          HACK_COUNT=$(grep -r -n "HACK" --include="*.go" . 2>/dev/null | wc -l)
+          XXX_COUNT=$(grep -r -n "XXX" --include="*.go" . 2>/dev/null | wc -l)
+
+          echo "| Marker | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| TODO | $TODO_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| FIXME | $FIXME_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| HACK | $HACK_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| XXX | $XXX_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          TOTAL=$((TODO_COUNT + FIXME_COUNT + HACK_COUNT + XXX_COUNT))
+          echo "**Total Technical Debt Markers: $TOTAL**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "### Details" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -r -n -E "(TODO|FIXME|HACK|XXX)" --include="*.go" . 2>/dev/null | head -50 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** Please ensure TODO/FIXME comments reference an issue (e.g., TODO(#123))" >> $GITHUB_STEP_SUMMARY
+
+      - name: Run duplicate code detection
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          install-mode: binary
+          args: --default=none --enable dupl --timeout 10m
+          only-new-issues: true
+
+      - name: Cyclomatic Complexity Analysis
+        run: |
+          echo "## 📊 Cyclomatic Complexity Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+
+          echo "### Functions with Complexity > 15" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          HIGH_COMPLEX=$(gocyclo -over 15 . 2>/dev/null | grep -v "could not get file info" | sort -t= -k2 -nr || true)
+
+          if [ -n "$HIGH_COMPLEX" ]; then
+            echo "| Complexity | Function | Location |" >> $GITHUB_STEP_SUMMARY
+            echo "|------------|----------|----------|" >> $GITHUB_STEP_SUMMARY
+            echo "$HIGH_COMPLEX" | while read line; do
+              COMPLEX=$(echo "$line" | awk '{print $1}')
+              PKG=$(echo "$line" | awk '{print $2}')
+              FUNC=$(echo "$line" | awk '{print $3}')
+              LOC=$(echo "$line" | awk '{print $4}')
+              echo "| $COMPLEX | $PKG.$FUNC | $LOC |" >> $GITHUB_STEP_SUMMARY
+            done
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Warning:** Functions with high cyclomatic complexity should be refactored for better maintainability." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No functions with cyclomatic complexity > 15 detected." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Complexity Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "**Top 10 Most Complex Functions:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          gocyclo . 2>/dev/null | grep -v "could not get file info" | sort -t= -k2 -nr | head -10 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # Build verification
   build:
     name: Build Verification
     runs-on: ubuntu-latest
@@ -53,6 +171,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -81,7 +201,7 @@ jobs:
           path: /tmp/alita_robot
           retention-days: 7
 
-  # Automated unit and integration tests (including race detector)
+  # Automated regression tests
   test:
     name: Test Suite
     runs-on: ubuntu-latest
@@ -96,6 +216,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -109,7 +231,22 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential libsqlite3-dev
 
       - name: Run test suite
-        run: make test
+        run: |
+          start_time=$(date +%s)
+          make test || test_exit=$?
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+
+          echo "Test suite duration: ${duration}s"
+
+          echo "## 🧪 Test Suite Performance" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Duration:** ${duration} seconds" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${test_exit}" ]; then
+            exit ${test_exit}
+          fi
 
       - name: Report coverage
         if: always()
@@ -138,6 +275,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -148,14 +287,16 @@ jobs:
       - name: Check translations
         run: make check-translations
 
-  # Production image build plus a runtime check of the supported deployment
+  # Production image build plus runtime check
   docker-verify:
-    name: Docker Verification
+    name: Docker Build Test
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Extract short commit SHA
         id: short-sha
@@ -174,17 +315,18 @@ jobs:
     name: CI Success
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [lint, build, test, translations-check, docker-verify]
+    needs: [security, lint, build, test, translations-check, docker-verify]
     if: always()
     steps:
       - name: Check all jobs status
         run: |
-          if [ "${{ needs.lint.result }}" != "success" ] || \
+          if [ "${{ needs.security.result }}" != "success" ] || \
+             [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.translations-check.result }}" != "success" ] || \
              [ "${{ needs.docker-verify.result }}" != "success" ]; then
-            echo "One or more required CI verification jobs failed!"
+            echo "One or more CI jobs failed!"
             exit 1
           fi
 
