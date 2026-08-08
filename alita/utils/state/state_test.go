@@ -245,7 +245,7 @@ func TestConcurrentAccessAndExpirySafety(t *testing.T) {
 	ctx := context.Background()
 
 	store := state.NewMemoryStore(
-		state.WithCleanupInterval(10 * time.Millisecond),
+		state.WithCleanupInterval(10*time.Millisecond),
 		state.WithCleanupBatch(100),
 	)
 	defer func() { _ = store.Close() }()

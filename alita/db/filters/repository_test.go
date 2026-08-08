@@ -371,4 +371,3 @@ func TestUpdateFilterAndConcurrentOps(t *testing.T) {
 		t.Error(err)
 	}
 }
-

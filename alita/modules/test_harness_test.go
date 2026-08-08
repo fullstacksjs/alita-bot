@@ -15,8 +15,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/db/testsqlite"
 )
 
-
-
 type moduleBotCall struct {
 	Method string
 	Params map[string]any

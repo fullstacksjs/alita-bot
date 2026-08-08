@@ -108,4 +108,3 @@ func TestReactionsConcurrentWrites(t *testing.T) {
 		t.Error(err)
 	}
 }
-
