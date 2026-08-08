@@ -58,6 +58,41 @@ func TestSQLiteBootstrap_EmptyFileInitializedFromEmbeddedMigrations(t *testing.T
 	assert.NotEmpty(t, record.Checksum, "checksum should be calculated and stored")
 }
 
+// TestSQLiteBootstrap_ProductionConfigCommitsTransactions opens a temporary
+// database exactly the way the running bot does. It guards the container
+// bootstrap: with GORM's prepared-statement cache enabled, statements stay open
+// on the transaction and go-sqlite3 rejects the COMMIT, so a container starting
+// from an empty /data volume dies while applying the embedded migrations.
+func TestSQLiteBootstrap_ProductionConfigCommitsTransactions(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "production_config.db")
+
+	database, err := OpenSQLite(FormatSQLiteDSN(dbPath), nil)
+	require.NoError(t, err)
+
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
+
+	runner := migrations.NewSQLiteMigrationRunner(database)
+	require.NoError(t, runner.RunMigrations(), "embedded migrations must commit under the production GORM config")
+
+	err = database.Transaction(func(tx *gorm.DB) error {
+		return tx.Create(&migrations.SchemaMigration{
+			Version:    "99999999999999_transaction_probe",
+			ExecutedAt: time.Now().UTC(),
+			Checksum:   "probe",
+		}).Error
+	})
+	require.NoError(t, err, "ordinary writes must commit under the production GORM config")
+
+	var count int64
+	require.NoError(t, database.Model(&migrations.SchemaMigration{}).
+		Where("version = ?", "99999999999999_transaction_probe").Count(&count).Error)
+	assert.Equal(t, int64(1), count, "the committed row must be readable after the transaction")
+}
+
 func TestSQLiteBootstrap_SecondStartupAppliesNothingTwice(t *testing.T) {
 	database, _ := createTempSQLiteDB(t)
 

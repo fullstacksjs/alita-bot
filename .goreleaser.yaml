@@ -10,8 +10,8 @@ release:
     Welcome to this new release!
 
   footer: |
-    Docker 🐳 images are available at:
-    `docker pull ghcr.io/fullstacksjs/alita-bot:{{ .Tag }}`
+    Docker 🐳 images are published from `main` by CI, not by this release:
+    `docker pull ghcr.io/fullstacksjs/alita-bot:{{ .ShortCommit }}`
 
 gomod:
   env:
@@ -90,22 +90,5 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
-dockers_v2:
-  - dockerfile: docker/goreleaser
-    images:
-      - "ghcr.io/fullstacksjs/alita-bot"
-    tags:
-      - "{{ .Tag }}"
-      - "{{ .Version }}"
-      - "latest"
-    platforms:
-      - linux/amd64
-    labels:
-      "org.opencontainers.image.created": "{{.Date}}"
-      "org.opencontainers.image.title": "{{ .ProjectName }}"
-      "org.opencontainers.image.revision": "{{.FullCommit}}"
-      "org.opencontainers.image.version": "{{.Version}}"
-      "org.opencontainers.image.source": "https://github.com/fullstacksjs/alita-bot"
-      "org.opencontainers.image.description": "Official Alita Go Robot Docker Image"
-      "org.opencontainers.image.vendor": "FullstacksJS"
-      "org.opencontainers.image.authors": "Divanshu Chauhan <divkix@divkix.me>"
+# Container images are not built here. `docker/alpine` is the single supported
+# image definition and CI publishes it from main.

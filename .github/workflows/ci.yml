@@ -311,29 +311,30 @@ jobs:
       - name: Check translations
         run: make check-translations
 
-  # Docker build verification (single arch, fast)
+  # Production image build plus a runtime check of the supported deployment
   docker-verify:
     name: Docker Build Test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - name: Build Docker image (amd64 only)
+      - name: Build production image (linux/amd64)
         run: |
+          set -euo pipefail
           docker build -f docker/alpine -t test-build:latest .
-          docker images | grep test-build
+
+      - name: Verify container health and SQLite persistence
+        run: scripts/docker-acceptance/run.sh test-build:latest
 
   # Publish Docker images for main branch pushes
   docker-publish:
     name: Publish Docker Images
     runs-on: ubuntu-latest
-    # The arm64 leg builds under QEMU emulation because CGO (go-sqlite3) cannot
-    # be cross-compiled from the amd64 runner, so allow for the slower build.
-    timeout-minutes: 60
+    timeout-minutes: 30
     needs: [security, lint, build, test, translations-check, docker-verify]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
@@ -347,9 +348,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -389,7 +387,9 @@ jobs:
         with:
           context: .
           file: docker/alpine
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+          build-args: |
+            COMMIT=${{ steps.short-sha.outputs.short_sha }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -406,7 +406,7 @@ jobs:
           echo "- **Latest Dev:** \`ghcr.io/${{ github.repository }}:dev\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit Build:** \`ghcr.io/${{ github.repository }}:${{ steps.short-sha.outputs.short_sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Platforms:** \`linux/amd64\`, \`linux/arm64\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platforms:** \`linux/amd64\`" >> $GITHUB_STEP_SUMMARY
 
   # CI success gate
   ci-success:

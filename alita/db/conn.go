@@ -89,6 +89,43 @@ func FormatSQLiteDSN(rawDSN string) string {
 	return fmt.Sprintf("%s?_busy_timeout=%d&_journal_mode=WAL&_foreign_keys=ON", pathStr, sqliteBusyTimeoutMS)
 }
 
+// OpenSQLite opens one SQLite database with the settings the running bot uses:
+// the shared PRAGMAs and the connection limits suited to SQLite's single-writer
+// model. Tests that must reproduce production connection behavior call it
+// instead of opening GORM themselves.
+//
+// Prepared-statement caching stays off. GORM's cache prepares statements on the
+// connection (and, inside a transaction, on the transaction) and closes them
+// only afterwards, so go-sqlite3 rejects the COMMIT with "cannot commit
+// transaction - SQL statements in progress". That breaks every transaction,
+// starting with the embedded migrations a container applies to a fresh /data
+// volume.
+func OpenSQLite(dsn string, gormLogger logger.Interface) (*gorm.DB, error) {
+	database, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+		Logger:      gormLogger,
+		PrepareStmt: false,
+		NowFunc: func() time.Time {
+			return time.Now().UTC()
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	database.Exec("PRAGMA foreign_keys = ON;")
+	database.Exec("PRAGMA journal_mode = WAL;")
+	database.Exec(fmt.Sprintf("PRAGMA busy_timeout = %d;", sqliteBusyTimeoutMS))
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetMaxOpenConns(sqliteMaxOpenConns)
+	sqlDB.SetMaxIdleConns(sqliteMaxIdleConns)
+
+	return database, nil
+}
+
 func init() {
 	if isCliModeActive() {
 		return
@@ -115,13 +152,7 @@ func init() {
 	var err error
 	maxRetries := 5
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		DB, err = gorm.Open(sqlite.Open(dsn), &gorm.Config{
-			Logger:      gormLogger,
-			PrepareStmt: true,
-			NowFunc: func() time.Time {
-				return time.Now().UTC()
-			},
-		})
+		DB, err = OpenSQLite(dsn, gormLogger)
 		if err == nil {
 			break
 		}
@@ -139,17 +170,10 @@ func init() {
 		log.Fatalf("[Database][Connection] Failed after %d attempts: %v", maxRetries, err)
 	}
 
-	DB.Exec("PRAGMA foreign_keys = ON;")
-	DB.Exec("PRAGMA journal_mode = WAL;")
-	DB.Exec(fmt.Sprintf("PRAGMA busy_timeout = %d;", sqliteBusyTimeoutMS))
-
 	sqlDB, err := DB.DB()
 	if err != nil {
 		log.Fatalf("[Database][SQL DB]: %v", err)
 	}
-
-	sqlDB.SetMaxOpenConns(sqliteMaxOpenConns)
-	sqlDB.SetMaxIdleConns(sqliteMaxIdleConns)
 
 	if err := sqlDB.Ping(); err != nil {
 		log.Fatalf("[Database][Ping]: %v", err)

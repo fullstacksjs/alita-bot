@@ -1,8 +1,20 @@
-# Production Docker Compose for Alita Robot
-# Uses pre-built images from GHCR, optimized for Dokploy deployment
+# The single supported deployment: one bot service backed by one SQLite volume.
 #
-# Environment variables to set in Dokploy UI:
-#   BOT_TOKEN, OWNER_ID, MESSAGE_DUMP, WEBHOOK_DOMAIN, WEBHOOK_SECRET
+# Configuration comes from a local .env file (see sample.env). BOT_TOKEN and
+# OWNER_ID are required; the rest have defaults.
+#
+# Host operations (documented in full by the operator documentation ticket):
+#   Snapshot: stop the service, copy the `alita_data` volume contents (including
+#             alita.db-wal and alita.db-shm), then start it again.
+#             docker compose stop alita
+#             docker run --rm -v alita_data:/data -v "$PWD:/backup" alpine \
+#               tar czf /backup/alita-data-$(date +%F).tgz -C /data .
+#             docker compose start alita
+#   Deploy:   pull the new image and recreate the container by hand; nothing
+#             restarts the host automatically.
+#             docker compose pull alita
+#             docker compose up -d alita
+#             docker compose ps   # wait for the health check to report healthy
 
 services:
   alita:
@@ -10,13 +22,13 @@ services:
     container_name: alita-robot
     restart: always
     environment:
-      SQLITE_PATH: ${SQLITE_PATH:-/data/alita.db}
-      USE_WEBHOOKS: ${USE_WEBHOOKS:-false}
-      HTTP_PORT: ${HTTP_PORT:-8080}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
       BOT_TOKEN: ${BOT_TOKEN}
       OWNER_ID: ${OWNER_ID}
+      SQLITE_PATH: ${SQLITE_PATH:-/data/alita.db}
+      HTTP_PORT: ${HTTP_PORT:-8080}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       MESSAGE_DUMP: ${MESSAGE_DUMP:-}
+      USE_WEBHOOKS: ${USE_WEBHOOKS:-false}
       WEBHOOK_DOMAIN: ${WEBHOOK_DOMAIN:-}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
     ports:
@@ -24,18 +36,12 @@ services:
     volumes:
       - alita_data:/data
     healthcheck:
+      # The image ships no curl or wget; the binary probes /health itself.
       test: ["CMD", "/app/alita_robot", "--health"]
       interval: 30s
       timeout: 10s
       retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: "1.0"
-        reservations:
-          memory: 256M
-          cpus: "0.25"
+      start_period: 20s
 
 volumes:
   alita_data:
