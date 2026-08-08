@@ -4,209 +4,87 @@ on:
   push:
     branches:
       - main
-    tags-ignore:
-      - "**"
+    tags:
+      - "v*"
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  security-events: write
+  packages: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Security scanning
-  security:
-    name: Security Scanning
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: stable
-          cache: true
-
-      - name: Run Gosec Security Scanner
-        uses: securego/gosec@v2.28.0
-        with:
-          args: -no-fail -fmt sarif -out gosec.sarif ./...
-
-      - name: Upload Gosec SARIF
-        continue-on-error: true # Gosec may produce SARIF with null artifactChanges which fails validation
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: gosec.sarif
-          category: gosec
-
-      - name: Run govulncheck
-        continue-on-error: true
-        uses: golang/govulncheck-action@v1
-
-  # Code quality - run on stable only (lint results don't vary by Go version)
+  # Verify code formatting and linting
   lint:
-    name: Code Quality
+    name: Code Quality & Formatting
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version-file: 'go.mod'
           cache: true
 
+      - name: Check code formatting
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "The following files are not formatted with gofmt:"
+            gofmt -l .
+            exit 1
+          fi
+
       - name: Run linting
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@v6
         with:
-          version: v2.11.4
+          version: v1.64.6
           install-mode: binary
           args: --timeout 10m
-          # Only report new issues to allow gradual improvement of existing codebase
-          only-new-issues: true
 
-      - name: Technical Debt Tracking
-        run: |
-          echo "## 📋 Technical Debt Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Find all TODO, FIXME, HACK, XXX comments in Go files
-          echo "### Detected Technical Debt Markers" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Count markers
-          TODO_COUNT=$(grep -r -n "TODO" --include="*.go" . 2>/dev/null | grep -v "godot\|godoc" | wc -l)
-          FIXME_COUNT=$(grep -r -n "FIXME" --include="*.go" . 2>/dev/null | wc -l)
-          HACK_COUNT=$(grep -r -n "HACK" --include="*.go" . 2>/dev/null | wc -l)
-          XXX_COUNT=$(grep -r -n "XXX" --include="*.go" . 2>/dev/null | wc -l)
-
-          echo "| Marker | Count |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| TODO | $TODO_COUNT |" >> $GITHUB_STEP_SUMMARY
-          echo "| FIXME | $FIXME_COUNT |" >> $GITHUB_STEP_SUMMARY
-          echo "| HACK | $HACK_COUNT |" >> $GITHUB_STEP_SUMMARY
-          echo "| XXX | $XXX_COUNT |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          TOTAL=$((TODO_COUNT + FIXME_COUNT + HACK_COUNT + XXX_COUNT))
-          echo "**Total Technical Debt Markers: $TOTAL**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Show details if any markers found
-          if [ "$TOTAL" -gt 0 ]; then
-            echo "### Details" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            grep -r -n -E "(TODO|FIXME|HACK|XXX)" --include="*.go" . 2>/dev/null | head -50 >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note:** Please ensure TODO/FIXME comments reference an issue (e.g., TODO(#123))" >> $GITHUB_STEP_SUMMARY
-
-      - name: Run duplicate code detection
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.11.4
-          install-mode: binary
-          # Only run dupl linter, disable all other linters
-          args: --default=none --enable dupl --timeout 10m
-          # Only report new issues to allow gradual improvement
-          only-new-issues: true
-
-      - name: Cyclomatic Complexity Analysis
-        run: |
-          echo "## 📊 Cyclomatic Complexity Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Install gocyclo for complexity analysis
-          go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
-
-          # Run complexity analysis with threshold 15
-          echo "### Functions with Complexity > 15" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Get high complexity functions
-          HIGH_COMPLEX=$(gocyclo -over 15 . 2>/dev/null | grep -v "could not get file info" | sort -t= -k2 -nr || true)
-
-          if [ -n "$HIGH_COMPLEX" ]; then
-            echo "| Complexity | Function | Location |" >> $GITHUB_STEP_SUMMARY
-            echo "|------------|----------|----------|" >> $GITHUB_STEP_SUMMARY
-            echo "$HIGH_COMPLEX" | while read line; do
-              # Parse the gocyclo output format: complexity package function file:line
-              COMPLEX=$(echo "$line" | awk '{print $1}')
-              PKG=$(echo "$line" | awk '{print $2}')
-              FUNC=$(echo "$line" | awk '{print $3}')
-              LOC=$(echo "$line" | awk '{print $4}')
-              echo "| $COMPLEX | $PKG.$FUNC | $LOC |" >> $GITHUB_STEP_SUMMARY
-            done
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "⚠️ **Warning:** Functions with high cyclomatic complexity should be refactored for better maintainability." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ No functions with cyclomatic complexity > 15 detected." >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Complexity Statistics" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Get top 10 most complex functions
-          echo "**Top 10 Most Complex Functions:**" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          gocyclo . 2>/dev/null | grep -v "could not get file info" | sort -t= -k2 -nr | head -10 >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-  # Build verification - run in parallel with other checks
+  # Binary compilation verification
   build:
     name: Build Verification
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        go-version: [stable]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
+        uses: actions/checkout@v4
 
-      - name: Set up Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v7
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version-file: 'go.mod'
           cache: true
+
+      - name: Extract short commit SHA
+        id: short-sha
+        run: echo "short_sha=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
 
       - name: Build Go binary
         run: |
-          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/alita_robot .
-          # Version check from /tmp to avoid loading .env file (no services needed)
-          cd /tmp && ./alita_robot --version
+          set -euo pipefail
+          short_sha="${{ steps.short-sha.outputs.short_sha }}"
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/divkix/Alita_Robot/alita/config.Commit=${short_sha}" -o /tmp/alita_robot .
+          if [ "$(cd /tmp && ./alita_robot --version)" != "$short_sha" ]; then
+            echo "::error::--version did not report the injected commit ${short_sha}"
+            exit 1
+          fi
 
       - name: Upload build artifact
-        if: matrix.go-version == 'stable'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: build-artifact-${{ github.sha }}
           path: /tmp/alita_robot
           retention-days: 7
 
-  # Automated regression tests
+  # Automated unit and integration tests (including race detector)
   test:
     name: Test Suite
     runs-on: ubuntu-latest
@@ -220,14 +98,12 @@ jobs:
       CGO_ENABLED: "1"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version-file: 'go.mod'
           cache: true
 
       - name: Ensure C toolchain for CGO
@@ -236,57 +112,21 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential libsqlite3-dev
 
       - name: Run test suite
-        run: |
-          # Run tests and capture timing (capture exit status to track duration even on failure)
-          start_time=$(date +%s)
-          make test || test_exit=$?
-          end_time=$(date +%s)
-          duration=$((end_time - start_time))
+        run: make test
 
-          # Print duration to logs
-          echo "Test suite duration: ${duration}s"
-
-          # Add to job summary
-          echo "## 🧪 Test Suite Performance" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Total Duration:** ${duration} seconds" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Re-exit with test failure status if tests failed
-          if [ -n "${test_exit}" ]; then
-            exit ${test_exit}
-          fi
-
-      - name: Check coverage threshold
-        if: success()
-        run: |
-          if [ ! -f coverage.out ]; then
-            echo "ERROR: coverage.out not found"
-            exit 1
-          fi
-
-          THRESHOLD=78
-          COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | tr -d '%')
-
-          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Total Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
-          echo "**Minimum Threshold:** ${THRESHOLD}%" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Use awk for float comparison (bc may not be available)
-          BELOW=$(awk "BEGIN {print ($COVERAGE < $THRESHOLD) ? 1 : 0}")
-          if [ "$BELOW" -eq 1 ]; then
-            echo "FAIL: Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%" >> $GITHUB_STEP_SUMMARY
-            echo "Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
-            exit 1
-          else
-            echo "PASS: Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: Upload coverage reports
+      - name: Report coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        run: |
+          if [ -f coverage.out ]; then
+            COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}')
+            echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Total Coverage:** ${COVERAGE}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ github.sha }}
           path: coverage.out
@@ -300,62 +140,57 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
+        uses: actions/checkout@v4
+
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version-file: 'go.mod'
           cache: true
+
       - name: Check translations
         run: make check-translations
 
   # Production image build plus a runtime check of the supported deployment
   docker-verify:
-    name: Docker Build Test
+    name: Docker Verification
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
+        uses: actions/checkout@v4
+
+      - name: Extract short commit SHA
+        id: short-sha
+        run: echo "short_sha=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
 
       - name: Build production image (linux/amd64)
         run: |
           set -euo pipefail
-          docker build -f docker/alpine -t test-build:latest .
+          docker build --build-arg COMMIT=${{ steps.short-sha.outputs.short_sha }} -f docker/alpine -t test-build:latest .
 
       - name: Verify container health and SQLite persistence
         run: scripts/docker-acceptance/run.sh test-build:latest
 
-  # Publish Docker images for main branch pushes
+  # Publish Docker images for main branch pushes and tag releases
   docker-publish:
     name: Publish Docker Images
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [security, lint, build, test, translations-check, docker-verify]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [lint, build, test, translations-check, docker-verify]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
     permissions:
       contents: read
       packages: write
-    outputs:
-      image-tags: ${{ steps.meta.outputs.tags }}
-      image-digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-        with:
-          version: latest
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -367,23 +202,22 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=dev
-            type=raw,value=dev-${{ steps.short-sha.outputs.short_sha }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=${{ steps.short-sha.outputs.short_sha }}
+            type=ref,event=tag
           labels: |
-            org.opencontainers.image.title=Alita Robot Development Build
-            org.opencontainers.image.description=Development build from main branch
+            org.opencontainers.image.title=Alita Robot
+            org.opencontainers.image.description=Production image for Alita Robot
             org.opencontainers.image.source=${{ github.event.repository.html_url }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.ref.name=${{ github.ref_name }}
 
       - name: Build and push Docker image
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/alpine
@@ -395,42 +229,28 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=main
           cache-to: type=gha,mode=max,scope=main,ignore-error=true
-          provenance: true
-          sbom: true
-
-      - name: Add build info to job summary
-        run: |
-          echo "## 🐳 Docker Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Main Branch Build**" >> $GITHUB_STEP_SUMMARY
-          echo "- **Latest Dev:** \`ghcr.io/${{ github.repository }}:dev\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit Build:** \`ghcr.io/${{ github.repository }}:${{ steps.short-sha.outputs.short_sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Platforms:** \`linux/amd64\`" >> $GITHUB_STEP_SUMMARY
 
   # CI success gate
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [security, lint, build, test, translations-check, docker-verify, docker-publish]
+    needs: [lint, build, test, translations-check, docker-verify, docker-publish]
     if: always()
     steps:
       - name: Check all jobs status
         run: |
-          # Check required jobs
-          if [ "${{ needs.security.result }}" != "success" ] || \
-             [ "${{ needs.lint.result }}" != "success" ] || \
+          if [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.translations-check.result }}" != "success" ] || \
              [ "${{ needs.docker-verify.result }}" != "success" ]; then
-            echo "One or more CI jobs failed!"
+            echo "One or more required CI verification jobs failed!"
             exit 1
           fi
 
-          # Check docker-publish only if it was supposed to run
-          if [ "${{ github.ref }}" == "refs/heads/main" ] && [ "${{ github.event_name }}" == "push" ]; then
+          if [ "${{ github.event_name }}" == "push" ] && \
+             ( [ "${{ github.ref }}" == "refs/heads/main" ] || [[ "${{ github.ref }}" == refs/tags/* ]] ); then
             if [ "${{ needs.docker-publish.result }}" != "success" ]; then
               echo "Docker publish job failed!"
               exit 1

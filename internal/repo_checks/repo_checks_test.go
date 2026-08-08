@@ -296,6 +296,7 @@ func TestSingleContainerDeployment(t *testing.T) {
 		filepath.Join("docker", "pr-build"),
 		filepath.Join("docker", "goreleaser"),
 		"debug.docker-compose.yml",
+		".goreleaser.yaml",
 	}
 	for _, name := range removed {
 		if _, err := os.Stat(filepath.Join("..", "..", name)); err == nil {
@@ -327,13 +328,6 @@ func TestSingleContainerDeployment(t *testing.T) {
 	for _, required := range []string{"alita_data:/data", "restart:", "healthcheck:", "ports:"} {
 		if !strings.Contains(compose, required) {
 			t.Fatalf("docker-compose.yml must define %q", required)
-		}
-	}
-
-	goreleaser := readRepoFile(t, ".goreleaser.yaml")
-	for _, banned := range []string{"dockers:", "dockers_v2:", "docker_manifests:"} {
-		if strings.Contains(goreleaser, banned) {
-			t.Fatalf(".goreleaser.yaml still declares %s; images are published from docker/alpine only", banned)
 		}
 	}
 }

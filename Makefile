@@ -1,7 +1,6 @@
 .PHONY: run tidy vendor build lint test check-translations check-duplicates validate-db
 
 GO_CMD = go
-GORELEASER_CMD = goreleaser
 GOLANGCI_LINT_CMD = golangci-lint
 
 run:
@@ -14,7 +13,7 @@ vendor:
 	$(GO_CMD) mod vendor
 
 build:
-	$(GORELEASER_CMD) release --snapshot --skip=publish --clean --skip=sign
+	$(GO_CMD) build -trimpath -ldflags="-s -w" .
 
 lint:
 	@which $(GOLANGCI_LINT_CMD) > /dev/null || (echo "golangci-lint not found, install it from https://golangci-lint.run/usage/install/" && exit 1)
