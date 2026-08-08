@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db"
 	"github.com/divkix/Alita_Robot/alita/db/cache"
 	"github.com/divkix/Alita_Robot/alita/db/models"
+	"github.com/divkix/Alita_Robot/alita/utils/constants"
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -16,11 +16,7 @@ import (
 
 // GetInactivityThreshold returns the duration after which a chat is considered inactive.
 func GetInactivityThreshold() time.Duration {
-	days := 30
-	if config.AppConfig != nil && config.AppConfig.InactivityThresholdDays > 0 {
-		days = config.AppConfig.InactivityThresholdDays
-	}
-	return time.Duration(days) * 24 * time.Hour
+	return constants.InactivityThresholdDays * 24 * time.Hour
 }
 
 // IsChatActive determines whether a chat is active based on last_activity and is_inactive flag.

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -22,11 +23,16 @@ import (
 type httpServerBotClient struct {
 	mu      sync.Mutex
 	methods []string
+	params  map[string]map[string]any
 }
 
-func (c *httpServerBotClient) RequestWithContext(_ context.Context, _ string, method string, _ map[string]any, _ *gotgbot.RequestOpts) (json.RawMessage, error) {
+func (c *httpServerBotClient) RequestWithContext(_ context.Context, _ string, method string, params map[string]any, _ *gotgbot.RequestOpts) (json.RawMessage, error) {
 	c.mu.Lock()
 	c.methods = append(c.methods, method)
+	if c.params == nil {
+		c.params = make(map[string]map[string]any)
+	}
+	c.params[method] = params
 	c.mu.Unlock()
 
 	switch method {
@@ -55,6 +61,21 @@ func (c *httpServerBotClient) called(method string) bool {
 		}
 	}
 	return false
+}
+
+// paramsFor returns the parameters the bot sent for method, or nil when the
+// method was never called.
+func (c *httpServerBotClient) paramsFor(method string) map[string]any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !slices.Contains(c.methods, method) {
+		return nil
+	}
+	if c.params[method] == nil {
+		return map[string]any{}
+	}
+	return c.params[method]
 }
 
 func newHTTPServerTestBot(client *httpServerBotClient) *gotgbot.Bot {
@@ -94,8 +115,6 @@ func setupHTTPServerDB(t *testing.T) {
 	}
 }
 
-
-
 func TestNewServer(t *testing.T) {
 	t.Parallel()
 
@@ -122,8 +141,6 @@ func TestCheckDatabaseWithHealthyConnection(t *testing.T) {
 		t.Fatal("checkDatabase() = false, want true with configured test DB")
 	}
 }
-
-
 
 func TestValidateWebhookValidSecret(t *testing.T) {
 	t.Parallel()
@@ -339,178 +356,68 @@ func TestRegisterHealth_SQLiteMode(t *testing.T) {
 		t.Fatalf("failed to unmarshal health response: %v", err)
 	}
 
-	if !res.Checks["database"] {
-		t.Errorf("expected checks[\"database\"] to be true in SQLite mode")
+	if !res.Checks["process"] {
+		t.Errorf("expected checks[\"process\"] to be true")
+	}
+	if !res.Checks["sqlite"] {
+		t.Errorf("expected checks[\"sqlite\"] to be true in SQLite mode")
+	}
+	if res.Commit == "" {
+		t.Errorf("expected health payload to report the build commit")
 	}
 }
 
-func TestRegisterMetrics(t *testing.T) {
-	// No token configured: endpoint should be open (with a startup warning).
+// TestRegisterHealthReportsUnreadySQLite verifies that /health fails closed when
+// the database is unreachable.
+func TestRegisterHealthReportsUnreadySQLite(t *testing.T) {
+	oldDB := db.DB
+	db.DB = nil
+	t.Cleanup(func() { db.DB = oldDB })
+
 	s := New(8080, time.Now())
-	s.RegisterMetrics()
+	s.RegisterHealth()
 
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
 	s.mux.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", rr.Code)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 when SQLite is unavailable", rr.Code)
 	}
-	ct := rr.Header().Get("Content-Type")
-	if !strings.Contains(ct, "text/plain") {
-		t.Errorf("expected text/plain content type, got %s", ct)
+
+	var res HealthStatus
+	if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to unmarshal health response: %v", err)
+	}
+	if res.Status != "unhealthy" {
+		t.Errorf("status = %q, want unhealthy", res.Status)
+	}
+	if res.Checks["sqlite"] {
+		t.Errorf("expected checks[\"sqlite\"] to be false")
+	}
+	if !res.Checks["process"] {
+		t.Errorf("expected checks[\"process\"] to stay true")
 	}
 }
 
-func TestRegisterDBMetrics(t *testing.T) {
-	setupHTTPServerDB(t)
-
-	// No token configured: endpoint should be open (with a startup warning).
+// TestRegisterWebhookKeepsQueuedUpdates verifies that setWebhook is never asked
+// to drop pending updates.
+func TestRegisterWebhookKeepsQueuedUpdates(t *testing.T) {
+	client := &httpServerBotClient{}
+	bot := newHTTPServerTestBot(client)
+	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{MaxRoutines: -1})
 	s := New(8080, time.Now())
-	s.RegisterDBMetrics()
 
-	req := httptest.NewRequest(http.MethodGet, "/db_metrics", nil)
-	rr := httptest.NewRecorder()
-	s.mux.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", rr.Code)
-	}
-	if ct := rr.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
-		t.Errorf("expected application/json content type, got %s", ct)
-	}
-	if !strings.Contains(rr.Body.String(), "open_connections") {
-		t.Errorf("expected database metrics JSON, got %s", rr.Body.String())
-	}
-}
-
-// TestMetricsRequiresToken verifies that /metrics returns 401 without the correct bearer
-// token and 200 when the correct bearer token is supplied.
-func TestMetricsRequiresToken(t *testing.T) {
-	t.Parallel()
-
-	const token = "super-secret-token"
-
-	s := New(9100, time.Now())
-	s.SetMetricsAuthToken(token)
-	s.RegisterMetrics()
-
-	// No Authorization header → 401.
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	rr := httptest.NewRecorder()
-	s.mux.ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("no auth header: expected 401, got %d", rr.Code)
+	if err := s.RegisterWebhook(bot, dispatcher, "secret-token", "https://example.test"); err != nil {
+		t.Fatalf("RegisterWebhook() error = %v", err)
 	}
 
-	// Wrong token → 401.
-	req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	req.Header.Set("Authorization", "Bearer wrong-token")
-	rr = httptest.NewRecorder()
-	s.mux.ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("wrong token: expected 401, got %d", rr.Code)
+	params := client.paramsFor("setWebhook")
+	if params == nil {
+		t.Fatal("setWebhook was not called")
 	}
-
-	// Correct token → 200.
-	req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rr = httptest.NewRecorder()
-	s.mux.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Errorf("correct token: expected 200, got %d", rr.Code)
-	}
-}
-
-// TestDBMetricsRequiresToken verifies that /db_metrics returns 401 without the correct bearer
-// token and 200 when the correct bearer token is supplied.
-func TestDBMetricsRequiresToken(t *testing.T) {
-	setupHTTPServerDB(t)
-
-	const token = "db-metrics-secret"
-
-	s := New(9101, time.Now())
-	s.SetMetricsAuthToken(token)
-	s.RegisterDBMetrics()
-
-	// No Authorization header → 401.
-	req := httptest.NewRequest(http.MethodGet, "/db_metrics", nil)
-	rr := httptest.NewRecorder()
-	s.mux.ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("no auth header: expected 401, got %d", rr.Code)
-	}
-
-	// Wrong token → 401.
-	req = httptest.NewRequest(http.MethodGet, "/db_metrics", nil)
-	req.Header.Set("Authorization", "Bearer wrong-token")
-	rr = httptest.NewRecorder()
-	s.mux.ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("wrong token: expected 401, got %d", rr.Code)
-	}
-
-	// Correct token → 200.
-	req = httptest.NewRequest(http.MethodGet, "/db_metrics", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rr = httptest.NewRecorder()
-	s.mux.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Errorf("correct token: expected 200, got %d", rr.Code)
-	}
-}
-
-// TestDBMetricsDoesNotLeakError verifies that when GetCurrentMetrics fails the response body
-// contains the static string "internal error" and NOT the raw Go error string.
-func TestDBMetricsDoesNotLeakError(t *testing.T) {
-	t.Parallel()
-
-	// Build a server without setting up a real DB, so monitoring.GetCurrentMetrics will fail.
-	// Temporarily nil out db.DB to force an error.
-	s := New(9102, time.Now())
-	s.RegisterDBMetrics()
-
-	req := httptest.NewRequest(http.MethodGet, "/db_metrics", nil)
-	rr := httptest.NewRecorder()
-	s.mux.ServeHTTP(rr, req)
-
-	// The handler either returns 200 (DB is set up via shared test DB) or 500 (no DB).
-	// We only check the error-path guarantee when it actually errors.
-	if rr.Code == http.StatusInternalServerError {
-		body := strings.TrimSpace(rr.Body.String())
-		if body != "internal error" {
-			t.Errorf("error response body = %q, want %q", body, "internal error")
-		}
-	}
-}
-
-func TestRegisterPPROF(t *testing.T) {
-	s := New(8080, time.Now())
-	s.RegisterPPROF()
-
-	paths := []string{
-		"/debug/pprof/",
-		"/debug/pprof/heap",
-		"/debug/pprof/goroutine",
-		"/debug/pprof/threadcreate",
-		"/debug/pprof/block",
-		"/debug/pprof/mutex",
-		"/debug/pprof/allocs",
-		"/debug/pprof/cmdline",
-		"/debug/pprof/symbol",
-	}
-	for _, path := range paths {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		rr := httptest.NewRecorder()
-		s.mux.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Errorf("expected status 200 for %s, got %d", path, rr.Code)
-		}
-	}
-
-	if !s.pprofEnabled {
-		t.Error("expected pprofEnabled to be true after registration")
+	if got, ok := params["drop_pending_updates"]; ok && got != "false" {
+		t.Fatalf("setWebhook drop_pending_updates = %v, want unset or false", got)
 	}
 }
 

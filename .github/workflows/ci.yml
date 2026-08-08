@@ -214,10 +214,9 @@ jobs:
     env:
       BOT_TOKEN: test-token
       OWNER_ID: "1"
-      MESSAGE_DUMP: "1"
       SQLITE_PATH: "/tmp/alita-ci.db"
       USE_WEBHOOKS: "false"
-      DEBUG: "false"
+      LOG_LEVEL: "info"
       CGO_ENABLED: "1"
     steps:
       - name: Checkout code

@@ -7,43 +7,34 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	_ "net/http/pprof" // #nosec G108 -- pprof gated behind ENABLE_PPROF env var
 	"sync"
 	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db"
-	"github.com/divkix/Alita_Robot/alita/db/monitoring"
 	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
-	"github.com/divkix/Alita_Robot/alita/utils/tracing"
 )
 
 // maxRequestBodySize defines the maximum allowed request body size (10MB)
 // This prevents DoS attacks where attackers send gigabytes of data to cause OOM
 const maxRequestBodySize = 10 * 1024 * 1024
 
-// Server represents a unified HTTP server that consolidates health, webhook, and metrics endpoints
+// Server represents the HTTP server that serves the health endpoint and, in
+// webhook mode, the Telegram webhook endpoint.
 type Server struct {
-	mux              *http.ServeMux
-	server           *http.Server
-	port             int
-	bot              *gotgbot.Bot
-	dispatcher       *ext.Dispatcher
-	secret           string
-	metricsAuthToken string
-	webhookEnabled   bool
-	pprofEnabled     bool
-	startTime        time.Time
-	dispatchWG       sync.WaitGroup
+	mux            *http.ServeMux
+	server         *http.Server
+	port           int
+	bot            *gotgbot.Bot
+	dispatcher     *ext.Dispatcher
+	secret         string
+	webhookEnabled bool
+	startTime      time.Time
+	dispatchWG     sync.WaitGroup
 }
 
 // New creates a new unified HTTP server on the specified port
@@ -57,15 +48,17 @@ func New(port int, startTime time.Time) *Server {
 	}
 }
 
-// HealthStatus represents the health status of the application
+// HealthStatus represents the health status of the application. "process" is
+// true once the HTTP server is serving; "sqlite" reflects a live ping against
+// the embedded database.
 type HealthStatus struct {
-	Status  string          `json:"status"`
-	Checks  map[string]bool `json:"checks"`
-	Version string          `json:"version"`
-	Uptime  string          `json:"uptime"`
+	Status string          `json:"status"`
+	Checks map[string]bool `json:"checks"`
+	Commit string          `json:"commit"`
+	Uptime string          `json:"uptime"`
 }
 
-// checkDatabase checks if the database connection is healthy
+// checkDatabase checks if the SQLite database is reachable
 func checkDatabase() bool {
 	if db.DB == nil {
 		return false
@@ -92,10 +85,11 @@ func (s *Server) RegisterHealth() {
 		status := HealthStatus{
 			Status: "healthy",
 			Checks: map[string]bool{
-				"database": dbHealthy,
+				"process": true,
+				"sqlite":  dbHealthy,
 			},
-			Version: config.AppConfig.BotVersion,
-			Uptime:  time.Since(s.startTime).String(),
+			Commit: config.Commit,
+			Uptime: time.Since(s.startTime).String(),
 		}
 
 		if !dbHealthy {
@@ -109,79 +103,6 @@ func (s *Server) RegisterHealth() {
 	})
 
 	log.Info("[HTTPServer] Registered /health endpoint")
-}
-
-// SetMetricsAuthToken configures the bearer token required to access /metrics and /db_metrics.
-// When empty, the endpoints are registered but a warning is logged.
-func (s *Server) SetMetricsAuthToken(token string) {
-	s.metricsAuthToken = token
-}
-
-// requireMetricsAuth is a middleware that enforces bearer-token authentication
-// for metrics endpoints using constant-time comparison to prevent timing attacks.
-// When no token is configured it allows the request through (with a startup warning).
-func (s *Server) requireMetricsAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.metricsAuthToken == "" {
-			// No token configured — allow access (startup warning already logged).
-			next.ServeHTTP(w, r)
-			return
-		}
-		const prefix = "Bearer "
-		authHeader := r.Header.Get("Authorization")
-		if len(authHeader) <= len(prefix) || authHeader[:len(prefix)] != prefix {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		provided := authHeader[len(prefix):]
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(s.metricsAuthToken)) != 1 {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// RegisterMetrics registers the /metrics endpoint for Prometheus.
-// If a MetricsAuthToken is configured (via SetMetricsAuthToken), requests must supply
-// "Authorization: Bearer <token>". Otherwise the endpoint is open but a warning is logged.
-func (s *Server) RegisterMetrics() {
-	if s.metricsAuthToken == "" {
-		log.Warn("[HTTPServer] METRICS_AUTH_TOKEN is not set — /metrics is unauthenticated")
-	}
-	s.mux.Handle("/metrics", s.requireMetricsAuth(promhttp.Handler()))
-	log.Info("[HTTPServer] Registered /metrics endpoint")
-}
-
-// RegisterDBMetrics registers the /db_metrics endpoint for database monitoring.
-// If a MetricsAuthToken is configured (via SetMetricsAuthToken), requests must supply
-// "Authorization: Bearer <token>". Otherwise the endpoint is open but a warning is logged.
-func (s *Server) RegisterDBMetrics() {
-	if s.metricsAuthToken == "" {
-		log.Warn("[HTTPServer] METRICS_AUTH_TOKEN is not set — /db_metrics is unauthenticated")
-	}
-	s.mux.Handle("/db_metrics", s.requireMetricsAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		metrics, err := monitoring.GetCurrentMetrics()
-		if err != nil {
-			log.Errorf("[HTTPServer] db_metrics: %v", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(metrics); err != nil {
-			log.Errorf("[HTTPServer] Failed to encode db metrics: %v", err)
-		}
-	})))
-	log.Info("[HTTPServer] Registered /db_metrics endpoint")
-}
-
-// RegisterPPROF registers pprof endpoints for performance profiling.
-// This should only be enabled in development environments.
-func (s *Server) RegisterPPROF() {
-	s.mux.Handle("/debug/pprof/", http.DefaultServeMux)
-
-	s.pprofEnabled = true
-	log.Info("[HTTPServer] Registered /debug/pprof/* endpoints")
 }
 
 // RegisterWebhook registers the webhook endpoint and configures the Telegram webhook
@@ -200,10 +121,10 @@ func (s *Server) RegisterWebhook(bot *gotgbot.Bot, dispatcher *ext.Dispatcher, s
 	webhookURL := fmt.Sprintf("%s%s", domain, webhookPath)
 	log.Infof("[HTTPServer] Setting webhook URL: %s", webhookURL)
 
-	// Configure webhook options
+	// Configure webhook options. Queued updates are never dropped: a restart
+	// must not lose moderation actions Telegram buffered while we were down.
 	webhookOpts := &gotgbot.SetWebhookOpts{
-		AllowedUpdates:     config.AppConfig.AllowedUpdates,
-		DropPendingUpdates: config.AppConfig.DropPendingUpdates,
+		AllowedUpdates: config.AppConfig.AllowedUpdates,
 	}
 
 	// Set secret token if configured
@@ -222,24 +143,9 @@ func (s *Server) RegisterWebhook(bot *gotgbot.Bot, dispatcher *ext.Dispatcher, s
 
 // webhookHandler handles incoming webhook requests from Telegram
 func (s *Server) webhookHandler(w http.ResponseWriter, r *http.Request) {
-	// Extract trace context from the incoming request and record the stable route.
-	ctx := tracing.GetPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	_, span := tracing.StartSpan(
-		ctx,
-		"webhook.request",
-		trace.WithAttributes(
-			attribute.String("http.method", r.Method),
-			attribute.String("http.route", "/webhook"),
-			tracing.WorkingModeAttribute(),
-		))
-	defer span.End()
-
 	if r.Method != http.MethodPost {
-		log.WithFields(log.Fields{
-			"trace_id": span.SpanContext().TraceID().String(),
-		}).Error("[HTTPServer] Invalid request method: ", r.Method)
+		log.Error("[HTTPServer] Invalid request method: ", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		span.SetStatus(codes.Error, "invalid method")
 		return
 	}
 
@@ -248,18 +154,14 @@ func (s *Server) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	// buffering up to 10MB for unauthenticated requests (resource exhaustion).
 	if !s.validateWebhook(r) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		span.SetStatus(codes.Error, "unauthorized")
 		return
 	}
 
 	// Read the request body with size limit to prevent DoS attacks
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBodySize))
 	if err != nil {
-		log.WithFields(log.Fields{
-			"trace_id": span.SpanContext().TraceID().String(),
-		}).Error("[HTTPServer] Failed to read request body: ", err)
+		log.Error("[HTTPServer] Failed to read request body: ", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
-		span.SetStatus(codes.Error, "failed to read body")
 		return
 	}
 	defer func() {
@@ -271,62 +173,24 @@ func (s *Server) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse the update
 	var update gotgbot.Update
 	if err := json.Unmarshal(body, &update); err != nil {
-		log.WithFields(log.Fields{
-			"trace_id": span.SpanContext().TraceID().String(),
-		}).Error("[HTTPServer] Failed to parse update: ", err)
+		log.Error("[HTTPServer] Failed to parse update: ", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
-		span.SetStatus(codes.Error, "failed to parse update")
 		return
 	}
 
-	// Add update-specific attributes without recording message or callback content.
-	if update.Message != nil {
-		text := update.Message.Text
-		attrs := []attribute.KeyValue{
-			attribute.Int64("message.chat_id", update.Message.Chat.Id),
-			attribute.Int("message.text_length", len(text)),
-		}
-		if update.Message.From != nil {
-			attrs = append(attrs, attribute.Int64("message.from_id", update.Message.From.Id))
-		}
-		span.SetAttributes(attrs...)
-	} else if update.CallbackQuery != nil {
-		span.SetAttributes(
-			attribute.String("callback_query.id", update.CallbackQuery.Id),
-			attribute.Int64("callback_query.from_id", update.CallbackQuery.From.Id),
-		)
-	}
-
-	// Process the update through the dispatcher with trace context
+	// Process the update asynchronously.
 	// NOTE: ProcessUpdate does not support context cancellation. Long-running handlers
 	// will complete even if the HTTP response has already been sent. This is by design
 	// as Telegram expects a quick 200 OK response while processing happens async.
-	// Pass the trace context to the goroutine for proper span parenting
 	s.dispatchWG.Add(1)
-	go func(requestCtx context.Context) {
+	go func() {
 		defer s.dispatchWG.Done()
 		defer error_handling.RecoverFromPanic("ProcessUpdate", "HTTPServer")
 
-		// Bound the async span and the context exposed to opt-in handlers.
-		// ProcessUpdate itself does not observe this cancellation.
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(requestCtx), 30*time.Second)
-		defer cancel()
-
-		// Start a new child span for the async processing using the request context
-		asyncCtx, asyncSpan := tracing.StartSpan(ctx, "dispatcher.processUpdate")
-		defer asyncSpan.End()
-
-		// Pass context in the data map for handlers to use
-		data := map[string]any{
-			tracing.ContextDataKey: asyncCtx,
+		if err := s.dispatcher.ProcessUpdate(s.bot, &update, nil); err != nil {
+			log.Error("[HTTPServer] Failed to process update: ", err)
 		}
-		if err := s.dispatcher.ProcessUpdate(s.bot, &update, data); err != nil {
-			log.WithFields(log.Fields{
-				"trace_id": asyncSpan.SpanContext().TraceID().String(),
-			}).Error("[HTTPServer] Failed to process update: ", err)
-			asyncSpan.SetStatus(codes.Error, "failed to process update")
-		}
-	}(ctx)
+	}()
 
 	// Send OK response to Telegram
 	w.WriteHeader(http.StatusOK)
@@ -363,14 +227,11 @@ func (s *Server) Start() error {
 	}
 
 	// Log the registered endpoints
-	endpoints := []string{"/health", "/metrics"}
-	if s.pprofEnabled {
-		endpoints = append(endpoints, "/debug/pprof/*")
-	}
+	endpoints := []string{"/health"}
 	if s.webhookEnabled {
 		endpoints = append(endpoints, "/webhook")
 	}
-	log.Infof("[HTTPServer] Starting unified HTTP server on port %d with endpoints: %v", s.port, endpoints)
+	log.Infof("[HTTPServer] Starting HTTP server on port %d with endpoints: %v", s.port, endpoints)
 
 	// Use a channel to communicate startup errors
 	errChan := make(chan error, 1)

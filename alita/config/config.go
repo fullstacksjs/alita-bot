@@ -9,8 +9,14 @@ import (
 	"github.com/joho/godotenv"
 	log "github.com/sirupsen/logrus"
 
+	"github.com/divkix/Alita_Robot/alita/utils/constants"
 	"github.com/divkix/Alita_Robot/alita/utils/logredact"
 )
+
+// Commit identifies the build. Local builds report "dev"; release builds inject
+// the short commit SHA with
+// -ldflags "-X github.com/divkix/Alita_Robot/alita/config.Commit=<short sha>".
+var Commit = "dev"
 
 // isCliModeActive returns true if the program is running with CLI flags
 // that should skip database initialization (--version, --health, -v).
@@ -37,82 +43,50 @@ func getHTTPPort() int {
 	return typeConvertor{str: value}.Int()
 }
 
-// Config holds all configuration for the bot
+// Config holds the runtime configuration of the single bot instance.
+// BOT_TOKEN and OWNER_ID are required; every other field is optional and
+// falls back to a default.
 type Config struct {
-	// Core configuration
-	BotToken    string `validate:"required"`
-	BotVersion  string
-	ApiServer   string
-	WorkingMode string
-	Debug       bool
+	// Required
+	BotToken string
+	OwnerId  int64
 
-	// Bot settings
-	OwnerId            int64 `validate:"required,min=1"`
-	MessageDump        int64 `validate:"required,min=1"`
-	DropPendingUpdates bool
-	AllowedUpdates     []string
+	// Optional
+	SQLitePath  string
+	HTTPPort    int
+	LogLevel    log.Level
+	MessageDump int64 // 0 disables dump-chat notices
+	UseWebhooks bool
 
-	// Database configuration (SQLite only)
-	SQLitePath string
-
-	// Database monitoring configuration
-	EnableDBMonitoring bool `env:"ENABLE_DB_MONITORING" envDefault:"false"`
-
-	// HTTP Server configuration (unified server for health, metrics, webhook)
-	HTTPPort int `validate:"min=1,max=65535"`
-
-	// Webhook configuration
-	UseWebhooks   bool
+	// Required only when UseWebhooks is enabled
 	WebhookDomain string
 	WebhookSecret string
 
-	// Safety and performance limits
-	EnablePerformanceMonitoring bool
-	EnableBackgroundStats       bool
-	DispatcherMaxRoutines       int `validate:"min=1,max=1000"` // Max concurrent goroutines for dispatcher
-
-	// Activity monitoring configuration
-	InactivityThresholdDays int  `validate:"min=1,max=365"` // Days before marking a chat as inactive
-	ActivityCheckInterval   int  `validate:"min=1,max=24"`  // Hours between activity checks
-	EnableAutoCleanup       bool // Whether to automatically mark inactive chats
-
-	// Performance optimization settings
-	HTTPMaxIdleConns        int `validate:"min=10,max=1000"` // HTTP connection pool size
-	HTTPMaxIdleConnsPerHost int `validate:"min=5,max=500"`   // HTTP connections per host
-
-	// Resource monitoring limits
-	ResourceMaxGoroutines int `validate:"min=100,max=10000"` // Maximum goroutines before triggering cleanup
-	ResourceMaxMemoryMB   int `validate:"min=100,max=10000"` // Maximum memory usage in MB
-	ResourceGCThresholdMB int `validate:"min=100,max=5000"`  // Memory threshold for triggering GC
-
-	// Profiling configuration
-	EnablePPROF bool // Enable pprof endpoints for performance profiling (development only)
-
-	// Metrics authentication
-	MetricsAuthToken string // Bearer token required to access /metrics and /db_metrics (empty = unauthenticated with a warning)
+	// Derived
+	AllowedUpdates []string
 }
 
 // AppConfig is the global configuration instance - the single source of truth.
 // All code should access configuration via config.AppConfig.FieldName
 var AppConfig *Config
 
-// ValidateConfig validates the configuration struct and returns an error if any required
-// fields are missing or values are outside acceptable ranges.
+// ValidateConfig validates the configuration struct and returns an error if any
+// required fields are missing or values are outside acceptable ranges.
 func ValidateConfig(cfg *Config) error {
 	if cfg.BotToken == "" {
 		return fmt.Errorf("BOT_TOKEN is required")
 	}
-	if cfg.OwnerId == 0 {
+	if cfg.OwnerId <= 0 {
 		return fmt.Errorf("OWNER_ID is required and must be greater than 0")
 	}
-	if cfg.MessageDump == 0 {
-		return fmt.Errorf("MESSAGE_DUMP is required and must be greater than 0")
-	}
 	if cfg.SQLitePath == "" {
-		return fmt.Errorf("SQLITE_PATH is required")
+		return fmt.Errorf("SQLITE_PATH must not be empty")
+	}
+	if cfg.HTTPPort <= 0 || cfg.HTTPPort > 65535 {
+		return fmt.Errorf("HTTP_PORT must be between 1 and 65535")
 	}
 
-	// Validate webhook configuration if webhooks are enabled
+	// Webhook credentials only matter when webhook delivery is enabled.
 	if cfg.UseWebhooks {
 		if cfg.WebhookDomain == "" {
 			return fmt.Errorf("WEBHOOK_DOMAIN is required when USE_WEBHOOKS is enabled")
@@ -122,17 +96,20 @@ func ValidateConfig(cfg *Config) error {
 		}
 	}
 
-	// Validate HTTP port
-	if cfg.HTTPPort <= 0 || cfg.HTTPPort > 65535 {
-		return fmt.Errorf("HTTP_PORT must be between 1 and 65535")
-	}
-
-	// Validate performance limits
-	if cfg.DispatcherMaxRoutines != 0 && (cfg.DispatcherMaxRoutines < 1 || cfg.DispatcherMaxRoutines > 1000) {
-		return fmt.Errorf("DISPATCHER_MAX_ROUTINES must be between 1 and 1000")
-	}
-
 	return nil
+}
+
+// parseLogLevel resolves LOG_LEVEL to a logrus level, defaulting to info when
+// unset. An unrecognized value is an error so a typo cannot silently mute logs.
+func parseLogLevel(value string) (log.Level, error) {
+	if value == "" {
+		return log.InfoLevel, nil
+	}
+	level, err := log.ParseLevel(value)
+	if err != nil {
+		return log.InfoLevel, fmt.Errorf("LOG_LEVEL %q is not a valid level: %w", value, err)
+	}
+	return level, nil
 }
 
 // LoadConfig loads configuration from environment variables, applies defaults,
@@ -141,68 +118,31 @@ func LoadConfig() (*Config, error) {
 	// load goenv config
 	_ = godotenv.Load() // Ignore error as .env file is optional
 
-	cfg := &Config{
-		// Core configuration
-		BotToken:    os.Getenv("BOT_TOKEN"),
-		BotVersion:  "3.4.0",
-		ApiServer:   os.Getenv("API_SERVER"),
-		WorkingMode: "worker",
-		Debug:       typeConvertor{str: os.Getenv("DEBUG")}.Bool(),
-
-		// Bot settings
-		OwnerId:            typeConvertor{str: os.Getenv("OWNER_ID")}.Int64(),
-		MessageDump:        typeConvertor{str: os.Getenv("MESSAGE_DUMP")}.Int64(),
-		DropPendingUpdates: typeConvertor{str: os.Getenv("DROP_PENDING_UPDATES")}.Bool(),
-
-		// Database configuration
-		SQLitePath: os.Getenv("SQLITE_PATH"),
-
-		// Database monitoring configuration
-		EnableDBMonitoring: typeConvertor{str: os.Getenv("ENABLE_DB_MONITORING")}.Bool(),
-
-		// HTTP Server configuration
-		HTTPPort: getHTTPPort(),
-
-		// Webhook configuration
-		UseWebhooks:   typeConvertor{str: os.Getenv("USE_WEBHOOKS")}.Bool(),
-		WebhookDomain: os.Getenv("WEBHOOK_DOMAIN"),
-		WebhookSecret: os.Getenv("WEBHOOK_SECRET"),
-
-		// Safety and performance limits
-		EnablePerformanceMonitoring: typeConvertor{str: os.Getenv("ENABLE_PERFORMANCE_MONITORING")}.Bool(),
-		EnableBackgroundStats:       typeConvertor{str: os.Getenv("ENABLE_BACKGROUND_STATS")}.Bool(),
-		DispatcherMaxRoutines:       typeConvertor{str: os.Getenv("DISPATCHER_MAX_ROUTINES")}.Int(),
-
-		// Activity monitoring configuration
-		InactivityThresholdDays: typeConvertor{str: os.Getenv("INACTIVITY_THRESHOLD_DAYS")}.Int(),
-		ActivityCheckInterval:   typeConvertor{str: os.Getenv("ACTIVITY_CHECK_INTERVAL")}.Int(),
-		EnableAutoCleanup:       typeConvertor{str: os.Getenv("ENABLE_AUTO_CLEANUP")}.Bool(),
-
-		// Performance optimization settings
-		HTTPMaxIdleConns:        typeConvertor{str: os.Getenv("HTTP_MAX_IDLE_CONNS")}.Int(),
-		HTTPMaxIdleConnsPerHost: typeConvertor{str: os.Getenv("HTTP_MAX_IDLE_CONNS_PER_HOST")}.Int(),
-
-		// Resource monitoring limits
-		ResourceMaxGoroutines: typeConvertor{str: os.Getenv("RESOURCE_MAX_GOROUTINES")}.Int(),
-		ResourceMaxMemoryMB:   typeConvertor{str: os.Getenv("RESOURCE_MAX_MEMORY_MB")}.Int(),
-		ResourceGCThresholdMB: typeConvertor{str: os.Getenv("RESOURCE_GC_THRESHOLD_MB")}.Int(),
-
-		// Profiling configuration
-		EnablePPROF: typeConvertor{str: os.Getenv("ENABLE_PPROF")}.Bool(),
-
-		// Metrics authentication
-		MetricsAuthToken: os.Getenv("METRICS_AUTH_TOKEN"),
+	logLevel, err := parseLogLevel(os.Getenv("LOG_LEVEL"))
+	if err != nil {
+		return nil, err
 	}
 
-	// Set defaults
+	cfg := &Config{
+		BotToken: os.Getenv("BOT_TOKEN"),
+		OwnerId:  typeConvertor{str: os.Getenv("OWNER_ID")}.Int64(),
+
+		SQLitePath:  os.Getenv("SQLITE_PATH"),
+		HTTPPort:    getHTTPPort(),
+		LogLevel:    logLevel,
+		MessageDump: typeConvertor{str: os.Getenv("MESSAGE_DUMP")}.Int64(),
+		UseWebhooks: typeConvertor{str: os.Getenv("USE_WEBHOOKS")}.Bool(),
+
+		WebhookDomain: os.Getenv("WEBHOOK_DOMAIN"),
+		WebhookSecret: os.Getenv("WEBHOOK_SECRET"),
+	}
+
 	cfg.setDefaults()
 
-	// Validate configuration
 	if err := ValidateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
-	// Set allowed updates
 	cfg.AllowedUpdates = []string{
 		"message",
 		"edited_message",
@@ -223,69 +163,14 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
-// setDefaults sets default values for configuration fields that are not provided
-// via environment variables. It calculates appropriate defaults based on system
-// resources and production best practices.
+// setDefaults fills in the optional fields that were not supplied through the
+// environment.
 func (cfg *Config) setDefaults() {
-	if cfg.ApiServer == "" {
-		cfg.ApiServer = "https://api.telegram.org"
-	}
-	if cfg.WorkingMode == "" {
-		cfg.WorkingMode = "worker"
-	}
-
-	if cfg.HTTPPort == 0 {
-		cfg.HTTPPort = 8080
-	}
-
-	// Set activity monitoring defaults
-	if cfg.InactivityThresholdDays == 0 {
-		cfg.InactivityThresholdDays = 30 // 30 days before marking as inactive
-	}
-	if cfg.ActivityCheckInterval == 0 {
-		cfg.ActivityCheckInterval = 1 // Check every hour
-	}
-	// EnableAutoCleanup defaults to true unless explicitly set to false
-	if os.Getenv("ENABLE_AUTO_CLEANUP") == "" {
-		cfg.EnableAutoCleanup = true
-	}
-
-	// Set default safety limits
-	if cfg.DispatcherMaxRoutines == 0 {
-		cfg.DispatcherMaxRoutines = 200 // Optimized for better throughput
-	}
-
-	// Enable monitoring by default in production
-	if !cfg.Debug {
-		if os.Getenv("ENABLE_PERFORMANCE_MONITORING") == "" {
-			cfg.EnablePerformanceMonitoring = true
-		}
-		if os.Getenv("ENABLE_BACKGROUND_STATS") == "" {
-			cfg.EnableBackgroundStats = true
-		}
-	}
-
 	if cfg.SQLitePath == "" {
-		cfg.SQLitePath = "/data/alita.db"
+		cfg.SQLitePath = constants.DefaultSQLitePath
 	}
-
-	// Set performance optimization defaults (enabled by default for better performance)
-	if cfg.HTTPMaxIdleConns == 0 {
-		cfg.HTTPMaxIdleConns = 100
-	}
-	if cfg.HTTPMaxIdleConnsPerHost == 0 {
-		cfg.HTTPMaxIdleConnsPerHost = 50
-	}
-
-	// Set resource monitoring defaults
-	if cfg.ResourceMaxGoroutines == 0 {
-		cfg.ResourceMaxGoroutines = 1000
-	}
-	if cfg.ResourceMaxMemoryMB == 0 {
-		cfg.ResourceMaxMemoryMB = 500
-	}
-	if cfg.ResourceGCThresholdMB == 0 {
-		cfg.ResourceGCThresholdMB = 400
+	if cfg.HTTPPort == 0 {
+		cfg.HTTPPort = constants.DefaultHTTPPort
 	}
 }
 
@@ -301,8 +186,7 @@ func init() {
 	}
 
 	// set logger config
-	log.SetLevel(log.DebugLevel)
-	// SetReportCaller will be configured after debug mode is determined
+	log.SetLevel(log.InfoLevel)
 	log.SetFormatter(
 		&log.JSONFormatter{
 			DisableHTMLEscape: true,
@@ -314,8 +198,8 @@ func init() {
 	)
 
 	// Install the sensitive-data redaction hook before any configuration is
-	// loaded. Structural patterns (bot tokens, DSN passwords, bearer tokens)
-	// are scrubbed immediately; exact secrets are registered below once known.
+	// loaded. Structural patterns (bot tokens, bearer tokens) are scrubbed
+	// immediately; exact secrets are registered below once known.
 	logredact.Install(nil)
 
 	// Load the structured configuration
@@ -333,21 +217,15 @@ func init() {
 	AppConfig = cfg
 
 	// Register the now-known exact secrets so they are scrubbed from any log
-	// line that happens to include them verbatim (e.g. a wrapped DB error
-	// containing the DSN, or a startup dump).
+	// line that happens to include them verbatim.
 	logredact.RegisterSecret(
 		cfg.BotToken,
 		cfg.WebhookSecret,
-		cfg.MetricsAuthToken,
 	)
 
-	// Configure logger based on debug mode
-	if cfg.Debug {
-		log.SetLevel(log.DebugLevel)
-	} else {
-		log.SetLevel(log.InfoLevel)
-	}
-	log.SetReportCaller(cfg.Debug) // Only enable stack traces in debug mode
+	log.SetLevel(cfg.LogLevel)
+	// Caller reporting is expensive, so it is limited to the debug levels.
+	log.SetReportCaller(cfg.LogLevel >= log.DebugLevel)
 
 	log.Info("[Config] Configuration loaded and validated successfully")
 }

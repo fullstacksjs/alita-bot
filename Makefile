@@ -1,4 +1,4 @@
-.PHONY: run tidy vendor build bump-version lint test check-translations check-duplicates validate-db
+.PHONY: run tidy vendor build lint test check-translations check-duplicates validate-db
 
 GO_CMD = go
 GORELEASER_CMD = goreleaser
@@ -15,13 +15,6 @@ vendor:
 
 build:
 	$(GORELEASER_CMD) release --snapshot --skip=publish --clean --skip=sign
-
-bump-version:
-	@if [ -z "$(TAG)" ]; then \
-		echo "❌ Error: TAG is required, e.g. make bump-version TAG=v2.19.4"; \
-		exit 1; \
-	fi
-	@bash scripts/bump_version.sh $(TAG)
 
 lint:
 	@which $(GOLANGCI_LINT_CMD) > /dev/null || (echo "golangci-lint not found, install it from https://golangci-lint.run/usage/install/" && exit 1)

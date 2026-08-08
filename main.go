@@ -1,14 +1,11 @@
 package main
 
 import (
-	"context"
 	"embed"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -21,7 +18,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita"
 	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db"
-	dbmonitoring "github.com/divkix/Alita_Robot/alita/db/monitoring"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/modules"
 
@@ -30,17 +26,15 @@ import (
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 	"github.com/divkix/Alita_Robot/alita/utils/helpers"
 	"github.com/divkix/Alita_Robot/alita/utils/httpserver"
-	"github.com/divkix/Alita_Robot/alita/utils/monitoring"
 	"github.com/divkix/Alita_Robot/alita/utils/shutdown"
-	"github.com/divkix/Alita_Robot/alita/utils/tracing"
 )
 
 //go:embed locales
 var Locales embed.FS
 
 // main initializes and starts the Alita Robot Telegram bot.
-// It sets up monitoring, database connections, webhook/polling mode,
-// loads all modules, and handles graceful shutdown.
+// It opens the database, loads all modules, serves the health endpoint, starts
+// either polling or webhook delivery, and handles graceful shutdown.
 func main() {
 	// Capture process start time for accurate uptime reporting in health checks.
 	// This must be captured before any initialization work begins.
@@ -60,16 +54,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Version check - print version and exit without requiring services
-	// Note: init() functions in config/db now detect CLI mode and skip heavy initialization
+	// Version check - print the build identity and exit without requiring services.
+	// Local builds report "dev"; release builds report the injected short commit SHA.
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "-v") {
-		// Config always has BotVersion set (it's a hardcoded default in LoadConfig)
-		// If BOT_TOKEN is not set, config init sets AppConfig to empty Config{}, so we need to check
-		version := config.AppConfig.BotVersion
-		if version == "" {
-			version = "v3.4.0" // Fallback to hardcoded version if config wasn't loaded
-		}
-		fmt.Println(version)
+		fmt.Println(config.Commit)
 		os.Exit(0)
 	}
 
@@ -81,14 +69,7 @@ func main() {
 		}
 	}()
 
-	// logs if bot is running in debug mode or not
-	if config.AppConfig.Debug {
-		log.Info("Running in DEBUG Mode...")
-	} else {
-		log.Info("Running in RELEASE Mode...")
-	}
-
-
+	log.Infof("[Main] Starting Alita (build %s)", config.Commit)
 
 	// Initialize the process-local locale maps (English only).
 	if err := i18n.GetManager().Initialize(&Locales, "locales"); err != nil {
@@ -96,43 +77,25 @@ func main() {
 	}
 	log.Info("Locale manager initialized")
 
-	// Initialize OpenTelemetry tracing
-	if err := tracing.InitTracing(); err != nil {
-		log.Warnf("Failed to initialize tracing: %v - continuing without distributed tracing", err)
-	} else {
-		log.Info("Distributed tracing initialized successfully")
-	}
-
-	// Create optimized HTTP transport with connection pooling for better performance
-	// IMPORTANT: We create a transport pointer that will be shared across all requests
-	// This ensures connection pooling works correctly (the http.Client struct is copied by value in BaseBotClient)
-	// Use configurable values for optimal performance
-	maxIdleConns := config.AppConfig.HTTPMaxIdleConns
-	maxIdleConnsPerHost := config.AppConfig.HTTPMaxIdleConnsPerHost
-
-	transport := newBotAPITransport(maxIdleConns, maxIdleConnsPerHost)
-
-	log.Infof("[Main] HTTP transport configured with MaxIdleConns: %d, MaxIdleConnsPerHost: %d", maxIdleConns, maxIdleConnsPerHost)
-
-	// Create bot with optimized HTTP client using BaseBotClient
-	log.Info("[Main] Initializing bot with optimized HTTP client (connection pooling enabled)")
+	// Create bot with a shared, connection-pooling HTTP transport.
+	// The transport must be a pointer so pooling survives the by-value copy of
+	// the http.Client inside BaseBotClient.
 	b, err := gotgbot.NewBot(config.AppConfig.BotToken, &gotgbot.BotOpts{
 		BotClient: &gotgbot.BaseBotClient{
 			Client: http.Client{
-				Transport: transport, // Use the shared transport
+				Transport: newBotAPITransport(),
 				Timeout:   constants.LongTimeout,
 			},
 			UseTestEnvironment: false,
 			DefaultRequestOpts: &gotgbot.RequestOpts{
-				Timeout: time.Duration(constants.LongTimeout),
-				APIURL:  resolveBotAPIURL(config.AppConfig.ApiServer),
+				Timeout: constants.LongTimeout,
+				APIURL:  gotgbot.DefaultAPIURL,
 			},
 		},
 	})
 	if err != nil {
 		log.Fatalf("Failed to create new bot: %v", err)
 	}
-	log.Infof("[Main] Bot initialized with optimized connection pooling (MaxIdleConns: %d, MaxIdleConnsPerHost: %d, HTTP/2 enabled)", maxIdleConns, maxIdleConnsPerHost)
 
 	// Retrieve bot identity early for logging and downstream components that reference username
 	botUsername := resolveBotUsername(b)
@@ -142,37 +105,7 @@ func main() {
 		log.Fatalf("Initial checks failed: %v", err)
 	}
 
-	// Create dispatcher with limited max routines and proper error recovery
-	dispatcher := newConfiguredDispatcher(config.AppConfig.DispatcherMaxRoutines)
-
-	// Initialize monitoring systems
-	var statsCollector *monitoring.BackgroundStatsCollector
-	var autoRemediation *monitoring.AutoRemediationManager
-	var activityMonitor *monitoring.ActivityMonitor
-	var dbMonitoringCancel context.CancelFunc
-
-	if config.AppConfig.EnableDBMonitoring {
-		var ctx context.Context
-		ctx, dbMonitoringCancel = context.WithCancel(context.Background())
-		dbmonitoring.StartMonitoring(ctx, time.Minute)
-	}
-
-	if config.AppConfig.EnableBackgroundStats {
-		statsCollector = monitoring.NewBackgroundStatsCollector()
-		monitoring.SetGlobalCollector(statsCollector)
-		error_handling.SetOnErrorCallback(monitoring.GlobalRecordError)
-		tracing.SetOnProcessUpdateCallback(monitoring.GlobalRecordMessage)
-		statsCollector.Start()
-	}
-
-	if config.AppConfig.EnablePerformanceMonitoring {
-		autoRemediation = monitoring.NewAutoRemediationManager(statsCollector)
-		autoRemediation.Start()
-	}
-
-	// Initialize activity monitoring for automatic group activity tracking
-	activityMonitor = monitoring.NewActivityMonitor()
-	activityMonitor.Start()
+	dispatcher := newConfiguredDispatcher()
 
 	// Setup graceful shutdown
 	shutdownManager := shutdown.NewManager()
@@ -181,80 +114,33 @@ func main() {
 		log.Info("[Shutdown] Closing database connections...")
 		return closeDBConnections()
 	})
-	shutdownManager.RegisterHandler(func() error {
-		log.Info("[Shutdown] Stopping monitoring systems...")
-		if activityMonitor != nil {
-			activityMonitor.Stop()
-		}
-		if autoRemediation != nil {
-			autoRemediation.Stop()
-		}
-		if statsCollector != nil {
-			statsCollector.Stop()
-		}
-		return nil
-	})
 
 	// DB-using workers are registered after closeDBConnections so LIFO stops
 	// them before the pool is closed.
-	if dbMonitoringCancel != nil {
-		shutdownManager.RegisterHandler(func() error {
-			log.Info("[Shutdown] Stopping database monitoring...")
-			dbMonitoringCancel()
-			return nil
-		})
-	}
-
-	// Register tracing shutdown handler
-	shutdownManager.RegisterHandler(func() error {
-		log.Info("[Shutdown] Shutting down tracer provider...")
-		return tracing.Shutdown(context.Background())
-	})
-
-	// Register anti-raid expiry poller shutdown handler
 	shutdownManager.RegisterHandler(func() error {
 		log.Info("[Shutdown] Stopping anti-raid expiry poller...")
 		modules.StopAntiRaidExpiryPoller()
 		return nil
 	})
 
-	// Create unified HTTP server for health, metrics, and webhook endpoints
+	// HTTP server for the health endpoint and, in webhook mode, /webhook.
 	httpServer := httpserver.New(config.AppConfig.HTTPPort, appStartTime)
 	httpServer.RegisterHealth()
-	httpServer.SetMetricsAuthToken(config.AppConfig.MetricsAuthToken)
-	httpServer.RegisterMetrics()
-	httpServer.RegisterDBMetrics()
-
-	// Register pprof endpoints if enabled (development only)
-	if config.AppConfig.EnablePPROF {
-		httpServer.RegisterPPROF()
-		log.Warn("[Main] pprof endpoints enabled - DO NOT enable in production!")
-	}
 
 	// Check if we should use webhooks or polling
 	if config.AppConfig.UseWebhooks {
-		// Validate webhook configuration
-		if config.AppConfig.WebhookDomain == "" {
-			log.Fatal("[Webhook] WEBHOOK_DOMAIN is required when USE_WEBHOOKS is enabled")
-		}
-		if config.AppConfig.WebhookSecret == "" {
-			log.Fatal("[Webhook] WEBHOOK_SECRET is required when USE_WEBHOOKS is enabled for security")
-		}
-
-		// Register webhook endpoint on the unified HTTP server
+		// Register webhook endpoint on the HTTP server
 		if err := httpServer.RegisterWebhook(b, dispatcher, config.AppConfig.WebhookSecret, config.AppConfig.WebhookDomain); err != nil {
 			log.Fatalf("[HTTPServer] Failed to register webhook: %v", err)
 		}
 
 		postInit(b, dispatcher, botUsername, "webhook")
 
-		// Start the unified HTTP server
 		if err := httpServer.Start(); err != nil {
 			log.Fatalf("[HTTPServer] Failed to start HTTP server: %v", err)
 		}
 
-		log.Infof("[HTTPServer] Unified HTTP server started on port %d (health, metrics, webhook)", config.AppConfig.HTTPPort)
-		config.AppConfig.WorkingMode = "webhook"
+		log.Infof("[HTTPServer] HTTP server started on port %d (health, webhook)", config.AppConfig.HTTPPort)
 
 		// Register HTTP server shutdown handler
 		shutdownManager.RegisterHandler(func() error {
@@ -269,12 +155,12 @@ func main() {
 	} else {
 		// Use polling mode (default)
 
-		// Start the unified HTTP server (health and metrics only in polling mode)
+		// Start the HTTP server (health only in polling mode)
 		if err := httpServer.Start(); err != nil {
 			log.Fatalf("[HTTPServer] Failed to start HTTP server: %v", err)
 		}
 
-		log.Infof("[HTTPServer] Unified HTTP server started on port %d (health, metrics)", config.AppConfig.HTTPPort)
+		log.Infof("[HTTPServer] HTTP server started on port %d (health)", config.AppConfig.HTTPPort)
 
 		// Register HTTP server shutdown handler
 		shutdownManager.RegisterHandler(func() error {
@@ -291,10 +177,10 @@ func main() {
 
 		postInit(b, dispatcher, botUsername, "polling")
 
-		// start the bot in polling mode
+		// Start polling. Queued updates are never dropped: a restart must not
+		// lose moderation actions Telegram buffered while we were down.
 		err = updater.StartPolling(b,
 			&ext.PollingOpts{
-				DropPendingUpdates: config.AppConfig.DropPendingUpdates,
 				GetUpdatesOpts: &gotgbot.GetUpdatesOpts{
 					AllowedUpdates: config.AppConfig.AllowedUpdates,
 				},
@@ -342,11 +228,11 @@ func healthCheckPort() int {
 	return constants.DefaultHTTPPort
 }
 
-func newBotAPITransport(maxIdleConns, maxIdleConnsPerHost int) *http.Transport {
+func newBotAPITransport() *http.Transport {
 	return &http.Transport{
-		MaxIdleConns:          maxIdleConns,
-		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
-		MaxConnsPerHost:       maxIdleConnsPerHost + constants.MaxIdleConnsExtraBuffer,
+		MaxIdleConns:          constants.MaxIdleConns,
+		MaxIdleConnsPerHost:   constants.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       constants.MaxIdleConnsPerHost + constants.MaxIdleConnsExtraBuffer,
 		IdleConnTimeout:       constants.VeryLongTimeout,
 		DisableCompression:    false,
 		ForceAttemptHTTP2:     true,
@@ -355,28 +241,6 @@ func newBotAPITransport(maxIdleConns, maxIdleConnsPerHost int) *http.Transport {
 		ResponseHeaderTimeout: constants.DefaultTimeout,
 		ExpectContinueTimeout: constants.ShortTimeout,
 	}
-}
-
-func resolveBotAPIURL(apiServer string) string {
-	if apiServer == "" {
-		return gotgbot.DefaultAPIURL
-	}
-
-	parsed, err := url.Parse(apiServer)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		log.Warnf("[Main] Invalid API_SERVER '%s'; falling back to default Telegram API.", apiServer)
-		return gotgbot.DefaultAPIURL
-	}
-
-	parsed.User = nil
-	parsed.RawQuery = ""
-	parsed.ForceQuery = false
-	parsed.Fragment = ""
-	parsed.RawFragment = ""
-	parsed.Path = strings.TrimRight(parsed.Path, "/")
-	parsed.RawPath = strings.TrimRight(parsed.RawPath, "/")
-
-	return parsed.String()
 }
 
 func resolveBotUsername(b *gotgbot.Bot) string {
@@ -391,13 +255,10 @@ func resolveBotUsername(b *gotgbot.Bot) string {
 	return ""
 }
 
-func newConfiguredDispatcher(maxRoutines int) *ext.Dispatcher {
+func newConfiguredDispatcher() *ext.Dispatcher {
 	return ext.NewDispatcher(&ext.DispatcherOpts{
-		// Use TracingProcessor to inject trace context into every update.
-		Processor: tracing.TracingProcessor{},
-		Error:     dispatcherErrorHandler,
-		// Configurable max concurrent goroutines.
-		MaxRoutines: maxRoutines,
+		Error:       dispatcherErrorHandler,
+		MaxRoutines: constants.DispatcherMaxRoutines,
 	})
 }
 
@@ -435,8 +296,6 @@ func postInit(b *gotgbot.Bot, d *ext.Dispatcher, username string, mode string) {
 	alita.LoadModules(d)
 	log.Infof("[Modules] Loaded modules: %s", alita.ListModules())
 
-	config.AppConfig.WorkingMode = mode
-
 	// Set Commands of Bot
 	tr := i18n.English()
 	startDesc, _ := tr.GetString("main_bot_command_start")
@@ -456,8 +315,24 @@ func postInit(b *gotgbot.Bot, d *ext.Dispatcher, username string, mode string) {
 	}
 	log.Info("Custom bot commands set for private chats")
 
-	// send startup message to log group
-	_, err = b.SendMessage(config.AppConfig.MessageDump,
+	sendStartupNotice(b, mode)
+
+	if username == "" {
+		log.Infof("[Bot] Bot has been started in %s mode...", mode)
+	} else {
+		log.Infof("[Bot] %s has been started in %s mode...", username, mode)
+	}
+}
+
+// sendStartupNotice posts the startup summary to the dump chat. It is a no-op
+// when MESSAGE_DUMP is not configured.
+func sendStartupNotice(b *gotgbot.Bot, mode string) {
+	if config.AppConfig.MessageDump == 0 {
+		log.Info("[Bot] MESSAGE_DUMP is not configured; skipping startup notice")
+		return
+	}
+
+	_, err := b.SendMessage(config.AppConfig.MessageDump,
 		fmt.Sprintf("<b>Started Bot!</b>\n<b>Mode:</b> %s\n<b>Loaded Modules:</b>\n%s", mode, alita.ListModules()),
 		&gotgbot.SendMessageOpts{
 			ParseMode: formatting.HTML,
@@ -466,12 +341,6 @@ func postInit(b *gotgbot.Bot, d *ext.Dispatcher, username string, mode string) {
 	if err != nil {
 		log.Errorf("[Bot] Failed to send startup message to log group: %v", err)
 		log.Warn("[Bot] Continuing without log channel notifications")
-	}
-
-	if username == "" {
-		log.Infof("[Bot] Bot has been started in %s mode...", mode)
-	} else {
-		log.Infof("[Bot] %s has been started in %s mode...", username, mode)
 	}
 }
 

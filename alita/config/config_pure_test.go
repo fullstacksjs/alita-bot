@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // TestIsCliModeActive tests the isCliModeActive helper. It does NOT call
@@ -85,6 +87,65 @@ func TestLoadConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("only BOT_TOKEN and OWNER_ID are required", func(t *testing.T) {
+		t.Setenv("BOT_TOKEN", "tk")
+		t.Setenv("OWNER_ID", "1")
+		t.Setenv("MESSAGE_DUMP", "")
+		t.Setenv("SQLITE_PATH", "")
+		t.Setenv("HTTP_PORT", "")
+		t.Setenv("PORT", "")
+		t.Setenv("LOG_LEVEL", "")
+		t.Setenv("USE_WEBHOOKS", "")
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.MessageDump != 0 {
+			t.Errorf("MessageDump: got %d, want 0", cfg.MessageDump)
+		}
+		if cfg.SQLitePath != "/data/alita.db" {
+			t.Errorf("SQLitePath: got %q, want default", cfg.SQLitePath)
+		}
+		if cfg.HTTPPort != 8080 {
+			t.Errorf("HTTPPort: got %d, want default 8080", cfg.HTTPPort)
+		}
+		if cfg.LogLevel != log.InfoLevel {
+			t.Errorf("LogLevel: got %v, want info", cfg.LogLevel)
+		}
+	})
+
+	t.Run("webhook credentials are ignored while webhooks are disabled", func(t *testing.T) {
+		t.Setenv("BOT_TOKEN", "tk")
+		t.Setenv("OWNER_ID", "1")
+		t.Setenv("USE_WEBHOOKS", "false")
+		t.Setenv("WEBHOOK_DOMAIN", "")
+		t.Setenv("WEBHOOK_SECRET", "")
+
+		if _, err := LoadConfig(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("LOG_LEVEL parsed and validated", func(t *testing.T) {
+		t.Setenv("BOT_TOKEN", "tk")
+		t.Setenv("OWNER_ID", "1")
+		t.Setenv("LOG_LEVEL", "warn")
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.LogLevel != log.WarnLevel {
+			t.Errorf("LogLevel: got %v, want warn", cfg.LogLevel)
+		}
+
+		t.Setenv("LOG_LEVEL", "chatty")
+		if _, err := LoadConfig(); err == nil {
+			t.Fatal("expected error for invalid LOG_LEVEL, got nil")
+		}
+	})
+
 	t.Run("loads config with all required env vars", func(t *testing.T) {
 		t.Setenv("BOT_TOKEN", "test-token")
 		t.Setenv("OWNER_ID", "12345")
@@ -111,13 +172,6 @@ func TestLoadConfig(t *testing.T) {
 		}
 		if cfg.HTTPPort != 9090 {
 			t.Errorf("HTTPPort: got %d, want %d", cfg.HTTPPort, 9090)
-		}
-		// Defaults should have been applied
-		if cfg.ApiServer != "https://api.telegram.org" {
-			t.Errorf("ApiServer: got %q, want %q", cfg.ApiServer, "https://api.telegram.org")
-		}
-		if cfg.BotVersion == "" {
-			t.Errorf("BotVersion: got empty string, want non-empty")
 		}
 		// AllowedUpdates should be populated
 		if len(cfg.AllowedUpdates) == 0 {
@@ -167,22 +221,6 @@ func TestLoadConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("ENABLE_PPROF parsed as bool", func(t *testing.T) {
-		t.Setenv("BOT_TOKEN", "tk")
-		t.Setenv("OWNER_ID", "1")
-		t.Setenv("MESSAGE_DUMP", "1")
-		t.Setenv("SQLITE_PATH", "/tmp/test-alita.db")
-		t.Setenv("ENABLE_PPROF", "yes")
-		t.Setenv("HTTP_PORT", "8080")
-
-		cfg, err := LoadConfig()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !cfg.EnablePPROF {
-			t.Errorf("EnablePPROF: got false, want true")
-		}
-	})
 }
 
 func TestValidateConfigPure(t *testing.T) {
@@ -205,14 +243,13 @@ func TestValidateConfigPure(t *testing.T) {
 			wantErr: "OWNER_ID is required",
 		},
 		{
-			name:    "missing message dump",
-			setup:   func(c *Config) { c.MessageDump = 0 },
-			wantErr: "MESSAGE_DUMP is required",
+			name:  "missing message dump is allowed",
+			setup: func(c *Config) { c.MessageDump = 0 },
 		},
 		{
 			name:    "missing sqlite path",
 			setup:   func(c *Config) { c.SQLitePath = "" },
-			wantErr: "SQLITE_PATH is required",
+			wantErr: "SQLITE_PATH must not be empty",
 		},
 
 		{
@@ -238,11 +275,6 @@ func TestValidateConfigPure(t *testing.T) {
 			setup:   func(c *Config) { c.HTTPPort = 70000 },
 			wantErr: "HTTP_PORT must be between 1 and 65535",
 		},
-		{
-			name:    "invalid dispatcher routines",
-			setup:   func(c *Config) { c.DispatcherMaxRoutines = 1001 },
-			wantErr: "DISPATCHER_MAX_ROUTINES must be between 1 and 1000",
-		},
 	}
 
 	for _, tc := range tests {
@@ -251,7 +283,6 @@ func TestValidateConfigPure(t *testing.T) {
 			t.Parallel()
 
 			cfg := validBaseConfig()
-			cfg.DispatcherMaxRoutines = 200
 			tc.setup(cfg)
 
 			err := ValidateConfig(cfg)
@@ -270,5 +301,3 @@ func TestValidateConfigPure(t *testing.T) {
 		})
 	}
 }
-
-

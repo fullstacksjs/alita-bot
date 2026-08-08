@@ -21,7 +21,19 @@ const (
 	LongTimeout     = 30 * time.Second
 	VeryLongTimeout = 120 * time.Second
 
-	// Connection pooling
+	// HTTP server and Telegram API connection pooling
 	DefaultHTTPPort         = 8080
+	MaxIdleConns            = 100
+	MaxIdleConnsPerHost     = 50
 	MaxIdleConnsExtraBuffer = 20
+
+	// DispatcherMaxRoutines bounds the concurrent update handlers.
+	DispatcherMaxRoutines = 200
+
+	// DefaultSQLitePath is the production database location (Docker volume).
+	DefaultSQLitePath = "/data/alita.db"
+
+	// InactivityThresholdDays is how long a chat may stay silent before it is
+	// treated as inactive.
+	InactivityThresholdDays = 30
 )
