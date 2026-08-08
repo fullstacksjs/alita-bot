@@ -39,9 +39,6 @@ go test -v -run TestXxx ./path/to/package
 
 # Database tooling
 make validate-db
-
-# Release version bump
-make bump-version TAG=vX.Y.Z
 ```
 
 The normal test suite uses temporary SQLite files via the embedded baseline.
@@ -55,8 +52,10 @@ the current coverage gate and exact CI versions.
   embedded migrations. Both happen in package `init()` and short-circuit for
   supported CLI flags or missing test configuration. Do not move them into
   `main()` without redesigning all import-time behavior.
-- `main()` initializes locales and modules, then tracing, the bot, DB anchors,
-  dispatcher, monitors, shutdown, and polling or webhook delivery.
+- `main()` initializes locales and modules, then the bot, DB anchors, dispatcher,
+  shutdown, the health server, and polling or webhook delivery.
+- Neither transport asks Telegram to discard queued updates on startup: a restart
+  must not drop moderation actions buffered while the bot was down.
 - Modules self-register in `init()` and load by ascending priority. Help is
   deliberately loaded last so all module metadata is available.
 - Handler groups define update flow: negative groups are early interceptors,
@@ -151,12 +150,18 @@ the current coverage gate and exact CI versions.
   authoritative.
 - Add every new secret configuration field to the `logredact.RegisterSecret`
   call. Never log tokens, credentials, webhook secrets, or authorization headers.
-- `/metrics` and `/db_metrics` are unauthenticated when `METRICS_AUTH_TOKEN` is
-  unset. Keep production configuration explicit; disable pprof in production.
+- `BOT_TOKEN` and `OWNER_ID` are the only required variables. `SQLITE_PATH`,
+  `HTTP_PORT`, `LOG_LEVEL`, `MESSAGE_DUMP`, and `USE_WEBHOOKS` are optional;
+  `WEBHOOK_DOMAIN` and `WEBHOOK_SECRET` are validated only in webhook mode.
+- The HTTP server exposes `/health` (and `/webhook` in webhook mode) and nothing
+  else. There is no OpenTelemetry, Prometheus, `/metrics`, `/db_metrics`, pprof,
+  background-statistics, remediation, or activity-worker stack; `internal/repo_checks`
+  fails the build if one returns.
 - Webhook requests use a static `/webhook` path and authenticate via the secret
   header. Preserve constant-time secret comparisons and the request-size limit.
-- `BotVersion` in `alita/config/config.go` and the fallback in `main.go` must move
-  together. Use `make bump-version TAG=vX.Y.Z`; do not hand-edit one side.
+- Build identity is `config.Commit`: `dev` locally, and the short commit SHA when
+  injected via `-ldflags "-X .../alita/config.Commit=<sha>"`. `--version` and
+  `/health` both report it. There is no semver to bump.
 - Release behavior and image tags are defined by `.github/workflows/release.yml`
   and `.goreleaser.yaml`. Review both when changing release or registry behavior.
 - Treat `gotgbot/v2` release-candidate changes and `gotg_md2html` pseudo-version

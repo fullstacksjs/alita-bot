@@ -48,9 +48,9 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "MessageDump zero returns error",
+			name:    "MessageDump zero is allowed",
 			setup:   func(c *Config) { c.MessageDump = 0 },
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "empty SQLitePath returns error",
@@ -116,22 +116,6 @@ func TestValidateConfig(t *testing.T) {
 			setup:   func(c *Config) { c.HTTPPort = 1 },
 			wantErr: false,
 		},
-		// Dispatcher optional field validation
-		{
-			name:    "DispatcherMaxRoutines zero is allowed",
-			setup:   func(c *Config) { c.DispatcherMaxRoutines = 0 },
-			wantErr: false,
-		},
-		{
-			name:    "DispatcherMaxRoutines 1 succeeds",
-			setup:   func(c *Config) { c.DispatcherMaxRoutines = 1 },
-			wantErr: false,
-		},
-		{
-			name:    "DispatcherMaxRoutines 1000 succeeds",
-			setup:   func(c *Config) { c.DispatcherMaxRoutines = 1000 },
-			wantErr: false,
-		},
 	}
 
 	for _, tc := range tests {
@@ -159,40 +143,11 @@ func TestSetDefaults(t *testing.T) {
 		cfg := &Config{}
 		cfg.setDefaults()
 
-		if cfg.ApiServer != "https://api.telegram.org" {
-			t.Errorf("ApiServer: got %q, want %q", cfg.ApiServer, "https://api.telegram.org")
-		}
-		if cfg.WorkingMode != "worker" {
-			t.Errorf("WorkingMode: got %q, want %q", cfg.WorkingMode, "worker")
-		}
 		if cfg.HTTPPort != 8080 {
 			t.Errorf("HTTPPort: got %d, want %d", cfg.HTTPPort, 8080)
 		}
 		if cfg.SQLitePath != "/data/alita.db" {
 			t.Errorf("SQLitePath: got %q, want %q", cfg.SQLitePath, "/data/alita.db")
-		}
-		if cfg.DispatcherMaxRoutines != 200 {
-			t.Errorf("DispatcherMaxRoutines: got %d, want %d", cfg.DispatcherMaxRoutines, 200)
-		}
-		if cfg.ResourceMaxGoroutines != 1000 {
-			t.Errorf("ResourceMaxGoroutines: got %d, want %d", cfg.ResourceMaxGoroutines, 1000)
-		}
-		if cfg.ResourceMaxMemoryMB != 500 {
-			t.Errorf("ResourceMaxMemoryMB: got %d, want %d", cfg.ResourceMaxMemoryMB, 500)
-		}
-		if cfg.ResourceGCThresholdMB != 400 {
-			t.Errorf("ResourceGCThresholdMB: got %d, want %d", cfg.ResourceGCThresholdMB, 400)
-		}
-	})
-
-	t.Run("pre-set ApiServer preserved", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := &Config{ApiServer: "custom"}
-		cfg.setDefaults()
-
-		if cfg.ApiServer != "custom" {
-			t.Errorf("ApiServer: got %q, want %q", cfg.ApiServer, "custom")
 		}
 	})
 

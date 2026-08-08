@@ -66,7 +66,6 @@ func TestPollingLoadsModulesBeforeStartingPolling(t *testing.T) {
 	}
 }
 
-
 func TestLoadModulesDelegatesToRegistryOnly(t *testing.T) {
 	t.Parallel()
 
@@ -225,6 +224,80 @@ func TestRetainedCacheDoesNotDependOnRedis(t *testing.T) {
 			if strings.Contains(string(data), redisImport) {
 				t.Fatalf("%s imports %s; caching must go through alita/utils/state", file, redisImport)
 			}
+		}
+	}
+}
+
+// TestNoObservabilityStack asserts that the OpenTelemetry, Prometheus, and pprof
+// dependencies stay out of the single-host build.
+func TestNoObservabilityStack(t *testing.T) {
+	t.Parallel()
+
+	bannedImports := []string{
+		`"go.opentelemetry.io/otel`,
+		`"github.com/prometheus/client_golang`,
+		`"net/http/pprof"`,
+	}
+
+	root := filepath.Join("..", "..")
+	var files []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			// Skip build output and this package, whose assertions name the
+			// banned imports as literals.
+			if entry.Name() == "dist" || entry.Name() == ".git" || entry.Name() == "repo_checks" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, ".go") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to list Go files under %s: %v", root, err)
+	}
+	if len(files) == 0 {
+		t.Fatal("expected repository sources to exist")
+	}
+
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("failed to read Go file %s: %v", file, err)
+		}
+		for _, banned := range bannedImports {
+			if strings.Contains(string(data), banned) {
+				t.Fatalf("%s imports %s; the observability stack was removed", file, banned)
+			}
+		}
+	}
+
+	goMod := readRepoFile(t, "go.mod")
+	for _, banned := range []string{"go.opentelemetry.io/", "github.com/prometheus/"} {
+		if strings.Contains(goMod, banned) {
+			t.Fatalf("go.mod still requires %s", banned)
+		}
+	}
+}
+
+// TestStartupDoesNotDropPendingUpdates asserts that neither update transport
+// asks Telegram to discard queued updates on startup.
+func TestStartupDoesNotDropPendingUpdates(t *testing.T) {
+	t.Parallel()
+
+	sources := map[string]string{
+		"main.go":                          readRepoFile(t, "main.go"),
+		"alita/utils/httpserver/server.go": readRepoFile(t, "alita", "utils", "httpserver", "server.go"),
+	}
+
+	for name, source := range sources {
+		if strings.Contains(source, "DropPendingUpdates") {
+			t.Fatalf("%s sets DropPendingUpdates; queued updates must survive a restart", name)
 		}
 	}
 }

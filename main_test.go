@@ -18,6 +18,7 @@ import (
 
 	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/db"
+	"github.com/divkix/Alita_Robot/alita/utils/constants"
 	alitaerrors "github.com/divkix/Alita_Robot/alita/utils/errors"
 )
 
@@ -55,41 +56,15 @@ func (c *mainBotClient) FileURL(token string, tgFilePath string, opts *gotgbot.R
 	return c.GetAPIURL(opts) + "/file/bot" + token + "/" + tgFilePath
 }
 
-func TestResolveBotAPIURL(t *testing.T) {
-	tests := []struct {
-		name   string
-		input  string
-		output string
-	}{
-		{name: "empty", output: gotgbot.DefaultAPIURL},
-		{name: "default", input: gotgbot.DefaultAPIURL, output: gotgbot.DefaultAPIURL},
-		{name: "path prefix", input: "https://bot-api.example/internal/", output: "https://bot-api.example/internal"},
-		{
-			name:   "drops unsupported components",
-			input:  "https://user:secret@bot-api.example/internal/?x=1#fragment",
-			output: "https://bot-api.example/internal",
-		},
-		{name: "invalid URL", input: "://bad-url", output: gotgbot.DefaultAPIURL},
-		{name: "missing scheme", input: "bot-api.example/internal", output: gotgbot.DefaultAPIURL},
-		{name: "unsupported scheme", input: "ftp://bot-api.example/internal", output: gotgbot.DefaultAPIURL},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := resolveBotAPIURL(test.input); got != test.output {
-				t.Fatalf("resolveBotAPIURL(%q) = %q, want %q", test.input, got, test.output)
-			}
-		})
-	}
-}
-
 func TestNewBotAPITransportKeepsConnectionTuning(t *testing.T) {
-	transport := newBotAPITransport(12, 4)
-	if transport.MaxIdleConns != 12 || transport.MaxIdleConnsPerHost != 4 {
+	transport := newBotAPITransport()
+	if transport.MaxIdleConns != constants.MaxIdleConns || transport.MaxIdleConnsPerHost != constants.MaxIdleConnsPerHost {
 		t.Fatalf(
-			"transport limits = (%d, %d), want (12, 4)",
+			"transport limits = (%d, %d), want (%d, %d)",
 			transport.MaxIdleConns,
 			transport.MaxIdleConnsPerHost,
+			constants.MaxIdleConns,
+			constants.MaxIdleConnsPerHost,
 		)
 	}
 	if transport.MaxConnsPerHost <= transport.MaxIdleConnsPerHost {
@@ -114,31 +89,29 @@ func TestHealthCheckPortUsesProviderEnvironment(t *testing.T) {
 	}
 }
 
-func TestBaseBotClientUsesResolvedAPIURL(t *testing.T) {
-	client := &gotgbot.BaseBotClient{
-		DefaultRequestOpts: &gotgbot.RequestOpts{
-			APIURL: resolveBotAPIURL("https://bot-api.example/internal/"),
-		},
-	}
-	if got := client.GetAPIURL(nil); got != "https://bot-api.example/internal" {
-		t.Fatalf("GetAPIURL(nil) = %q, want custom API URL", got)
-	}
-	if got := client.FileURL("123:token", "photos/file.jpg", nil); got != "https://bot-api.example/internal/file/bot123:token/photos/file.jpg" {
-		t.Fatalf("FileURL() = %q, want custom API file URL", got)
-	}
-}
+func TestMainVersionModeReportsBuildIdentity(t *testing.T) {
+	t.Run("local build reports dev", func(t *testing.T) {
+		output, err := helperMainCommand(t, "--version").CombinedOutput()
+		if err != nil {
+			t.Fatalf("main --version exited with error: %v\n%s", err, output)
+		}
+		if got := strings.TrimSpace(string(output)); got != "dev" {
+			t.Fatalf("main --version output = %q, want dev", got)
+		}
+	})
 
-func TestMainVersionModeExitsWithConfiguredVersion(t *testing.T) {
-	cmd := helperMainCommand(t, "--version")
-	cmd.Env = append(cmd.Env, "ALITA_TEST_MAIN_VERSION=v9.9.9")
+	t.Run("injected build reports the short commit SHA", func(t *testing.T) {
+		cmd := helperMainCommand(t, "--version")
+		cmd.Env = append(cmd.Env, "ALITA_TEST_MAIN_COMMIT=a1b2c3d")
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("main --version exited with error: %v\n%s", err, output)
-	}
-	if got := strings.TrimSpace(string(output)); got != "v9.9.9" {
-		t.Fatalf("main --version output = %q, want configured version", got)
-	}
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("main --version exited with error: %v\n%s", err, output)
+		}
+		if got := strings.TrimSpace(string(output)); got != "a1b2c3d" {
+			t.Fatalf("main --version output = %q, want injected commit", got)
+		}
+	})
 }
 
 func TestMainHealthModeExitsByStatus(t *testing.T) {
@@ -185,7 +158,6 @@ func TestCloseDBConnectionsAllowsNilDatabase(t *testing.T) {
 func TestPostInitSetsCommandsAndStartupMessage(t *testing.T) {
 	previousConfig := config.AppConfig
 	config.AppConfig.MessageDump = -100123
-	config.AppConfig.WorkingMode = ""
 	t.Cleanup(func() {
 		config.AppConfig = previousConfig
 	})
@@ -214,9 +186,6 @@ func TestPostInitSetsCommandsAndStartupMessage(t *testing.T) {
 
 	postInit(bot, dispatcher, bot.Username, "polling")
 
-	if config.AppConfig.WorkingMode != "polling" {
-		t.Fatalf("WorkingMode = %q, want polling", config.AppConfig.WorkingMode)
-	}
 	if len(client.calls) != 2 {
 		t.Fatalf("got %d bot calls, want setMyCommands and sendMessage", len(client.calls))
 	}
@@ -228,6 +197,27 @@ func TestPostInitSetsCommandsAndStartupMessage(t *testing.T) {
 	}
 	if got := client.calls[1].params["chat_id"]; got != int64(-100123) {
 		t.Fatalf("startup message chat_id = %#v, want MessageDump", got)
+	}
+}
+
+// TestSendStartupNoticeSkipsWithoutMessageDump verifies that an unconfigured
+// MESSAGE_DUMP skips the dump-chat notice instead of sending to chat 0.
+func TestSendStartupNoticeSkipsWithoutMessageDump(t *testing.T) {
+	previousDump := config.AppConfig.MessageDump
+	config.AppConfig.MessageDump = 0
+	t.Cleanup(func() { config.AppConfig.MessageDump = previousDump })
+
+	client := &mainBotClient{}
+	bot := &gotgbot.Bot{
+		Token:     "999:test",
+		BotClient: client,
+		User:      gotgbot.User{Id: 999, IsBot: true, Username: "AlitaTestBot"},
+	}
+
+	sendStartupNotice(bot, "polling")
+
+	if len(client.calls) != 0 {
+		t.Fatalf("got %d bot calls, want none when MESSAGE_DUMP is unset", len(client.calls))
 	}
 }
 
@@ -245,7 +235,7 @@ func TestResolveBotUsernameReadsGetMeResponse(t *testing.T) {
 }
 
 func TestNewDispatcherHandlesExpectedAndWrappedErrors(t *testing.T) {
-	dispatcher := newConfiguredDispatcher(7)
+	dispatcher := newConfiguredDispatcher()
 	if dispatcher == nil {
 		t.Fatal("newConfiguredDispatcher() = nil")
 	}
@@ -276,8 +266,8 @@ func TestHelperMainProcess(t *testing.T) {
 		return
 	}
 
-	if version := os.Getenv("ALITA_TEST_MAIN_VERSION"); version != "" {
-		config.AppConfig.BotVersion = version
+	if commit := os.Getenv("ALITA_TEST_MAIN_COMMIT"); commit != "" {
+		config.Commit = commit
 	}
 	args := []string{os.Args[0]}
 	if sep := slicesIndex(os.Args, "--"); sep >= 0 && sep+1 < len(os.Args) {
