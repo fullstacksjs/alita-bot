@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,11 @@ var nsfwModule = moduleStruct{moduleName: "NSFW"}
 var newJevClient = func(apiKey string) jev.Client {
 	return jev.NewClient(apiKey)
 }
+
+var (
+	nsfwAdminLimiter  = ratelimit.NewTokenBucketLimiter("nsfw:admin", 100, 24*time.Hour)
+	nsfwMemberLimiter = ratelimit.NewTokenBucketLimiter("nsfw:member", 10, 24*time.Hour)
+)
 
 func checkNSFW(c *helpers.CommandContext) error {
 	if c.Chat == nil || !slices.Contains(config.AppConfig.OwnerChatIDs, c.Chat.Id) ||
@@ -67,7 +73,11 @@ func checkNSFW(c *helpers.CommandContext) error {
 		textToAnalyze = textToAnalyze[:4000]
 	}
 	isAdmin := chat_status.IsUserAdmin(c.Bot, c.Chat.Id, c.User.Id)
-	if allowed, wait := ratelimit.GetNSFWRateLimiter().Acquire(c.User.Id, isAdmin, time.Now()); !allowed {
+	limiter := nsfwMemberLimiter
+	if isAdmin {
+		limiter = nsfwAdminLimiter
+	}
+	if allowed, wait := limiter.Acquire(strconv.FormatInt(c.User.Id, 10)); !allowed {
 		msg, _ := c.Tr.GetString("nsfw_rate_limited")
 		_, _ = c.Msg.Reply(c.Bot, fmt.Sprintf(msg, ratelimit.FormatCooldown((wait+time.Second-1).Truncate(time.Second))), formatting.Shtml())
 		return ext.EndGroups
