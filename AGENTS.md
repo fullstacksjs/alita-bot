@@ -177,6 +177,10 @@ the current coverage gate and exact CI versions.
 - PR verification is handled by `.github/workflows/ci.yml`. Release behavior is
   defined by `.github/workflows/release.yml`; images are built and pushed to GHCR
   when a tag is pushed, injecting `config.Commit` through the `COMMIT` build argument.
+- Open pull requests only against `origin` (`fullstacksjs/alita-bot`), never
+  `upstream` (`Divkix/Alita_Robot`). Pass the origin repository explicitly to
+  `gh pr create` and verify the base repository before opening the PR; `gh` may
+  otherwise infer upstream.
 - Treat `gotgbot/v2` release-candidate changes and `gotg_md2html` pseudo-version
   changes as compatibility-sensitive; do not auto-merge them without review.
 
