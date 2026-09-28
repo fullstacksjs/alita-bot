@@ -19,6 +19,7 @@
 services:
   alita:
     image: ghcr.io/fullstacksjs/alita-bot:latest
+    pull_policy: always
     container_name: alita-robot
     restart: always
     environment:
@@ -31,6 +32,10 @@ services:
       USE_WEBHOOKS: ${USE_WEBHOOKS:-false}
       WEBHOOK_DOMAIN: ${WEBHOOK_DOMAIN:-}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY}
+      OWNER_CHAT_IDS: ${OWNER_CHAT_IDS}
+      OWNER_CHANNEL_NAME: ${OWNER_CHANNEL_NAME:-@FullstacksJS}
+
     ports:
       - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
     volumes:
