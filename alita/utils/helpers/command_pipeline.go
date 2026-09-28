@@ -1,13 +1,20 @@
 package helpers
 
 import (
+	"fmt"
+	"html"
+	"slices"
+
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext/handlers"
+	log "github.com/sirupsen/logrus"
 
+	"github.com/divkix/Alita_Robot/alita/config"
 	"github.com/divkix/Alita_Robot/alita/i18n"
 	"github.com/divkix/Alita_Robot/alita/utils/chat_status"
 	"github.com/divkix/Alita_Robot/alita/utils/error_handling"
+	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 )
 
 // CommandPipeline provides declarative command registration with pre-flight permission checks.
@@ -132,6 +139,25 @@ func register(dispatcher *ext.Dispatcher, desc CommandDescriptor, h handlers.Res
 // All wrappers call pure permission checks and explicitly invoke
 // PermissionResponder when checks fail. This absorbs the messaging
 // responsibility so module handlers using the pipeline need no changes.
+
+// RequireOwnerChat allows commands only in configured owner groups.
+// Rejected commands receive the configured channel name and self-hosting link.
+func RequireOwnerChat() CheckFunc {
+	return func(c *CommandContext) bool {
+		if c != nil && c.Chat != nil && config.AppConfig != nil &&
+			(c.Chat.Type == "group" || c.Chat.Type == "supergroup") &&
+			slices.Contains(config.AppConfig.OwnerChatIDs, c.Chat.Id) {
+			return true
+		}
+		if c != nil && c.Bot != nil && c.Msg != nil && c.Tr != nil && config.AppConfig != nil {
+			text, _ := c.Tr.GetString("owner_chat_only")
+			if _, err := c.Msg.Reply(c.Bot, fmt.Sprintf(text, html.EscapeString(config.AppConfig.OwnerChannelName)), formatting.Shtml()); err != nil {
+				log.WithError(err).Warn("failed to send owner-chat command denial")
+			}
+		}
+		return false
+	}
+}
 
 // RequireGroup returns a CheckFunc that ensures the chat is a group
 // (not private). If the check fails, an error message is sent automatically.

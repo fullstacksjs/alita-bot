@@ -97,6 +97,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Setenv("PORT", "")
 		t.Setenv("LOG_LEVEL", "")
 		t.Setenv("USE_WEBHOOKS", "")
+		t.Setenv("OWNER_CHANNEL_NAME", "")
 
 		cfg, err := LoadConfig()
 		if err != nil {
@@ -113,6 +114,9 @@ func TestLoadConfig(t *testing.T) {
 		}
 		if cfg.LogLevel != log.InfoLevel {
 			t.Errorf("LogLevel: got %v, want info", cfg.LogLevel)
+		}
+		if cfg.OwnerChannelName != "@fullstacksjs" {
+			t.Errorf("OwnerChannelName: got %q, want @fullstacksjs", cfg.OwnerChannelName)
 		}
 	})
 
@@ -155,6 +159,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Setenv("HTTP_PORT", "9090")
 		t.Setenv("TYPESAFE_API_KEY", "test-typesafe-key")
 		t.Setenv("OWNER_CHAT_IDS", "-1001490301388, -1001234567890")
+		t.Setenv("OWNER_CHANNEL_NAME", "@mychannel")
 
 		cfg, err := LoadConfig()
 		if err != nil {
@@ -181,6 +186,9 @@ func TestLoadConfig(t *testing.T) {
 		}
 		if !slices.Equal(cfg.OwnerChatIDs, []int64{-1001490301388, -1001234567890}) {
 			t.Errorf("OwnerChatIDs: got %v", cfg.OwnerChatIDs)
+		}
+		if cfg.OwnerChannelName != "@mychannel" {
+			t.Errorf("OwnerChannelName: got %q, want @mychannel", cfg.OwnerChannelName)
 		}
 		// AllowedUpdates should be populated
 		if len(cfg.AllowedUpdates) == 0 {

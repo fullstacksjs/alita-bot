@@ -589,6 +589,7 @@ owner_specify_chat: You must specify a chat to act on
 
 # Common error messages used across modules
 error_generic: "An error occurred. Please try again later."
+owner_chat_only: "This command is only available in %s. To use it in your own chat, <a href=\"https://github.com/fullstacksjs/alita-bot\">self-host the bot</a>."
 common_anonymous_user_error: This command cannot be used on anonymous user.
 common_anonymous_ban_error: This command cannot be used on anonymous user, these user can only be banned/unbanned.
 common_cannot_identify_user: Cannot identify user. This command cannot be used by channels.

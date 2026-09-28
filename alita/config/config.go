@@ -65,8 +65,9 @@ type Config struct {
 	WebhookSecret string
 
 	// Optional integrations
-	TypeSafeAPIKey string
-	OwnerChatIDs   []int64
+	TypeSafeAPIKey   string
+	OwnerChatIDs     []int64
+	OwnerChannelName string
 
 	// Derived
 	AllowedUpdates []string
@@ -157,8 +158,9 @@ func LoadConfig() (*Config, error) {
 		WebhookDomain: os.Getenv("WEBHOOK_DOMAIN"),
 		WebhookSecret: os.Getenv("WEBHOOK_SECRET"),
 
-		TypeSafeAPIKey: os.Getenv("TYPESAFE_API_KEY"),
-		OwnerChatIDs:   ownerChatIDs,
+		TypeSafeAPIKey:   os.Getenv("TYPESAFE_API_KEY"),
+		OwnerChatIDs:     ownerChatIDs,
+		OwnerChannelName: os.Getenv("OWNER_CHANNEL_NAME"),
 	}
 
 	cfg.setDefaults()
@@ -195,6 +197,9 @@ func (cfg *Config) setDefaults() {
 	}
 	if cfg.HTTPPort == 0 {
 		cfg.HTTPPort = constants.DefaultHTTPPort
+	}
+	if cfg.OwnerChannelName == "" {
+		cfg.OwnerChannelName = "@fullstacksjs"
 	}
 }
 
