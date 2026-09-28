@@ -39,6 +39,7 @@ func testNSFWTranslator(t *testing.T) *i18n.Translator {
 	t.Helper()
 	yaml := `
 nsfw_no_api_key: "TypeSafe API key is not configured. Please set <code>TYPESAFE_API_KEY</code> in the environment."
+owner_chat_only: "This command is only available in %s. To use it in your own chat, <a href=\"https://github.com/fullstacksjs/alita-bot\">self-host the bot</a>."
 nsfw_no_target: "Please reply to a message or provide text to check for NSFW or curse words."
 nsfw_no_text: "The targeted message does not contain any text to analyze."
 nsfw_api_error: "Could not analyze that message right now. Please try again later."
@@ -85,7 +86,32 @@ func TestLoadNSFW(t *testing.T) {
 	}
 }
 
-func TestCheckNSFWOutsideOwnerChats(t *testing.T) {
+func TestLoadNSFWAppliesOwnerChatCheck(t *testing.T) {
+	client := newModuleBotClient()
+	bot := newModuleTestBot(client)
+	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup"}
+	user := gotgbot.User{Id: 456789, FirstName: "Member"}
+	ctx := newModuleMessageContext(bot, chat, user, "/nsfw hello")
+	ctx.EffectiveMessage.Entities = []gotgbot.MessageEntity{{Type: "bot_command", Offset: 0, Length: 5}}
+
+	oldChatIDs := config.AppConfig.OwnerChatIDs
+	config.AppConfig.OwnerChatIDs = []int64{-1001490301388}
+	t.Cleanup(func() { config.AppConfig.OwnerChatIDs = oldChatIDs })
+
+	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{MaxRoutines: -1})
+	LoadNSFW(dispatcher)
+	if err := dispatcher.ProcessUpdate(bot, &gotgbot.Update{Message: ctx.EffectiveMessage}, nil); err != nil {
+		t.Fatalf("ProcessUpdate() error = %v", err)
+	}
+	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
+		t.Fatalf("sendMessage calls = %d, want owner-chat denial", len(calls))
+	}
+	if calls := client.callsFor("getChatMember"); len(calls) != 0 {
+		t.Fatalf("handler reached admin check %d times, want none", len(calls))
+	}
+}
+
+func TestRequireOwnerChatOutsideOwnerChats(t *testing.T) {
 	client := newModuleBotClient()
 	bot := newModuleTestBot(client)
 	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup"}
@@ -93,11 +119,51 @@ func TestCheckNSFWOutsideOwnerChats(t *testing.T) {
 	ctx := newModuleMessageContext(bot, chat, user, "/nsfw hello")
 	cmdCtx := newTestCommandContext(t, bot, ctx)
 	config.AppConfig.OwnerChatIDs = []int64{-1001490301388}
-	if err := checkNSFW(cmdCtx); err != ext.EndGroups {
-		t.Fatalf("checkNSFW() = %v, want EndGroups", err)
+	oldName := config.AppConfig.OwnerChannelName
+	config.AppConfig.OwnerChannelName = "@my<channel>"
+	t.Cleanup(func() { config.AppConfig.OwnerChannelName = oldName })
+	if helpers.RequireOwnerChat()(cmdCtx) {
+		t.Fatal("RequireOwnerChat() allowed an unconfigured group")
+	}
+	calls := client.callsFor("sendMessage")
+	if len(calls) != 1 {
+		t.Fatalf("outside chat sent %d replies, want one", len(calls))
+	}
+	text, _ := calls[0].Params["text"].(string)
+	if !strings.Contains(text, "@my&lt;channel&gt;") || !strings.Contains(text, "https://github.com/fullstacksjs/alita-bot") {
+		t.Fatalf("unexpected outside-chat reply: %q", text)
+	}
+}
+
+func TestRequireOwnerChatInPrivateChat(t *testing.T) {
+	client := newModuleBotClient()
+	bot := newModuleTestBot(client)
+	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "private"}
+	user := gotgbot.User{Id: 456789, FirstName: "Member"}
+	ctx := newModuleMessageContext(bot, chat, user, "/curse hello")
+	cmdCtx := newTestCommandContext(t, bot, ctx)
+
+	if helpers.RequireOwnerChat()(cmdCtx) {
+		t.Fatal("RequireOwnerChat() allowed a private chat")
+	}
+	if calls := client.callsFor("sendMessage"); len(calls) != 1 {
+		t.Fatalf("private chat sent %d replies, want one", len(calls))
+	}
+}
+
+func TestRequireOwnerChatInConfiguredGroup(t *testing.T) {
+	client := newModuleBotClient()
+	bot := newModuleTestBot(client)
+	chat := gotgbot.Chat{Id: uniqueModuleChatID(), Type: "supergroup"}
+	user := gotgbot.User{Id: 456789, FirstName: "Member"}
+	ctx := newModuleMessageContext(bot, chat, user, "/nsfw hello")
+	cmdCtx := newTestCommandContext(t, bot, ctx)
+
+	if !helpers.RequireOwnerChat()(cmdCtx) {
+		t.Fatal("RequireOwnerChat() rejected a configured group")
 	}
 	if calls := client.callsFor("sendMessage"); len(calls) != 0 {
-		t.Fatalf("outside chat sent %d replies, want none", len(calls))
+		t.Fatalf("configured group sent %d denial replies, want none", len(calls))
 	}
 }
 

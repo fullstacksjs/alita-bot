@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -33,10 +32,6 @@ var (
 )
 
 func checkNSFW(c *helpers.CommandContext) error {
-	if c.Chat == nil || !slices.Contains(config.AppConfig.OwnerChatIDs, c.Chat.Id) ||
-		(c.Chat.Type != "group" && c.Chat.Type != "supergroup") {
-		return ext.EndGroups
-	}
 	if config.AppConfig.TypeSafeAPIKey == "" {
 		text, _ := c.Tr.GetString("nsfw_no_api_key")
 		_, _ = c.Msg.Reply(c.Bot, text, formatting.Shtml())
@@ -171,9 +166,10 @@ func LoadNSFW(dispatcher *ext.Dispatcher) {
 	helpers.WrapCommand(
 		dispatcher,
 		helpers.CommandDescriptor{
-			Name:    "nsfw",
-			Aliases: []string{"checknsfw", "curse"},
-			Group:   0,
+			Name:           "nsfw",
+			Aliases:        []string{"checknsfw", "curse"},
+			Group:          0,
+			RequiredChecks: []helpers.CheckFunc{helpers.RequireOwnerChat()},
 		},
 		checkNSFW,
 	)
