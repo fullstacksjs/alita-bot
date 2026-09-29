@@ -145,6 +145,13 @@ case "$INPUT_LOWER" in
     ;;
 esac
 
+# Releases must tag main, including in dry-run mode.
+CURRENT_BRANCH="$(git branch --show-current)"
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo "Error: Releases must be run from the main branch (current: ${CURRENT_BRANCH:-detached HEAD})." >&2
+  exit 1
+fi
+
 # Pre-flight check: working tree must be clean (ignoring untracked files)
 if [ -n "$(git status --porcelain -uno)" ]; then
   if [ "$DRY_RUN" = true ]; then
@@ -162,10 +169,14 @@ if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
   exit 1
 fi
 
-# Fetch tags from remote if possible
+# Update main before calculating the release version or creating a tag.
 if [ "$DRY_RUN" = false ]; then
+  echo "==> Pulling main from $REMOTE..."
+  git pull --ff-only "$REMOTE" main
   echo "==> Fetching tags from $REMOTE..."
   git fetch --tags "$REMOTE" >/dev/null 2>&1 || echo "Warning: Could not fetch tags from $REMOTE. Continuing with local tags." >&2
+else
+  echo "[DRY-RUN] Would pull: git pull --ff-only $REMOTE main"
 fi
 
 # Find latest semver tag
@@ -215,7 +226,6 @@ if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
-CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")"
 COMMIT_SHA="$(git rev-parse --short HEAD)"
 COMMIT_SUBJ="$(git log -1 --pretty=format:'%s')"
 
