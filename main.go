@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"net/http"
@@ -97,6 +98,21 @@ func main() {
 		log.Fatalf("Failed to create new bot: %v", err)
 	}
 
+	// Setup error notifications as soon as the bot can send messages.
+	shutdownManager := shutdown.NewManager()
+	if config.AppConfig.MessageDump != 0 {
+		notifier := newErrorNotifier(func(ctx context.Context, message string) error {
+			_, err := b.SendMessageWithContext(ctx, config.AppConfig.MessageDump, message, nil)
+			return err
+		})
+		// Register first so queued errors from later shutdown handlers are sent.
+		shutdownManager.RegisterHandler(func() error {
+			notifier.Stop()
+			return nil
+		})
+		log.AddHook(notifier)
+	}
+
 	// Retrieve bot identity early for logging and downstream components that reference username
 	botUsername := resolveBotUsername(b)
 
@@ -106,9 +122,6 @@ func main() {
 	}
 
 	dispatcher := newConfiguredDispatcher()
-
-	// Setup graceful shutdown
-	shutdownManager := shutdown.NewManager()
 
 	shutdownManager.RegisterHandler(func() error {
 		log.Info("[Shutdown] Closing database connections...")

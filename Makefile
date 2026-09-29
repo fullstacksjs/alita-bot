@@ -4,7 +4,7 @@ GO_CMD = go
 GOLANGCI_LINT_CMD = golangci-lint
 
 run:
-	$(GO_CMD) run main.go
+	$(GO_CMD) run .
 
 tidy:
 	$(GO_CMD) mod tidy
