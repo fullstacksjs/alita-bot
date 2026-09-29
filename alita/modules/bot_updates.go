@@ -15,8 +15,6 @@ import (
 	"github.com/divkix/Alita_Robot/alita/utils/formatting"
 )
 
-// function used to get status of bot when it joined a group and send a message to the group
-// also send a message to MESSAGE_DUMP telling that it joined a group
 // botJoinedGroup handles bot addition to new groups.
 // Sends welcome message and ensures the group is a supergroup before staying.
 func botJoinedGroup(b *gotgbot.Bot, ctx *ext.Context) error {
