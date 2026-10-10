@@ -43,34 +43,39 @@ func UpdateChannel(channelId int64, channelName, username string) error {
 	}
 
 	var reassignedChatIDs []int64
-	var err error
-	for attempt := 0; attempt < 3; attempt++ {
-		reassignedChatIDs = nil
-		err = db.DB.Transaction(func(tx *gorm.DB) error {
-			if username != "" {
-				if err := tx.Model(&models.ChannelSettings{}).
-					Where("chat_id <> ? AND LOWER(username) = ?", channelId, username).
-					Pluck("chat_id", &reassignedChatIDs).Error; err != nil {
-					return err
-				}
-				if len(reassignedChatIDs) > 0 {
+	// Restart the whole transaction after a lock failure so its reads use a fresh
+	// SQLite snapshot. Retrying only the write cannot recover a stale snapshot.
+	err := db.RetryOnLock(func() error {
+		var err error
+		for attempt := 0; attempt < 3; attempt++ {
+			reassignedChatIDs = nil
+			err = db.DB.Transaction(func(tx *gorm.DB) error {
+				if username != "" {
 					if err := tx.Model(&models.ChannelSettings{}).
-						Where("chat_id IN ?", reassignedChatIDs).
-						Updates(map[string]any{"username": "", "updated_at": now}).Error; err != nil {
+						Where("chat_id <> ? AND LOWER(username) = ?", channelId, username).
+						Pluck("chat_id", &reassignedChatIDs).Error; err != nil {
 						return err
 					}
+					if len(reassignedChatIDs) > 0 {
+						if err := tx.Model(&models.ChannelSettings{}).
+							Where("chat_id IN ?", reassignedChatIDs).
+							Updates(map[string]any{"username": "", "updated_at": now}).Error; err != nil {
+							return err
+						}
+					}
 				}
-			}
 
-			channelSrc := &models.ChannelSettings{ChatId: channelId}
-			return tx.Where("chat_id = ?", channelId).Assign(updates).FirstOrCreate(channelSrc).Error
-		})
-		if err == nil || username == "" {
-			break
+				channelSrc := &models.ChannelSettings{ChatId: channelId}
+				return tx.Where("chat_id = ?", channelId).Assign(updates).FirstOrCreate(channelSrc).Error
+			})
+			if err == nil || username == "" {
+				break
+			}
+			// A concurrent first observation can win the unique username insert
+			// after our ownership lookup. Retrying clears that owner transactionally.
 		}
-		// A concurrent first observation can win the unique username insert
-		// after our ownership lookup. Retrying clears that owner transactionally.
-	}
+		return err
+	})
 	if err != nil {
 		log.Errorf("[Database] UpdateChannel: failed to store %d (%s): %v", channelId, username, err)
 		return err
