@@ -37,7 +37,7 @@ jobs:
           cache: true
 
       - name: Run Gosec Security Scanner
-        uses: securego/gosec@v2.28.0
+        uses: securego/gosec@v2.30.0
         with:
           args: -no-fail -fmt sarif -out gosec.sarif ./...
 
@@ -81,7 +81,7 @@ jobs:
       - name: Run linting
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.11.4
+          version: v2.15.0
           install-mode: binary
           args: --timeout 10m
           only-new-issues: true
@@ -121,7 +121,7 @@ jobs:
       - name: Run duplicate code detection
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.11.4
+          version: v2.15.0
           install-mode: binary
           args: --default=none --enable dupl --timeout 10m
           only-new-issues: true

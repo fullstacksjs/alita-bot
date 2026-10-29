@@ -30,8 +30,21 @@ func TestPingSendsAndEditsLatencyMessage(t *testing.T) {
 	if calls := client.callsFor("getMe"); len(calls) != 1 {
 		t.Fatalf("getMe calls = %d, want 1", len(calls))
 	}
-	if calls := client.callsFor("editMessageText"); len(calls) != 1 {
-		t.Fatalf("editMessageText calls = %d, want 1", len(calls))
+	edits := client.callsFor("editMessageText")
+	if len(edits) != 1 {
+		t.Fatalf("editMessageText calls = %d, want 1", len(edits))
+	}
+	text, ok := edits[0].Params["text"].(string)
+	if !ok {
+		t.Fatalf("editMessageText text = %v, want latency message", edits[0].Params["text"])
+	}
+	for _, want := range []string{"<b>Pong!</b>", "API RTT", "Send msg", "Overhead"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("edited ping text %q missing %q", text, want)
+		}
+	}
+	if mode := edits[0].Params["parse_mode"]; mode != "HTML" {
+		t.Fatalf("edited ping parse_mode = %v, want HTML", mode)
 	}
 }
 

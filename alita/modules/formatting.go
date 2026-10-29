@@ -171,6 +171,7 @@ func (m moduleStruct) formattingHandler(b *gotgbot.Bot, ctx *ext.Context) error 
 
 	// Edit the help for the selected formatting topic.
 	opts := &gotgbot.EditMessageTextOpts{
+		Text:      m.getMarkdownHelp(tr, module),
 		MessageId: msg.GetMessageId(),
 		ReplyMarkup: gotgbot.InlineKeyboardMarkup{
 			InlineKeyboard: [][]gotgbot.InlineKeyboardButton{
@@ -184,7 +185,7 @@ func (m moduleStruct) formattingHandler(b *gotgbot.Bot, ctx *ext.Context) error 
 		},
 		ParseMode: formatting.HTML,
 	}
-	_, _, err := msg.EditText(b, m.getMarkdownHelp(tr, module), opts)
+	_, _, err := msg.EditText(b, opts)
 	if err != nil {
 		log.Error(err)
 		return err

@@ -484,8 +484,8 @@ func (m moduleStruct) buttonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	_, _, err := query.Message.EditText(b,
-		helpText,
 		&gotgbot.EditMessageTextOpts{
+			Text:      helpText,
 			ParseMode: formatting.HTML,
 		},
 	)

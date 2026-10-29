@@ -4,7 +4,7 @@
 # the target platform. Only linux/amd64 is supported, which keeps the build
 # native on amd64 runners and needs no cross-compilation toolchain.
 
-FROM --platform=linux/amd64 golang:alpine AS builder
+FROM --platform=linux/amd64 golang:1.27.3-alpine3.24 AS builder
 
 # Short commit SHA reported by --version and /health; "dev" for local builds.
 ARG COMMIT=dev
@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,id=gomod-linux-amd64 \
     -ldflags="-s -w -X github.com/divkix/Alita_Robot/alita/config.Commit=${COMMIT}" \
     -o alita_robot .
 
-FROM --platform=linux/amd64 alpine:3.21
+FROM --platform=linux/amd64 alpine:3.24.3
 
 # The runtime user owns /data so the bot can create and update the SQLite
 # database (plus its WAL and shared-memory files) on the mounted volume.

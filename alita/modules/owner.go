@@ -199,8 +199,8 @@ func (moduleStruct) getStats(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	_, _, err = edits.EditText(
 		b,
-		stats.LoadAllStats(),
 		&gotgbot.EditMessageTextOpts{
+			Text:      stats.LoadAllStats(),
 			ParseMode: formatting.HTML,
 		},
 	)

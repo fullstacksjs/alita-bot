@@ -103,7 +103,8 @@ func (moduleStruct) helpButtonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 		helpText, replyKb, _ = getHelpTextAndMarkup(ctx, strings.ToLower(module), DefaultHelpRegistry())
 	}
 
-	_, _, err := query.Message.EditText(b, helpText, &gotgbot.EditMessageTextOpts{
+	_, _, err := query.Message.EditText(b, &gotgbot.EditMessageTextOpts{
+		Text:        helpText,
 		ParseMode:   formatting.HTML,
 		ReplyMarkup: replyKb,
 		LinkPreviewOptions: &gotgbot.LinkPreviewOptions{

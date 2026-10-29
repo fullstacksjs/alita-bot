@@ -410,7 +410,7 @@ func (m moduleStruct) filterOverWriteHandler(b *gotgbot.Bot, ctx *ext.Context) e
 		}
 		helpText, _ = tr.GetString("filters_overwrite_cancelled")
 		if query.Message != nil {
-			_, _, editErr := query.Message.EditText(b, helpText, nil)
+			_, _, editErr := query.Message.EditText(b, &gotgbot.EditMessageTextOpts{Text: helpText})
 			if editErr != nil {
 				log.Error(editErr)
 			}
@@ -433,7 +433,7 @@ func (m moduleStruct) filterOverWriteHandler(b *gotgbot.Bot, ctx *ext.Context) e
 		log.Debugf("[Filters] Failed to retrieve overwrite data from cache: %v", err)
 		helpText, _ = tr.GetString("filters_overwrite_expired")
 		if query.Message != nil {
-			_, _, editErr := query.Message.EditText(b, helpText, nil)
+			_, _, editErr := query.Message.EditText(b, &gotgbot.EditMessageTextOpts{Text: helpText})
 			if editErr != nil {
 				log.Error(editErr)
 			}
@@ -448,7 +448,7 @@ func (m moduleStruct) filterOverWriteHandler(b *gotgbot.Bot, ctx *ext.Context) e
 		(filterData.ChatID != 0 && filterData.ChatID != chat.Id) {
 		helpText, _ = tr.GetString("filters_overwrite_expired")
 		if query.Message != nil {
-			_, _, _ = query.Message.EditText(b, helpText, nil)
+			_, _, _ = query.Message.EditText(b, &gotgbot.EditMessageTextOpts{Text: helpText})
 		}
 		_, _ = query.Answer(b, &gotgbot.AnswerCallbackQueryOpts{Text: helpText})
 		return ext.EndGroups
@@ -481,8 +481,7 @@ func (m moduleStruct) filterOverWriteHandler(b *gotgbot.Bot, ctx *ext.Context) e
 		return err
 	}
 	_, _, err = query.Message.EditText(b,
-		helpText,
-		nil,
+		&gotgbot.EditMessageTextOpts{Text: helpText},
 	)
 	if err != nil {
 		log.Error(err)
