@@ -805,7 +805,8 @@ func (m moduleStruct) handleCancelPending(b *gotgbot.Bot, ctx *ext.Context, tr *
 
 	msg := ctx.EffectiveMessage
 	if msg != nil {
-		_, _, _ = msg.EditText(b, text, &gotgbot.EditMessageTextOpts{
+		_, _, _ = msg.EditText(b, &gotgbot.EditMessageTextOpts{
+			Text:      text,
 			ParseMode: "HTML",
 		})
 	}

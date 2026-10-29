@@ -338,8 +338,8 @@ func (moduleStruct) rmWarnButton(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	_, _, err := query.Message.EditText(
 		b,
-		replyText,
 		&gotgbot.EditMessageTextOpts{
+			Text:      replyText,
 			ParseMode: formatting.HTML,
 		},
 	)
@@ -604,8 +604,8 @@ func (moduleStruct) warnsButtonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	_, _, err := query.Message.EditText(
 		b,
-		replyText,
-		nil,
+		&gotgbot.EditMessageTextOpts{
+			Text: replyText},
 	)
 	if err != nil {
 		log.Error(err)

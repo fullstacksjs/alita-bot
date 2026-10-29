@@ -187,8 +187,8 @@ func (m moduleStruct) connectionButtons(b *gotgbot.Bot, ctx *ext.Context) error 
 	}
 
 	_, _, err := msg.EditText(b,
-		replyText,
 		&gotgbot.EditMessageTextOpts{
+			Text:        replyText,
 			ReplyMarkup: replyKb,
 			ParseMode:   formatting.HTML,
 		},

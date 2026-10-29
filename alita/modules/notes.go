@@ -518,8 +518,7 @@ func (m moduleStruct) noteOverWriteHandler(b *gotgbot.Bot, ctx *ext.Context) err
 
 	_, _, err := query.Message.EditText(
 		b,
-		helpText,
-		nil,
+		&gotgbot.EditMessageTextOpts{Text: helpText},
 	)
 	if err != nil {
 		log.Error(err)
@@ -600,8 +599,7 @@ func (moduleStruct) notesButtonHandler(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	_, _, err := query.Message.EditText(
 		b,
-		helpText,
-		nil,
+		&gotgbot.EditMessageTextOpts{Text: helpText},
 	)
 	if err != nil {
 		log.Error(err)
